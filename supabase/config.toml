@@ -1,0 +1,40 @@
+# Requisito del Supabase CLI. Solo se usa para levantar el stack local
+# (Postgres, Auth, Storage, Studio). El código propio NO depende de esto.
+project_id = "almacenero"
+
+[api]
+enabled = false  # el cliente nunca habla con PostgREST; todo pasa por el backend
+
+[db]
+port = 54322
+major_version = 15
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+enable_signup = true
+enable_anonymous_sign_ins = true  # v0.0.1: auth anónima
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+# Cableado para OAuth listo pero NO activado en v0.0.1.
+[auth.external.google]
+enabled = false
+client_id = "env(GOOGLE_CLIENT_ID)"
+secret = "env(GOOGLE_CLIENT_SECRET)"

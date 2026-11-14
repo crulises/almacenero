@@ -1,0 +1,32 @@
+-- Seeds chicos para desarrollo. Idempotentes. Nada de datos grandes acá
+-- (el catálogo real entra por el ETL de Open Food Facts).
+
+-- Local del admin (v0.0.1 trabaja con un solo local). Ubicación de ejemplo
+-- (Buenos Aires): reemplazar por la real.
+insert into locales (id, nombre, direccion, ubicacion, medios_pago)
+values (
+    '00000000-0000-0000-0000-000000000001',
+    'Local del admin',
+    'Dirección a completar',
+    st_setsrid(st_makepoint(-58.3816, -34.6037), 4326)::geography,
+    '{"efectivo": true, "debito": true, "credito": true, "transferencia": true, "qr": true}'
+)
+on conflict (id) do nothing;
+
+-- Configuración inicial.
+insert into config (clave, valor, rubro) values
+    ('ventana_frescura_dias', '30',  null),
+    ('umbral_verde_dias',     '7',   null),
+    ('umbral_amarillo_dias',  '21',  null),
+    ('pesables_habilitados',  'false', null),
+    ('modo_acceso',           '"solo_invitacion"', null),
+    ('geofence_metros',       '150', null),
+    ('karma_por_carga',       '1',   null)
+on conflict do nothing;
+
+-- Un par de productos canónicos de ejemplo para probar el flujo de escaneo.
+insert into productos_canonicos (ean, nombre, marca, tamano_valor, tamano_unidad, origen)
+values
+    ('7790070411112', 'Aceite de girasol', 'Ejemplo', 900, 'ml', 'manual'),
+    ('7791234567890', 'Fideos tirabuzón',  'Ejemplo', 500, 'g',  'manual')
+on conflict (ean) do nothing;
