@@ -9,6 +9,10 @@ el alcance de v0.0.1.
 Docker, [Supabase CLI](https://supabase.com/docs/guides/cli), Python 3.10+,
 Flutter, `psql`.
 
+> ¿Entorno nuevo o algo no anda? Mirá
+> [`docs/03-problemas-soluciones.md`](docs/03-problemas-soluciones.md): pasos para
+> armar todo desde cero y los problemas ya resueltos.
+
 ## Uso
 
 ```bash
