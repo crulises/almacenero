@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed test lint build venv
+.PHONY: up down migrate seed test lint build venv apk
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -46,3 +46,14 @@ lint: $(PY)
 
 build: ## Build de imágenes
 	docker compose build
+
+# --- app en un celular -----------------------------------------------------
+apk: ## APK debug (arm64) para probar en un celular de la misma red Wi-Fi
+	@# El celular no puede usar 10.0.2.2 (solo existe en el emulador): la app apunta
+	@# a la IP de esta máquina. Se puede forzar con `make apk LAN_IP=192.168.1.50`.
+	@ip="$(LAN_IP)"; \
+	[ -n "$$ip" ] || ip=$$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | cut -d' ' -f1); \
+	[ -n "$$ip" ] || { echo "No pude detectar la IP local: usá make apk LAN_IP=<ip>"; exit 1; }; \
+	echo "La app apuntará a http://$$ip:8000"; \
+	cd app && flutter build apk --debug --target-platform android-arm64 --dart-define=API_URL=http://$$ip:8000 \
+	&& echo "APK: app/build/app/outputs/flutter-apk/app-debug.apk"

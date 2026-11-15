@@ -17,6 +17,7 @@ make seed     # datos de arranque (las migraciones las aplica `supabase start`)
 make test
 make lint
 make down
+make apk      # APK para probar en un celular de la misma red Wi-Fi (backend en `make up`)
 ```
 
 ## Estructura
