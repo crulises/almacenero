@@ -271,6 +271,12 @@ instalá esos.
   barras**. Para escanear de verdad, un celular.
 - **Desde el emulador, el backend es `http://10.0.2.2:8000`** (es el valor por
   defecto de `API_URL`).
+- **«… isn't responding» (ANR) y todo lentísimo:** presión de memoria de la Mac
+  (swap casi lleno, Docker al 190 % de CPU, daemons de Gradle vivos). Solución:
+  `./gradlew --stop`, cerrar lo que no se use, reiniciar el emulador en frío
+  (`adb emu kill` y relanzar con `-no-snapshot -no-audio -no-boot-anim`).
+- **`adb shell input text` pierde caracteres con la máquina cargada:** para teclear
+  números usar `input keyevent` por dígito, todo en un solo `adb shell`.
 
 ### Celular real
 - **`10.0.2.2` no existe en un celular.** `make apk` compila un APK debug (arm64)
@@ -308,6 +314,18 @@ instalá esos.
 - **Entrada manual de EAN junto al escáner:** es el plan B si falla la cámara o el
   permiso, y permite probar sin celular.
 - **EAN: solo se valida largo (8–14 dígitos)**, no el dígito verificador.
+- **El precio viaja como string, nunca como número:** la app lo normaliza
+  (`parsearPrecio`: acepta coma o punto, hasta 2 decimales, rechaza separador de
+  miles y 0) y lo manda como `"1234.50"`; el backend lo recibe como `Decimal`. Evita
+  errores de punto flotante.
+- **Respuesta de `POST /v1/precios`: `precio_id` y `karma`** (antes `id`), para no
+  confundirlo con el id de usuario de `/v1/me`.
+- **`AppDeps`:** la UI recibe un conjunto de funciones (`loadMe`, `loadProducto`,
+  `loadLocales`, `cargarPrecio`) en vez de repositorios; los widget tests usan un
+  backend falso sin red.
+- **Al volver de cargar un precio**, el inicio refresca el karma y vacía el campo de
+  EAN, listo para el siguiente producto.
+- **v0.0.1 usa el primer local de `/v1/locales`** (el del admin).
 - **Se mergean PRs apilados:** al mergear el primero, GitHub reapunta el siguiente a
   `main` solo.
 
