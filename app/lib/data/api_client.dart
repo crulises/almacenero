@@ -24,16 +24,22 @@ class ApiClient {
   final String baseUrl;
   final http.Client _http;
 
-  Future<Map<String, dynamic>> get(String path, {String? token}) =>
-      _send('GET', path, token: token);
+  Future<Map<String, dynamic>> get(String path, {String? token}) async =>
+      await _send('GET', path, token: token) as Map<String, dynamic>;
+
+  /// Para endpoints que devuelven una lista JSON (por ejemplo `/locales`).
+  Future<List<dynamic>> getList(String path, {String? token}) async =>
+      await _send('GET', path, token: token) as List<dynamic>;
 
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? body,
     String? token,
-  }) => _send('POST', path, body: body, token: token);
+  }) async =>
+      await _send('POST', path, body: body, token: token)
+          as Map<String, dynamic>;
 
-  Future<Map<String, dynamic>> _send(
+  Future<Object?> _send(
     String method,
     String path, {
     Map<String, dynamic>? body,
@@ -57,8 +63,7 @@ class ApiClient {
       throw ApiException('Sin conexión con el servidor: ${e.message}');
     }
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return jsonDecode(utf8.decode(response.bodyBytes))
-          as Map<String, dynamic>;
+      return jsonDecode(utf8.decode(response.bodyBytes));
     }
     throw ApiException(
       'Error ${response.statusCode}',

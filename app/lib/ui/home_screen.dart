@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../data/product_repository.dart';
+import '../app_deps.dart';
 import '../data/user_repository.dart';
 import '../domain/ean.dart';
 import 'product_screen.dart';
@@ -9,21 +9,16 @@ import 'scan_screen.dart';
 /// Pantalla inicial: usuario actual (alias y karma) y búsqueda de un producto, ya sea
 /// escaneando el código o ingresándolo a mano.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({
-    super.key,
-    required this.loadMe,
-    required this.loadProducto,
-  });
+  const HomeScreen({super.key, required this.deps});
 
-  final Future<Me> Function() loadMe;
-  final Future<Producto> Function(String ean) loadProducto;
+  final AppDeps deps;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<Me> _me = widget.loadMe();
+  late Future<Me> _me = widget.deps.loadMe();
   final _eanController = TextEditingController();
   String? _eanError;
 
@@ -35,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _retry() {
     setState(() {
-      _me = widget.loadMe();
+      _me = widget.deps.loadMe();
     });
   }
 
@@ -55,13 +50,18 @@ class _HomeScreenState extends State<HomeScreen> {
     _abrirProducto(ean);
   }
 
-  void _abrirProducto(String ean) {
-    Navigator.of(context).push(
+  Future<void> _abrirProducto(String ean) async {
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            ProductScreen(ean: ean, loadProducto: widget.loadProducto),
+        builder: (_) => ProductScreen(ean: ean, deps: widget.deps),
       ),
     );
+    if (!mounted) return;
+    // Listo para el próximo producto: campo vacío y sin teclado.
+    _eanController.clear();
+    FocusScope.of(context).unfocus();
+    // Al volver puede haber cambiado el karma (si se cargó un precio).
+    _retry();
   }
 
   @override

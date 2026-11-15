@@ -9,12 +9,21 @@ class AuthedApi {
   final ApiClient _api;
   final AuthRepository _auth;
 
-  Future<Map<String, dynamic>> get(String path) async {
+  Future<Map<String, dynamic>> get(String path) =>
+      _conReintento((token) => _api.get(path, token: token));
+
+  Future<List<dynamic>> getList(String path) =>
+      _conReintento((token) => _api.getList(path, token: token));
+
+  Future<Map<String, dynamic>> post(String path, Map<String, dynamic> body) =>
+      _conReintento((token) => _api.post(path, body: body, token: token));
+
+  Future<T> _conReintento<T>(Future<T> Function(String token) llamada) async {
     try {
-      return await _api.get(path, token: await _auth.accessToken());
+      return await llamada(await _auth.accessToken());
     } on ApiException catch (e) {
       if (!e.isUnauthorized) rethrow;
-      return _api.get(path, token: await _auth.accessToken(forceRefresh: true));
+      return llamada(await _auth.accessToken(forceRefresh: true));
     }
   }
 }
