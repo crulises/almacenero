@@ -83,6 +83,8 @@ Toda la lógica operativa va en el Makefile. CI solo llama a estos targets.
 - `make test` — corre tests.
 - `make lint` — linter.
 - `make build` — build de imágenes.
+- `make apk` — APK debug para probar en un celular de la misma red (apunta a la
+  IP local de esta máquina; `LAN_IP=...` para forzarla).
 
 ## Convenciones
 
