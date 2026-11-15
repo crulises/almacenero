@@ -6,6 +6,7 @@ services:
     environment:
       # Desde el contenedor, el Postgres del CLI está en el host.
       DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:54322/postgres
+      AUTH_URL: http://host.docker.internal:54321/auth/v1
       JWKS_URL: http://host.docker.internal:54321/auth/v1/.well-known/jwks.json
     extra_hosts:
       - "host.docker.internal:host-gateway"

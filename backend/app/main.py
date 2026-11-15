@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 
 from app.api.v1 import router as v1_router
@@ -15,10 +16,12 @@ log = logging.getLogger("almacenero")
 async def lifespan(app: FastAPI):
     setup_logging(get_settings().log_level)
     app.state.pool = await create_pool()
+    app.state.http = httpx.AsyncClient()
     log.info("backend iniciado")
     try:
         yield
     finally:
+        await app.state.http.aclose()
         await app.state.pool.close()
 
 
