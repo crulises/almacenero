@@ -14,6 +14,31 @@ class PrecioCargado {
   );
 }
 
+/// Un precio ya cargado, del historial de un producto.
+class PrecioHistorial {
+  const PrecioHistorial({
+    required this.id,
+    required this.localNombre,
+    required this.precio,
+    required this.fecha,
+  });
+
+  final String id;
+  final String localNombre;
+
+  /// Formato canónico, p. ej. "1234.50" (el backend lo manda como string).
+  final String precio;
+  final DateTime fecha;
+
+  factory PrecioHistorial.fromJson(Map<String, dynamic> json) =>
+      PrecioHistorial(
+        id: json['id'] as String,
+        localNombre: json['local_nombre'] as String,
+        precio: json['precio'].toString(),
+        fecha: DateTime.parse(json['fecha'] as String),
+      );
+}
+
 /// Por qué falló la carga de un precio.
 enum CargaError { noEncontrado, precioInvalido, otro }
 
@@ -43,4 +68,10 @@ class PriceRepository {
       'precio': precio,
     }),
   );
+
+  /// Precios cargados de un producto, el más nuevo primero.
+  Future<List<PrecioHistorial>> historial(String ean) async => [
+    for (final p in await _api.getList('/productos/$ean/precios'))
+      PrecioHistorial.fromJson(p as Map<String, dynamic>),
+  ];
 }
