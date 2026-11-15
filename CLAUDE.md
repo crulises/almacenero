@@ -17,6 +17,14 @@ Antes de escribir código, leé:
 Estos dos documentos son la fuente de verdad. Ante una duda de comportamiento,
 gana el Doc 1. Ante una duda técnica, gana el Doc 2.
 
+Además:
+
+- `docs/03-problemas-soluciones.md` — cómo armar el entorno desde cero y los
+  problemas ya vividos (con su solución). **Leelo antes de debuggear un problema
+  de entorno, de build o de auth**, y agregale lo nuevo que aparezca (formato
+  Síntoma → Causa → Solución). No es fuente de verdad: si contradice al Doc 1 o 2,
+  ganan ellos.
+
 ## Alcance de v0.0.1 (NO te pases de esto)
 
 Dentro:
@@ -63,7 +71,7 @@ app/          Flutter (Android)
 backend/      FastAPI
 supabase/     config.toml, migrations/, seed.sql
 etl/          pipeline de Open Food Facts
-docs/         01-producto-vision.md, 02-spec-tecnico.md
+docs/         01-producto-vision.md, 02-spec-tecnico.md, 03-problemas-soluciones.md
 CLAUDE.md
 README.md
 Makefile
