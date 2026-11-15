@@ -20,8 +20,8 @@ class PrecioIn(BaseModel):
 
 
 class PrecioCreado(BaseModel):
-    id: UUID
-    karma: int
+    precio_id: UUID
+    karma: int  # karma del usuario ya actualizado
 
 
 @router.post("/precios", response_model=PrecioCreado, status_code=201)
@@ -54,4 +54,4 @@ async def cargar_precio(
             user.id,
         )
         karma = await sumar_karma(conn, user.id, karma_por_carga())
-    return PrecioCreado(id=precio_id, karma=karma)
+    return PrecioCreado(precio_id=precio_id, karma=karma)

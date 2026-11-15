@@ -1,0 +1,47 @@
+"""Integridad en Postgres: lo que la base garantiza sin depender del backend."""
+
+import asyncio
+
+import asyncpg
+import pytest
+
+from app.config import get_settings
+
+
+def _sql(query: str, *args):
+    async def run():
+        conn = await asyncpg.connect(get_settings().database_url)
+        try:
+            return await conn.execute(query, *args)
+        finally:
+            await conn.close()
+
+    return asyncio.run(run())
+
+
+@pytest.fixture
+def usuario(client, auth):
+    return client.get("/v1/me", headers=auth).json()["id"]
+
+
+def test_el_karma_no_se_modifica_a_mano(usuario):
+    with pytest.raises(asyncpg.PostgresError, match="karma"):
+        _sql("update usuarios set karma = 999 where id = $1::uuid", usuario)
+
+
+def test_no_se_puede_crear_un_usuario_con_karma(usuario):
+    with pytest.raises(asyncpg.PostgresError, match="karma"):
+        _sql(
+            "insert into usuarios (auth_id, alias, karma) "
+            "values (gen_random_uuid(), 'tramposo', 50)"
+        )
+
+
+def test_un_precio_apunta_a_exactamente_un_tipo_de_producto(usuario):
+    # sin producto canónico ni genérico: viola el CHECK
+    with pytest.raises(asyncpg.CheckViolationError):
+        _sql(
+            "insert into precios (local_id, precio, user_id) "
+            "select l.id, 10, $1::uuid from locales l limit 1",
+            usuario,
+        )

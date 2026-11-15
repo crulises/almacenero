@@ -1,28 +1,26 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../app_deps.dart';
 import '../data/product_repository.dart';
+import 'price_screen.dart';
 
 /// Ficha de un producto buscado por EAN en el catálogo canónico.
 class ProductScreen extends StatefulWidget {
-  const ProductScreen({
-    super.key,
-    required this.ean,
-    required this.loadProducto,
-  });
+  const ProductScreen({super.key, required this.ean, required this.deps});
 
   final String ean;
-  final Future<Producto> Function(String ean) loadProducto;
+  final AppDeps deps;
 
   @override
   State<ProductScreen> createState() => _ProductScreenState();
 }
 
 class _ProductScreenState extends State<ProductScreen> {
-  late Future<Producto> _producto = widget.loadProducto(widget.ean);
+  late Future<Producto> _producto = widget.deps.loadProducto(widget.ean);
 
   void _retry() {
     setState(() {
-      _producto = widget.loadProducto(widget.ean);
+      _producto = widget.deps.loadProducto(widget.ean);
     });
   }
 
@@ -64,6 +62,16 @@ class _ProductScreenState extends State<ProductScreen> {
         ],
         const SizedBox(height: 8),
         Text('EAN ${p.ean}', style: texto.bodySmall),
+        const SizedBox(height: 32),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PriceScreen(producto: p, deps: widget.deps),
+            ),
+          ),
+          icon: const Icon(Icons.sell),
+          label: const Text('Cargar precio'),
+        ),
       ],
     );
   }
