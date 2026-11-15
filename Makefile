@@ -8,6 +8,13 @@ PY := $(VENV)/bin/python
 up: ## Levanta Supabase (Postgres/Auth/Storage) y el backend
 	@test -f .env || cp .env.example .env
 	supabase start
+	@# Completa AUTH_API_KEY (api key pública del auth local) si falta en .env.
+	@if ! grep -qE '^AUTH_API_KEY=.+' .env; then \
+		key=$$(supabase status -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['ANON_KEY'])"); \
+		test -n "$$key" || { echo "no pude leer ANON_KEY de supabase status"; exit 1; }; \
+		{ grep -v '^AUTH_API_KEY=' .env; echo "AUTH_API_KEY=$$key"; } > .env.tmp && mv .env.tmp .env; \
+		echo "AUTH_API_KEY completada en .env"; \
+	fi
 	docker compose up -d --build backend
 
 down: ## Baja todo
