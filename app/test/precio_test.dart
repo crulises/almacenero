@@ -37,4 +37,27 @@ void main() {
       expect(parsearPrecio(malo), isNull, reason: '"$malo"');
     }
   });
+
+  test('formatearPrecio: miles con punto y coma decimal', () {
+    expect(formatearPrecio('1234.50'), r'$ 1.234,50');
+    expect(formatearPrecio('0.99'), r'$ 0,99');
+    expect(formatearPrecio('999.00'), r'$ 999,00');
+    expect(formatearPrecio('1234567.05'), r'$ 1.234.567,05');
+  });
+
+  test('formatearFecha: día y antigüedad', () {
+    final ahora = DateTime(2026, 11, 15, 10);
+    expect(
+      formatearFecha(DateTime(2026, 11, 15, 8), ahora: ahora),
+      '15/11/2026 (hoy)',
+    );
+    expect(
+      formatearFecha(DateTime(2026, 11, 14, 23), ahora: ahora),
+      '14/11/2026 (ayer)',
+    );
+    expect(
+      formatearFecha(DateTime(2026, 11, 2), ahora: ahora),
+      '02/11/2026 (hace 13 días)',
+    );
+  });
 }

@@ -24,11 +24,21 @@ class _Backend {
   int karma = 0;
   final cargas = <({String ean, String localId, String precio})>[];
   Object? errorAlCargar;
+  Object? errorHistorial;
+  final precios = <PrecioHistorial>[];
 
   AppDeps deps({Future<Producto> Function(String)? loadProducto}) => AppDeps(
     loadMe: () async => Me(id: 'u1', alias: 'anon-abc123', karma: karma),
     loadProducto: loadProducto ?? (_) async => _aceite,
     loadLocales: () async => [_local],
+    loadHistorial: (_) async {
+      final error = errorHistorial;
+      if (error != null) {
+        errorHistorial = null; // falla una sola vez
+        throw error;
+      }
+      return precios.reversed.toList(); // el más nuevo primero
+    },
     cargarPrecio: ({required ean, required localId, required precio}) async {
       final error = errorAlCargar;
       if (error != null) {
@@ -36,6 +46,14 @@ class _Backend {
         throw error;
       }
       cargas.add((ean: ean, localId: localId, precio: precio));
+      precios.add(
+        PrecioHistorial(
+          id: 'pr${cargas.length}',
+          localNombre: _local.nombre,
+          precio: precio,
+          fecha: DateTime.now(),
+        ),
+      );
       karma++;
       return PrecioCargado(precioId: 'pr${cargas.length}', karma: karma);
     },
@@ -93,6 +111,7 @@ void main() {
           },
           loadProducto: (_) async => _aceite,
           loadLocales: () async => [_local],
+          loadHistorial: (_) async => [],
           cargarPrecio: ({required ean, required localId, required precio}) =>
               throw UnimplementedError(),
         ),
@@ -175,6 +194,72 @@ void main() {
 
       await _buscar(tester, '2000000012345');
       expect(find.textContaining('código interno de balanza'), findsOneWidget);
+    });
+  });
+
+  group('historial de precios', () {
+    PrecioHistorial precio(String valor, String local, DateTime fecha) =>
+        PrecioHistorial(
+          id: valor,
+          localNombre: local,
+          precio: valor,
+          fecha: fecha,
+        );
+
+    testWidgets('sin precios, lo dice', (tester) async {
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      expect(find.text('Historial de precios'), findsOneWidget);
+      expect(
+        find.text('Todavía nadie cargó un precio de este producto.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('lista precio, local y fecha, formateados', (tester) async {
+      final ahora = DateTime.now();
+      backend.precios.addAll([
+        precio(
+          '1000.00',
+          'Local viejo',
+          ahora.subtract(const Duration(days: 3)),
+        ),
+        precio('1234.50', 'Local del admin', ahora),
+      ]);
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+
+      expect(find.text(r'$ 1.234,50'), findsOneWidget);
+      expect(find.text(r'$ 1.000,00'), findsOneWidget);
+      expect(find.textContaining('Local del admin'), findsOneWidget);
+      expect(find.textContaining('(hoy)'), findsOneWidget);
+      expect(find.textContaining('(hace 3 días)'), findsOneWidget);
+    });
+
+    testWidgets('si falla, ofrece reintentar y se recupera', (tester) async {
+      backend.errorHistorial = ApiException('Sin conexión');
+      backend.precios.add(precio('500.00', 'Local del admin', DateTime.now()));
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      expect(find.text('No pudimos cargar el historial.'), findsOneWidget);
+      // la ficha del producto sigue visible
+      expect(find.text('Aceite de girasol'), findsOneWidget);
+
+      await tester.tap(find.text('Reintentar'));
+      await tester.pumpAndSettle();
+      expect(find.text(r'$ 500,00'), findsOneWidget);
+    });
+
+    testWidgets('el precio recién cargado aparece al volver a la ficha', (
+      tester,
+    ) async {
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      await _enviarPrecio(tester, '850');
+      // Volver atrás desde el éxito (en vez de "Listo") deja la ficha.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text(r'$ 850,00'), findsOneWidget);
     });
   });
 

@@ -275,6 +275,11 @@ instalá esos.
   (swap casi lleno, Docker al 190 % de CPU, daemons de Gradle vivos). Solución:
   `./gradlew --stop`, cerrar lo que no se use, reiniciar el emulador en frío
   (`adb emu kill` y relanzar con `-no-snapshot -no-audio -no-boot-anim`).
+- **`monkey -p <paquete> 1` no abre la app** (no hay `MainActivity` con ese
+  nombre de paquete: el `applicationId` es `ar.almacenero.almacenero`). Tocar el
+  ícono de Flutter en el launcher y esperar ~40 s en el primer arranque debug.
+- **El historial de un producto muestra precios «de más» en el entorno local:** son
+  los que cargan los tests del backend (usan la misma base). No es un bug.
 - **`adb shell input text` pierde caracteres con la máquina cargada:** para teclear
   números usar `input keyevent` por dígito, todo en un solo `adb shell`.
 
@@ -326,6 +331,13 @@ instalá esos.
 - **Al volver de cargar un precio**, el inicio refresca el karma y vacía el campo de
   EAN, listo para el siguiente producto.
 - **v0.0.1 usa el primer local de `/v1/locales`** (el del admin).
+- **Historial de precios en la ficha del producto** (no en una pantalla aparte):
+  se ve junto al botón «Cargar precio» y se recarga al volver de cargar uno. Si el
+  historial falla, la ficha sigue visible y ofrece reintentar.
+- **`GET /v1/productos/{ean}/precios` devuelve `local_nombre` y `fecha` ISO 8601**
+  (antes `fecha` era texto de Postgres y no traía el nombre del local). La app
+  muestra la fecha con antigüedad («15/11/2026 (hace 3 días)»), porque la
+  frescura del precio importa (Doc 1).
 - **Se mergean PRs apilados:** al mergear el primero, GitHub reapunta el siguiente a
   `main` solo.
 

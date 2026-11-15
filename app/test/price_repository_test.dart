@@ -102,6 +102,29 @@ void main() {
     });
   });
 
+  group('historial', () {
+    test('parsea precios, locales y fechas', () async {
+      estado = (_) => 200;
+      cuerpo = [
+        {
+          'id': 'a',
+          'local_id': 'l1',
+          'local_nombre': 'Local del admin',
+          'precio': '1234.50',
+          'fecha': '2026-11-15T13:45:00.123456Z',
+          'user_id': 'u',
+        },
+      ];
+
+      final h = await PriceRepository(api: build()).historial('7790070411112');
+
+      expect(pedidos.last.url.path, '/v1/productos/7790070411112/precios');
+      expect(h.single.precio, '1234.50');
+      expect(h.single.localNombre, 'Local del admin');
+      expect(h.single.fecha.toUtc().hour, 13);
+    });
+  });
+
   group('LocalRepository', () {
     test('listar: parsea la lista JSON de locales', () async {
       estado = (_) => 200;

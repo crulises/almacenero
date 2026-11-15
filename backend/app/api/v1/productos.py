@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -24,8 +25,9 @@ class ProductoOut(BaseModel):
 class PrecioOut(BaseModel):
     id: UUID
     local_id: UUID
+    local_nombre: str
     precio: Decimal
-    fecha: str
+    fecha: datetime
     user_id: UUID
 
 
@@ -62,9 +64,11 @@ async def historial_precios(
 ) -> list[PrecioOut]:
     rows = await pool.fetch(
         """
-        select p.id, p.local_id, p.precio, p.fecha::text as fecha, p.user_id
+        select p.id, p.local_id, l.nombre as local_nombre, p.precio, p.fecha,
+               p.user_id
         from precios p
         join productos_canonicos pc on pc.id = p.producto_canonico_id
+        join locales l on l.id = p.local_id
         where pc.ean = $1 and ($2::uuid is null or p.local_id = $2)
         order by p.fecha desc
         limit 200

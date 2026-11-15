@@ -29,6 +29,7 @@ void main() {
         loadProducto: ProductRepository(api: authed).porEan,
         loadLocales: LocalRepository(api: authed).listar,
         cargarPrecio: PriceRepository(api: authed).cargar,
+        loadHistorial: PriceRepository(api: authed).historial,
       ),
     ),
   );

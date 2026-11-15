@@ -57,3 +57,22 @@ def test_una_carga_fallida_no_suma_karma(client, auth):
 
 def test_ean_de_balanza_no_se_puede_cargar(client, auth):
     assert _cargar(client, auth, ean="2000000012345").status_code == 422
+
+
+def test_historial_trae_local_fecha_y_el_mas_nuevo_primero(client, auth):
+    _cargar(client, auth, "100")
+    _cargar(client, auth, "120.50")
+
+    historial = client.get(f"/v1/productos/{EAN_SEED}/precios", headers=auth).json()
+
+    assert [p["precio"] for p in historial][:2] == ["120.50", "100.00"]
+    primero = historial[0]
+    assert primero["local_nombre"] == "Local del admin"
+    assert primero["fecha"].startswith("20")  # ISO 8601
+    assert "T" in primero["fecha"]
+
+
+def test_historial_de_un_producto_sin_precios_es_lista_vacia(client, auth):
+    r = client.get("/v1/productos/7799999999999/precios", headers=auth)
+    assert r.status_code == 200
+    assert r.json() == []
