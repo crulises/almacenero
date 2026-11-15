@@ -1,5 +1,4 @@
-import 'api_client.dart';
-import 'auth_repository.dart';
+import 'authed_api.dart';
 
 class Me {
   const Me({required this.id, required this.alias, required this.karma});
@@ -16,21 +15,9 @@ class Me {
 }
 
 class UserRepository {
-  UserRepository({required this._api, required this._auth});
+  UserRepository({required this._api});
 
-  final ApiClient _api;
-  final AuthRepository _auth;
+  final AuthedApi _api;
 
-  /// Usuario actual. Si el backend rechaza el token (401), renueva y reintenta una vez.
-  Future<Me> me() async {
-    try {
-      return Me.fromJson(
-        await _api.get('/me', token: await _auth.accessToken()),
-      );
-    } on ApiException catch (e) {
-      if (!e.isUnauthorized) rethrow;
-      final token = await _auth.accessToken(forceRefresh: true);
-      return Me.fromJson(await _api.get('/me', token: token));
-    }
-  }
+  Future<Me> me() async => Me.fromJson(await _api.get('/me'));
 }
