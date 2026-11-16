@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed admin test lint build venv apk
+.PHONY: up down migrate seed admin test lint build venv apk etl-off etl-off-muestra etl-off-descargar conflictos
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -45,14 +45,38 @@ venv: $(PY)
 
 test: $(PY) ## Tests de backend (Postgres local real) y de la app
 	cd backend && .venv/bin/python -m pytest
+	$(PY) -m pytest etl/tests -q
 	cd app && flutter test
 
 lint: $(PY)
 	cd backend && .venv/bin/ruff check . && .venv/bin/ruff format --check .
+	$(VENV)/bin/ruff check --config backend/pyproject.toml etl && $(VENV)/bin/ruff format --check --config backend/pyproject.toml etl
 	cd app && flutter analyze
 
 build: ## Build de imágenes
 	docker compose build
+
+# --- ETL del catálogo (uno por fuente) ---------------------------------------
+OFF_URL := https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz
+OFF_ARCHIVO ?= etl/data/off.csv.gz
+
+etl-off-muestra: ## Baja ~30 MB del principio del volcado de OFF (para probar)
+	@mkdir -p etl/data
+	curl -fL -r 0-30000000 -o etl/data/off-muestra.csv.gz $(OFF_URL)
+	@echo "Listo: etl/data/off-muestra.csv.gz (truncado a propósito; el ETL lo tolera)"
+
+etl-off-descargar: ## Baja el volcado COMPLETO de OFF (~1,5 GB). Pedí OK antes de correrlo
+	@mkdir -p etl/data
+	curl -fL -C - -o $(OFF_ARCHIVO) $(OFF_URL)
+
+etl-off: $(PY) ## Carga OFF al catálogo: make etl-off [OFF_ARCHIVO=etl/data/off-muestra.csv.gz]
+	@test -f $(OFF_ARCHIVO) || { echo "Falta $(OFF_ARCHIVO): make etl-off-muestra (chico) o make etl-off-descargar (completo)"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.off $(OFF_ARCHIVO)
+
+conflictos: $(PY) ## Lista los conflictos de catálogo pendientes de revisión
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.conflictos
 
 # --- app en un celular -----------------------------------------------------
 apk: ## APK debug (arm64) para probar en un celular de la misma red Wi-Fi

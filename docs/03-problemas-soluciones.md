@@ -390,3 +390,43 @@ instalá esos.
   automáticos de la cámara.
 - Para distribuir a testers falta: backend desplegado con HTTPS y un build release
   firmado.
+
+---
+
+## ETL del catálogo (corte 7)
+
+### El volcado completo de OFF pesa 13,6 GB… en JSONL
+- **Síntoma:** el plan hablaba de «varios GB» para el volcado de Open Food Facts.
+- **Causa:** el JSONL (`openfoodfacts-products.jsonl.gz`) pesa 13,6 GB; el MongoDB dump,
+  16,6 GB. Pero el **CSV** (`en.openfoodfacts.org.products.csv.gz`) pesa 1,5 GB y trae
+  las columnas que usamos.
+- **Solución:** el ETL lee el CSV (tabulado) en streaming. Se mide con
+  `curl -sIL <url> | grep -i content-length` antes de bajar nada. `make
+  etl-off-muestra` baja solo los primeros ~30 MB (descarga por rango).
+
+### Un `.csv.gz` truncado (la muestra) no debe romper el ETL
+- **Síntoma:** `EOFError: Compressed file ended before the end-of-stream marker`.
+- **Solución:** el lector de filas lo atrapa y termina; la última fila cortada se
+  descarta por tener menos columnas que la cabecera.
+
+### EAN-8 y UPC-A en el volcado de OFF
+- **Síntoma:** OFF rellena con ceros hasta 13 dígitos; el escáner entrega 8 o 12.
+- **Solución:** `normalizar_ean` devuelve `0 + UPC-A` (13), recupera los EAN-8 que vienen
+  como `00000xxxxxxxx` y descarta EAN de balanza (empiezan con 2) y dígitos
+  verificadores inválidos. El EAN de ejemplo `7791234567890` del seed tiene dígito
+  inválido: es manual y no entra en el emparejamiento.
+
+### `$1` sin tipo en sentencias con asyncpg
+- **Síntoma:** `could not determine data type of parameter $1` al usar el parámetro
+  en un `select`/`case`. **Solución:** castear (`$1::text`).
+
+### Decisiones del corte 7
+- Un ETL por fuente (`etl/<fuente>/`) sobre una capa mínima común; la fusión se hace
+  con SQL por lotes (`COPY` a tabla temporal), no fila por fila.
+- Los campos que el admin resuelve se **bloquean con un trigger** (integridad en
+  Postgres); los ETL ni lo intentan, y si alguien lo intenta a mano falla.
+- Los desacuerdos no se reabren una vez vistos (`unique` sobre el desacuerdo completo).
+- Los ETL no tienen CI contra datos reales: los tests usan un CSV generado y la base
+  local; **los datos de prueba empiezan con `79999`** y se limpian solos.
+- Medido en la muestra de 94 k productos: ~535 B/producto; extrapolado ~2,5 GB para
+  todo OFF (ver `docs/05-fuentes-catalogo.md`).
