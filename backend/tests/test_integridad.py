@@ -45,3 +45,30 @@ def test_un_precio_apunta_a_exactamente_un_tipo_de_producto(usuario):
             "select l.id, 10, $1::uuid from locales l limit 1",
             usuario,
         )
+
+
+def test_el_rol_no_se_modifica_a_mano(usuario):
+    with pytest.raises(asyncpg.PostgresError, match="rol"):
+        _sql("update usuarios set rol = 'admin' where id = $1::uuid", usuario)
+
+
+def test_no_se_puede_crear_un_usuario_admin_a_mano():
+    with pytest.raises(asyncpg.PostgresError, match="rol"):
+        _sql(
+            "insert into usuarios (auth_id, alias, rol) "
+            "values (gen_random_uuid(), 'colado', 'admin')"
+        )
+
+
+def test_el_rol_solo_admite_valores_conocidos(usuario):
+    async def run():
+        conn = await asyncpg.connect(get_settings().database_url)
+        try:
+            async with conn.transaction():
+                await conn.execute("select set_config('app.rol_write', 'on', true)")
+                await conn.execute("update usuarios set rol = 'dios' where id = $1::uuid", usuario)
+        finally:
+            await conn.close()
+
+    with pytest.raises(asyncpg.CheckViolationError):
+        asyncio.run(run())

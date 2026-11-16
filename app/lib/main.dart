@@ -5,6 +5,7 @@ import 'data/api_client.dart';
 import 'data/auth_repository.dart';
 import 'data/authed_api.dart';
 import 'data/local_repository.dart';
+import 'data/location_service.dart';
 import 'data/price_repository.dart';
 import 'data/product_repository.dart';
 import 'data/session.dart';
@@ -22,12 +23,16 @@ void main() {
   final api = ApiClient(baseUrl: apiUrl);
   final auth = AuthRepository(api: api, store: SecureSessionStore());
   final authed = AuthedApi(api: api, auth: auth);
+  final location = LocationService();
   runApp(
     AlmaceneroApp(
       deps: AppDeps(
         loadMe: UserRepository(api: authed).me,
         loadProducto: ProductRepository(api: authed).porEan,
-        loadLocales: LocalRepository(api: authed).listar,
+        obtenerUbicacion: location.actual,
+        abrirAjustes: location.abrirAjustes,
+        loadLocalesCerca: LocalRepository(api: authed).cerca,
+        crearLocal: LocalRepository(api: authed).crear,
         cargarPrecio: PriceRepository(api: authed).cargar,
         loadHistorial: PriceRepository(api: authed).historial,
       ),

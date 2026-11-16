@@ -280,6 +280,22 @@ instalá esos.
   ícono de Flutter en el launcher y esperar ~40 s en el primer arranque debug.
 - **El historial de un producto muestra precios «de más» en el entorno local:** son
   los que cargan los tests del backend (usan la misma base). No es un bug.
+- **Otra vez «… isn't responding» con el stack completo de Supabase arriba:** el
+  Docker de la Mac (8 GB) + el emulador (5-6 GB) agotan la memoria. Dos remedios
+  que sí funcionan: (1) parar los contenedores de Supabase que este proyecto no usa
+  (`studio`, `analytics`, `vector`, `edge_runtime`, `pg_meta`, `realtime`,
+  `inbucket`; el backend solo necesita `db`, `auth` y `kong`) con
+  `docker stop supabase_<nombre>_almacenero`; (2) arrancar el emulador con menos
+  RAM: `emulator -avd almacenero_pixel -no-snapshot -no-audio -no-boot-anim -memory 3072`.
+  `supabase start -x <contenedores>` permite no levantarlos desde el principio.
+- **Al pedir ubicación, Google Play Services también se cuelga** («Google Play
+  services isn't responding») y puede mostrar un aviso de «precisión de
+  ubicación». Con poca RAM el flujo de GPS no se completa en el emulador: usar
+  el celular, o darle más memoria al emulador si la máquina lo permite. El
+  backend de locales se puede verificar igual con `curl` (ver los tests).
+- **Ubicación en el emulador:** `adb emu geo fix <longitud> <latitud>` (¡primero
+  longitud!) fija el GPS virtual. Sirve para probar «locales cerca» y el alta de un
+  local sin moverte.
 - **`adb shell input text` pierde caracteres con la máquina cargada:** para teclear
   números usar `input keyevent` por dígito, todo en un solo `adb shell`.
 
@@ -338,6 +354,24 @@ instalá esos.
   (antes `fecha` era texto de Postgres y no traía el nombre del local). La app
   muestra la fecha con antigüedad («15/11/2026 (hace 3 días)»), porque la
   frescura del precio importa (Doc 1).
+- **Rol protegido en Postgres, igual que el karma:** `usuarios.rol` solo cambia
+  dentro de una transacción que haga `select set_config('app.rol_write', 'on', true)`.
+  La API no tiene ningún camino para escribirlo; un admin se crea con
+  `make admin ALIAS=<alias>`.
+- **Permisos por capacidad, no por rol:** los endpoints piden `puede(usuario,
+  "local.verificar")` (módulo `services/permisos.py`). Hoy el mapa rol → capacidades
+  es un diccionario; migrar a tablas cambia ese módulo y no los endpoints (plan
+  v0.0.2, §1).
+- **Alta de local abierta = interruptor de prueba** (`config.alta_locales_abierta`),
+  no un cambio al Doc 1. El local nace `verificado = false`.
+- **Anti-duplicados sin bloquear por distancia:** hay locales contiguos legítimos.
+  Solo se rechaza (409) nombre casi idéntico (`pg_trgm`, similitud ≥ 0,8) a ≤ 50 m.
+  Los umbrales están en `config`.
+- **Valores por defecto en código** (`services/config.py`): si falta una clave en la
+  base, el backend usa el default (seguro: el alta de locales abierta es `false`).
+- **Tests de locales con coordenadas al azar en el Atlántico Sur** y nombres
+  `test-…`, que se borran al terminar: no ensucian los locales reales ni
+  «locales cerca».
 - **Se mergean PRs apilados:** al mergear el primero, GitHub reapunta el siguiente a
   `main` solo.
 
