@@ -4,6 +4,7 @@ import 'package:almacenero/data/api_client.dart';
 import 'package:almacenero/data/auth_repository.dart';
 import 'package:almacenero/data/authed_api.dart';
 import 'package:almacenero/data/local_repository.dart';
+import 'package:almacenero/data/location_service.dart';
 import 'package:almacenero/data/price_repository.dart';
 import 'package:almacenero/data/session.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -126,7 +127,9 @@ void main() {
   });
 
   group('LocalRepository', () {
-    test('listar: parsea la lista JSON de locales', () async {
+    const aca = Ubicacion(lat: -34.6, lng: -58.4);
+
+    test('cerca: manda la ubicación y parsea distancia y verificado', () async {
       estado = (_) => 200;
       cuerpo = [
         {
@@ -135,16 +138,75 @@ void main() {
           'direccion': 'Calle 1',
           'lat': -34.6,
           'lng': -58.4,
+          'verificado': true,
+          'distancia_m': 12.5,
         },
-        {'id': 'l2', 'nombre': 'Otro', 'direccion': null},
+        {
+          'id': 'l2',
+          'nombre': 'Otro',
+          'direccion': null,
+          'verificado': false,
+          'distancia_m': 80,
+        },
       ];
 
-      final locales = await LocalRepository(api: build()).listar();
+      final locales = await LocalRepository(api: build()).cerca(aca);
 
-      expect(pedidos.last.url.path, '/v1/locales');
+      expect(pedidos.last.url.path, '/v1/locales/cerca');
+      expect(pedidos.last.url.queryParameters, {
+        'lat': '-34.6',
+        'lng': '-58.4',
+      });
       expect(locales.map((l) => l.nombre), ['Local del admin', 'Otro']);
-      expect(locales.first.direccion, 'Calle 1');
+      expect(locales.first.distanciaM, 12.5);
       expect(locales.last.direccion, isNull);
+      expect(locales.last.verificado, isFalse);
+      expect(locales.last.distanciaM, 80);
     });
+
+    test('crear: manda nombre y coordenadas, sin dirección vacía', () async {
+      cuerpo = {
+        'id': 'n1',
+        'nombre': 'Kiosco',
+        'direccion': null,
+        'lat': -34.6,
+        'lng': -58.4,
+        'verificado': false,
+      };
+
+      final l = await LocalRepository(api: build())
+          .crear(nombre: 'Kiosco', direccion: '', ubicacion: aca);
+
+      final post = pedidos.last;
+      expect(post.method, 'POST');
+      expect(post.url.path, '/v1/locales');
+      expect(jsonDecode(post.body), {
+        'nombre': 'Kiosco',
+        'lat': -34.6,
+        'lng': -58.4,
+      });
+      expect(l.verificado, isFalse);
+    });
+
+    test('clasifica los errores del alta', () {
+      AltaLocalError c(int status) =>
+          clasificarErrorAltaLocal(ApiException('x', statusCode: status));
+      expect(c(409), AltaLocalError.duplicado);
+      expect(c(403), AltaLocalError.sinPermiso);
+      expect(c(429), AltaLocalError.limiteDiario);
+      expect(c(422), AltaLocalError.datosInvalidos);
+      expect(c(500), AltaLocalError.otro);
+      expect(clasificarErrorAltaLocal(Exception('x')), AltaLocalError.otro);
+    });
+  });
+
+  test('clasifica los errores de ubicación', () {
+    expect(
+      clasificarErrorUbicacion(
+        const UbicacionException(UbicacionError.servicioApagado),
+      ),
+      UbicacionError.servicioApagado,
+    );
+    expect(clasificarErrorUbicacion(Exception('x')), UbicacionError.otro);
   });
 }

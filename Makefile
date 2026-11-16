@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed test lint build venv apk
+.PHONY: up down migrate seed admin test lint build venv apk
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -28,6 +28,13 @@ migrate: ## Aplica migraciones pendientes
 seed: ## Carga datos de arranque (idempotente)
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
+
+admin: ## Promueve a un usuario a admin: make admin ALIAS=anon-1ff221
+	@test -n "$(ALIAS)" || { echo "Uso: make admin ALIAS=<alias del usuario>"; exit 1; }
+	@# El rol está protegido por un trigger: se habilita solo dentro de esta transacción.
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -v alias="$(ALIAS)" <<< \
+	"begin; select set_config('app.rol_write', 'on', true); update usuarios set rol = 'admin' where alias = :'alias'; commit;"
 
 # --- calidad ---------------------------------------------------------------
 $(PY):

@@ -1,6 +1,7 @@
 import 'package:almacenero/app_deps.dart';
 import 'package:almacenero/data/api_client.dart';
 import 'package:almacenero/data/local_repository.dart';
+import 'package:almacenero/data/location_service.dart';
 import 'package:almacenero/data/price_repository.dart';
 import 'package:almacenero/data/product_repository.dart';
 import 'package:almacenero/data/user_repository.dart';
@@ -18,6 +19,7 @@ const _aceite = Producto(
 );
 
 const _local = Local(id: 'l1', nombre: 'Local del admin');
+const _aca = Ubicacion(lat: -34.6, lng: -58.4, precisionM: 12);
 
 /// Backend de mentira: el karma sube con cada precio cargado, como en el real.
 class _Backend {
@@ -25,12 +27,45 @@ class _Backend {
   final cargas = <({String ean, String localId, String precio})>[];
   Object? errorAlCargar;
   Object? errorHistorial;
+  Object? errorUbicacion;
+  Object? errorAlCrear;
+  var ajustesAbiertos = 0;
+  Ubicacion? ubicacionPedida;
+  final cerca = <Local>[_local];
+  final creados = <({String nombre, String? direccion, Ubicacion ubicacion})>[];
   final precios = <PrecioHistorial>[];
 
   AppDeps deps({Future<Producto> Function(String)? loadProducto}) => AppDeps(
     loadMe: () async => Me(id: 'u1', alias: 'anon-abc123', karma: karma),
     loadProducto: loadProducto ?? (_) async => _aceite,
-    loadLocales: () async => [_local],
+    obtenerUbicacion: () async {
+      final error = errorUbicacion;
+      if (error != null) {
+        errorUbicacion = null; // falla una sola vez
+        throw error;
+      }
+      return _aca;
+    },
+    abrirAjustes: () async => ajustesAbiertos++,
+    loadLocalesCerca: (u) async {
+      ubicacionPedida = u;
+      return List.of(cerca);
+    },
+    crearLocal: ({required nombre, direccion, required ubicacion}) async {
+      final error = errorAlCrear;
+      if (error != null) {
+        errorAlCrear = null; // falla una sola vez
+        throw error;
+      }
+      creados.add((nombre: nombre, direccion: direccion, ubicacion: ubicacion));
+      final local = Local(
+        id: 'nuevo${creados.length}',
+        nombre: nombre,
+        verificado: false,
+      );
+      cerca.insert(0, local);
+      return local;
+    },
     loadHistorial: (_) async {
       final error = errorHistorial;
       if (error != null) {
@@ -110,7 +145,11 @@ void main() {
             return const Me(id: 'u1', alias: 'anon-abc123', karma: 0);
           },
           loadProducto: (_) async => _aceite,
-          loadLocales: () async => [_local],
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
           loadHistorial: (_) async => [],
           cargarPrecio: ({required ean, required localId, required precio}) =>
               throw UnimplementedError(),
@@ -260,6 +299,180 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.text(r'$ 850,00'), findsOneWidget);
+    });
+  });
+
+  group('locales', () {
+    final dentro = find.byType(AlertDialog);
+
+    testWidgets('busca los locales cerca de donde estás', (tester) async {
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      expect(backend.ubicacionPedida?.lat, _aca.lat);
+      expect(backend.ubicacionPedida?.lng, _aca.lng);
+    });
+
+    testWidgets('sin locales cerca: lo crea y carga el precio ahí', (
+      tester,
+    ) async {
+      backend.cerca.clear();
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      expect(find.text('No hay locales registrados cerca de acá.'), findsOne);
+
+      await tester.tap(find.text('Crear local aquí'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(of: dentro, matching: find.byType(TextField)).first,
+        '  Kiosco Don Pepe ',
+      );
+      await tester.tap(find.text('Crear local'));
+      await tester.pumpAndSettle();
+
+      expect(backend.creados.single.nombre, 'Kiosco Don Pepe');
+      expect(backend.creados.single.ubicacion.lat, _aca.lat);
+      expect(
+        find.textContaining('en Kiosco Don Pepe (sin verificar)'),
+        findsOne,
+      );
+
+      await _enviarPrecio(tester, '300');
+      expect(backend.cargas.single.localId, 'nuevo1');
+    });
+
+    testWidgets('con varios locales, se puede cambiar el elegido', (
+      tester,
+    ) async {
+      backend.cerca.add(
+        const Local(id: 'l2', nombre: 'Otro local', distanciaM: 40),
+      );
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      expect(find.text('en Local del admin'), findsOneWidget);
+
+      await tester.tap(find.text('Cambiar'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Otro local'));
+      await tester.pumpAndSettle();
+      expect(find.text('en Otro local'), findsOneWidget);
+
+      await _enviarPrecio(tester, '300');
+      expect(backend.cargas.single.localId, 'l2');
+    });
+
+    testWidgets('desde «cambiar» también se puede crear uno nuevo', (
+      tester,
+    ) async {
+      await abrir(tester);
+      await _irAlFormulario(tester);
+
+      await tester.tap(find.text('Cambiar'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('crear uno nuevo aquí'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(of: dentro, matching: find.byType(TextField)).first,
+        'Vecino',
+      );
+      await tester.tap(find.text('Crear local'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('en Vecino'), findsOneWidget);
+    });
+
+    testWidgets('nombre vacío: no crea y marca el error', (tester) async {
+      backend.cerca.clear();
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      await tester.tap(find.text('Crear local aquí'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Crear local'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ingresá el nombre del local'), findsOneWidget);
+      expect(backend.creados, isEmpty);
+    });
+
+    testWidgets('duplicado: lo explica y deja corregir', (tester) async {
+      backend.cerca.clear();
+      backend.errorAlCrear = ApiException('Error 409', statusCode: 409);
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      await tester.tap(find.text('Crear local aquí'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(of: dentro, matching: find.byType(TextField)).first,
+        'Kiosco',
+      );
+
+      await tester.tap(find.text('Crear local'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Ya hay un local con ese nombre'), findsOne);
+
+      await tester.tap(find.text('Crear local')); // reintenta con otro nombre
+      await tester.pumpAndSettle();
+      expect(find.textContaining('en Kiosco'), findsOneWidget);
+    });
+
+    testWidgets('sin permiso para crear locales, lo avisa', (tester) async {
+      backend.cerca.clear();
+      backend.errorAlCrear = ApiException('Error 403', statusCode: 403);
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      await tester.tap(find.text('Crear local aquí'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(of: dentro, matching: find.byType(TextField)).first,
+        'Kiosco',
+      );
+      await tester.tap(find.text('Crear local'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('solo un administrador'), findsOneWidget);
+    });
+
+    testWidgets('permiso de ubicación negado: lo explica y reintenta', (
+      tester,
+    ) async {
+      backend.errorUbicacion = const UbicacionException(
+        UbicacionError.permisoDenegado,
+      );
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      await tester.tap(_botonCargar);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Necesitamos tu ubicación'), findsOneWidget);
+
+      await tester.tap(find.text('Reintentar'));
+      await tester.pumpAndSettle();
+      expect(find.text('en Local del admin'), findsOneWidget);
+    });
+
+    testWidgets('permiso negado para siempre: manda a los ajustes', (
+      tester,
+    ) async {
+      backend.errorUbicacion = const UbicacionException(
+        UbicacionError.permisoDenegadoParaSiempre,
+      );
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      await tester.tap(_botonCargar);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Abrir ajustes'));
+      expect(backend.ajustesAbiertos, 1);
+    });
+
+    testWidgets('GPS apagado: pide prenderlo', (tester) async {
+      backend.errorUbicacion = const UbicacionException(
+        UbicacionError.servicioApagado,
+      );
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      await tester.tap(_botonCargar);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Prendé la ubicación'), findsOneWidget);
     });
   });
 

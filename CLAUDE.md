@@ -46,6 +46,13 @@ Fuera (NO implementar todavía, aunque se modele o se deje el cableado):
 - OAuth (dejar el cableado preparado, pero NO activarlo).
 - Productos pesables / genéricos (modelar en el esquema, pero desactivados por config).
 
+## Alcance de v0.0.2 (en curso)
+
+Plan en `docs/04-plan-v0.0.2.md`: roles y alta de local (corte 5), geofence,
+ETL por fuente, frescura visible, anti-spam y preparación del release. El Doc 1
+sigue mandando: el alta de locales por cualquier usuario es solo un interruptor de
+prueba (`config.alta_locales_abierta`).
+
 ## Stack
 
 - App: Flutter (Android).

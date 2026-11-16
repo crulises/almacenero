@@ -2,9 +2,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../app_deps.dart';
 import '../data/local_repository.dart';
+import '../data/location_service.dart';
 import '../data/price_repository.dart';
 import '../data/product_repository.dart';
 import '../domain/precio.dart';
+import 'create_local_dialog.dart';
 
 /// Carga el precio de un producto en el local. Al terminar muestra el karma resultante.
 class PriceScreen extends StatefulWidget {
@@ -18,18 +20,23 @@ class PriceScreen extends StatefulWidget {
 }
 
 class _PriceScreenState extends State<PriceScreen> {
-  // v0.0.1: un solo local (el del admin), así que se usa el primero.
-  late Future<Local> _local = _cargarLocal();
+  late Future<void> _contexto = _cargarContexto();
   final _precioController = TextEditingController();
+  Ubicacion? _ubicacion;
+  List<Local> _locales = [];
+  Local? _elegido;
   String? _errorCampo;
   String? _errorEnvio;
   bool _enviando = false;
   PrecioCargado? _resultado;
 
-  Future<Local> _cargarLocal() async {
-    final locales = await widget.deps.loadLocales();
-    if (locales.isEmpty) throw StateError('No hay locales cargados');
-    return locales.first;
+  /// Ubicación del usuario y locales a su alrededor (el más cercano, elegido).
+  Future<void> _cargarContexto() async {
+    final ubicacion = await widget.deps.obtenerUbicacion();
+    final locales = await widget.deps.loadLocalesCerca(ubicacion);
+    _ubicacion = ubicacion;
+    _locales = locales;
+    _elegido = locales.isEmpty ? null : locales.first;
   }
 
   @override
@@ -38,11 +45,61 @@ class _PriceScreenState extends State<PriceScreen> {
     super.dispose();
   }
 
-  void _reintentarLocal() {
+  void _reintentarContexto() {
     setState(() {
-      _local = _cargarLocal();
+      _contexto = _cargarContexto();
     });
   }
+
+  Future<void> _crearLocal() async {
+    final local = await mostrarCrearLocal(
+      context,
+      deps: widget.deps,
+      ubicacion: _ubicacion!,
+    );
+    if (local == null || !mounted) return;
+    setState(() {
+      _locales = [local, ..._locales];
+      _elegido = local;
+    });
+  }
+
+  Future<void> _cambiarLocal() async {
+    final elegido = await showModalBottomSheet<Object>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(title: Text('¿En qué local estás?')),
+            for (final l in _locales)
+              ListTile(
+                title: Text(l.nombre),
+                subtitle: Text(_detalleLocal(l)),
+                selected: l.id == _elegido?.id,
+                onTap: () => Navigator.of(context).pop(l),
+              ),
+            ListTile(
+              leading: const Icon(Icons.add_location_alt),
+              title: const Text('Es otro local: crear uno nuevo aquí'),
+              onTap: () => Navigator.of(context).pop('crear'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (elegido is Local) {
+      setState(() => _elegido = elegido);
+    } else if (elegido == 'crear') {
+      await _crearLocal();
+    }
+  }
+
+  String _detalleLocal(Local l) => [
+    if (l.distanciaM != null) 'a ${l.distanciaM!.round()} m',
+    if (!l.verificado) 'sin verificar',
+  ].join(' · ');
 
   Future<void> _enviar(Local local) async {
     final precio = parsearPrecio(_precioController.text);
@@ -91,14 +148,16 @@ class _PriceScreenState extends State<PriceScreen> {
         padding: const EdgeInsets.all(24),
         child: _resultado != null
             ? _exito(context, _resultado!)
-            : FutureBuilder<Local>(
-                future: _local,
+            : FutureBuilder<void>(
+                future: _contexto,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState != ConnectionState.done) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  if (snapshot.hasError) return _errorLocal();
-                  return _formulario(context, snapshot.requireData);
+                  if (snapshot.hasError) return _errorContexto(snapshot.error!);
+                  final local = _elegido;
+                  if (local == null) return _sinLocales();
+                  return _formulario(context, local);
                 },
               ),
       ),
@@ -113,7 +172,21 @@ class _PriceScreenState extends State<PriceScreen> {
         Text(p.nombre, style: texto.headlineSmall),
         if (p.tamano != null) Text(p.tamano!, style: texto.bodyLarge),
         const SizedBox(height: 4),
-        Text('en ${local.nombre}', style: texto.bodyMedium),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'en ${local.nombre}'
+                '${local.verificado ? '' : ' (sin verificar)'}',
+                style: texto.bodyMedium,
+              ),
+            ),
+            TextButton(
+              onPressed: _enviando ? null : _cambiarLocal,
+              child: const Text('Cambiar'),
+            ),
+          ],
+        ),
         const SizedBox(height: 24),
         TextField(
           controller: _precioController,
@@ -150,16 +223,53 @@ class _PriceScreenState extends State<PriceScreen> {
     );
   }
 
-  Widget _errorLocal() {
+  Widget _errorContexto(Object error) {
+    final tipo = clasificarErrorUbicacion(error);
+    final mensaje = switch (tipo) {
+      UbicacionError.permisoDenegado =>
+        'Necesitamos tu ubicación para saber en qué local estás.',
+      UbicacionError.permisoDenegadoParaSiempre => 'Negaste el permiso de ubicación. Activalo desde los ajustes de la app.',
+      UbicacionError.servicioApagado =>
+        'Prendé la ubicación (GPS) del teléfono para continuar.',
+      UbicacionError.otro =>
+        'No pudimos obtener tu ubicación ni los locales cerca.',
+    };
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('No pudimos obtener el local'),
+          Text(mensaje, textAlign: TextAlign.center),
           const SizedBox(height: 12),
+          if (tipo == UbicacionError.permisoDenegadoParaSiempre) ...[
+            FilledButton(
+              onPressed: widget.deps.abrirAjustes,
+              child: const Text('Abrir ajustes'),
+            ),
+            const SizedBox(height: 8),
+          ],
           FilledButton(
-            onPressed: _reintentarLocal,
+            onPressed: _reintentarContexto,
             child: const Text('Reintentar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sinLocales() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'No hay locales registrados cerca de acá.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _crearLocal,
+            icon: const Icon(Icons.add_location_alt),
+            label: const Text('Crear local aquí'),
           ),
         ],
       ),

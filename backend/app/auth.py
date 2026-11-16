@@ -22,6 +22,7 @@ class Usuario:
     auth_id: UUID
     alias: str
     karma: int
+    rol: str = "usuario"
 
 
 @lru_cache
@@ -65,7 +66,7 @@ async def current_user(
         """
         insert into usuarios (auth_id, alias) values ($1, $2)
         on conflict (auth_id) do update set auth_id = excluded.auth_id
-        returning id, auth_id, alias, karma
+        returning id, auth_id, alias, karma, rol
         """,
         auth_id,
         f"anon-{str(auth_id)[:6]}",
