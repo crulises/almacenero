@@ -372,6 +372,19 @@ instalá esos.
 - **Tests de locales con coordenadas al azar en el Atlántico Sur** y nombres
   `test-…`, que se borran al terminar: no ensucian los locales reales ni
   «locales cerca».
+- **Mapa con `flutter_map` + OpenStreetMap:** sin clave de API ni cuenta. Las
+  teselas públicas de OSM no son para uso masivo (`flutter_map` lo avisa en la
+  consola en debug); sirve para el grupo cerrado y habrá que cambiar de proveedor
+  antes de abrir la app. El `userAgentPackageName` identifica a la app ante OSM.
+- **El mapa va fuera del scroll de la ficha** (arriba), y debajo una lista que sí se
+  desplaza: un mapa dentro de un `ListView` se pelea con el gesto de scroll.
+- **Precio vigente = el último de cada local** (`distinct on (local_id)`); la
+  frescura (verde/amarillo/rojo) y `vencido` los calcula el backend con los
+  umbrales de `config`, no la app.
+- **Tests con `flutter_map`:** los carteles se buscan por `ValueKey`, y al elegir un
+  local el mapa se centra en él, así que los demás carteles pueden quedar fuera de
+  cuadro (el mapa no los construye). La lista es perezosa: en el test hay que
+  agrandar la pantalla para que construya todas las filas.
 - **Se mergean PRs apilados:** al mergear el primero, GitHub reapunta el siguiente a
   `main` solo.
 

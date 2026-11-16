@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed admin test lint build venv apk
+.PHONY: up down migrate seed demo demo-borrar admin test lint build venv apk
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -28,6 +28,14 @@ migrate: ## Aplica migraciones pendientes
 seed: ## Carga datos de arranque (idempotente)
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
+
+demo: ## Datos de demo (3 locales con precios de distinta frescura) para ver el mapa
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/demo.sql
+
+demo-borrar: ## Borra los datos de demo
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -c "delete from precios where local_id in (select id from locales where nombre like 'demo-%'); delete from locales where nombre like 'demo-%'; delete from precios where user_id in (select id from usuarios where alias = 'demo-usuario'); delete from usuarios where alias = 'demo-usuario';"
 
 admin: ## Promueve a un usuario a admin: make admin ALIAS=anon-1ff221
 	@test -n "$(ALIAS)" || { echo "Uso: make admin ALIAS=<alias del usuario>"; exit 1; }

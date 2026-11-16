@@ -60,4 +60,10 @@ void main() {
       '02/11/2026 (hace 13 días)',
     );
   });
+
+  test('formatearPrecioCorto: sin centavos si son cero', () {
+    expect(formatearPrecioCorto('1234.00'), r'$ 1.234');
+    expect(formatearPrecioCorto('1234.50'), r'$ 1.234,50');
+    expect(formatearPrecioCorto('0.99'), r'$ 0,99');
+  });
 }

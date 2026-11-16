@@ -11,6 +11,9 @@ import asyncpg
 
 DEFAULTS: dict[str, Any] = {
     "geofence_metros": 150,
+    "ventana_frescura_dias": 30,
+    "umbral_verde_dias": 7,
+    "umbral_amarillo_dias": 21,
     "alta_locales_abierta": False,  # seguro por defecto: solo admin (Doc 1)
     "max_locales_por_dia": 50,
     "local_duplicado_metros": 50,

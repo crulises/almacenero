@@ -126,6 +126,51 @@ void main() {
     });
   });
 
+  group('vigentes', () {
+    test('parsea precio, local, ubicación y frescura', () async {
+      estado = (_) => 200;
+      cuerpo = [
+        {
+          'local_id': 'l1',
+          'local_nombre': 'Local del admin',
+          'local_verificado': true,
+          'lat': -34.6,
+          'lng': -58.4,
+          'precio': '1234.50',
+          'fecha': '2026-11-15T13:45:00.123456Z',
+          'edad_dias': 3,
+          'frescura': 'verde',
+          'vencido': false,
+        },
+        {
+          'local_id': 'l2',
+          'local_nombre': 'Otro',
+          'local_verificado': false,
+          'lat': -34.7,
+          'lng': -58.5,
+          'precio': '2000.00',
+          'fecha': '2026-09-01T10:00:00Z',
+          'edad_dias': 75,
+          'frescura': 'rojo',
+          'vencido': true,
+        },
+      ];
+
+      final v = await PriceRepository(api: build()).vigentes('7790070411112');
+
+      expect(
+        pedidos.last.url.path,
+        '/v1/productos/7790070411112/precios/vigentes',
+      );
+      expect(v.map((p) => p.precio), ['1234.50', '2000.00']);
+      expect(v.first.lat, -34.6);
+      expect(v.first.frescura, 'verde');
+      expect(v.first.edadDias, 3);
+      expect(v.last.localVerificado, isFalse);
+      expect(v.last.vencido, isTrue);
+    });
+  });
+
   group('LocalRepository', () {
     const aca = Ubicacion(lat: -34.6, lng: -58.4);
 

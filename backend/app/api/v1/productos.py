@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 from app.auth import Usuario, current_user
 from app.db import get_pool
+from app.services import config
+from app.services.frescura import clasificar
 
 router = APIRouter(tags=["productos"])
 
@@ -29,6 +31,21 @@ class PrecioOut(BaseModel):
     precio: Decimal
     fecha: datetime
     user_id: UUID
+
+
+class PrecioVigenteOut(BaseModel):
+    """El último precio de un producto en un local, con su frescura."""
+
+    local_id: UUID
+    local_nombre: str
+    local_verificado: bool
+    lat: float
+    lng: float
+    precio: Decimal
+    fecha: datetime
+    edad_dias: int
+    frescura: str  # verde | amarillo | rojo
+    vencido: bool  # más viejo que la ventana de frescura
 
 
 def es_ean_de_balanza(ean: str) -> bool:
@@ -77,3 +94,42 @@ async def historial_precios(
         local_id,
     )
     return [PrecioOut(**dict(r)) for r in rows]
+
+
+@router.get("/productos/{ean}/precios/vigentes", response_model=list[PrecioVigenteOut])
+async def precios_vigentes(
+    ean: str,
+    _: Usuario = Depends(current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> list[PrecioVigenteOut]:
+    """El último precio de cada local, del más barato al más caro.
+
+    Con esto se arma la lista y el mapa de «cuánto sale en cada lugar». El historial
+    completo sigue en `/precios`.
+    """
+    rows = await pool.fetch(
+        """
+        select distinct on (p.local_id)
+               p.local_id, l.nombre as local_nombre, l.verificado as local_verificado,
+               st_y(l.ubicacion::geometry) as lat, st_x(l.ubicacion::geometry) as lng,
+               p.precio, p.fecha, (current_date - p.fecha::date) as edad_dias
+        from precios p
+        join productos_canonicos pc on pc.id = p.producto_canonico_id
+        join locales l on l.id = p.local_id
+        where pc.ean = $1
+        order by p.local_id, p.fecha desc
+        """,
+        ean,
+    )
+    verde = int(await config.leer(pool, "umbral_verde_dias"))
+    amarillo = int(await config.leer(pool, "umbral_amarillo_dias"))
+    ventana = int(await config.leer(pool, "ventana_frescura_dias"))
+    vigentes = [
+        PrecioVigenteOut(
+            **dict(r),
+            frescura=clasificar(r["edad_dias"], verde, amarillo),
+            vencido=r["edad_dias"] > ventana,
+        )
+        for r in rows
+    ]
+    return sorted(vigentes, key=lambda v: (v.precio, v.edad_dias))

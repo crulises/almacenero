@@ -16,6 +16,7 @@ class AppDeps {
     required this.crearLocal,
     required this.cargarPrecio,
     required this.loadHistorial,
+    required this.loadVigentes,
   });
 
   final Future<Me> Function() loadMe;
@@ -36,4 +37,5 @@ class AppDeps {
   })
   cargarPrecio;
   final Future<List<PrecioHistorial>> Function(String ean) loadHistorial;
+  final Future<List<PrecioVigente>> Function(String ean) loadVigentes;
 }

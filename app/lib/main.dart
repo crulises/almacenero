@@ -35,6 +35,7 @@ void main() {
         crearLocal: LocalRepository(api: authed).crear,
         cargarPrecio: PriceRepository(api: authed).cargar,
         loadHistorial: PriceRepository(api: authed).historial,
+        loadVigentes: PriceRepository(api: authed).vigentes,
       ),
     ),
   );
