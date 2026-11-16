@@ -1,10 +1,11 @@
 # Plan v0.0.2
 
-Estado: **propuesta para revisar**. Parte de v0.0.1 cerrada y probada en un
-celular real (escanear, cargar precio, karma, historial). Ante una duda de
-comportamiento gana el Doc 1; ante una duda técnica, el Doc 2. Este plan
-**cambia una regla del Doc 1** (alta de locales, ver §2); al aprobarlo hay que
-actualizar ese doc y la sección de alcance de `CLAUDE.md`.
+Estado: **plan aprobado, con decisiones abiertas al final**. Parte de v0.0.1
+cerrada y probada en un celular real (escanear, cargar precio, karma,
+historial). Ante una duda de comportamiento gana el Doc 1; ante una duda técnica,
+el Doc 2. **El Doc 1 no cambia**: la regla «solo el admin crea locales» sigue
+vigente; el alta abierta a cualquier usuario es solo una comodidad de prueba
+(ver §2). Hay que actualizar la sección de alcance de `CLAUDE.md` al arrancar.
 
 ## Objetivo de v0.0.2
 
@@ -55,11 +56,53 @@ Propuesta mínima, sin sobrearmar:
 | Cambiar configuración (`config`) | no | sí |
 | Emitir invitaciones | no | sí |
 
+### ¿Alcanza una columna, o hace falta un ACL más robusto?
+
+Estudio corto, para decidir con criterio y no por moda.
+
+**Lo que el producto va a necesitar** (según el Doc 1):
+
+- Un administrador (hoy).
+- Capacidades que **dependen del karma** («los de karma bajo entran a validación
+  con más lupa», el que valida bien gana peso). Eso es una regla sobre un
+  *atributo* del usuario, no un rol.
+- Probablemente un **moderador** que valide o resuelva conflictos.
+- Quizás permisos **acotados a un local o zona** (p. ej. alguien de confianza
+  para un barrio). Es lo único que una columna simple no puede expresar.
+
+**Opciones:**
+
+| Opción | Qué es | Cuándo tiene sentido |
+|--------|--------|----------------------|
+| A. Columna `rol` | Un valor por usuario, comprobado en el backend | Pocos roles, sin alcance por local. **Hoy.** |
+| B. RBAC con tablas | `roles`, `permisos`, `rol_permisos`, `usuario_roles` (con `local_id` opcional como alcance) | Varios roles, permisos editables o con alcance. Probablemente v0.1+. |
+| C. Motor externo (Casbin, Oso, Cerbos, SpiceDB) | Políticas declarativas o servicio aparte | Muchos recursos y reglas cruzadas. Excesivo para un proyecto de hobby. |
+| D. RLS de Postgres | Políticas en la base | **No encaja**: el cliente nunca habla con la base y la lógica de negocio vive en el backend (CLAUDE.md). |
+
+**Recomendación:** empezar con A, pero **diseñando para migrar a B sin tocar los
+endpoints**:
+
+- Los endpoints nunca preguntan «¿es admin?». Preguntan por una **capacidad con
+  nombre**: `puede(usuario, "local.verificar")`. Hay un solo módulo del backend
+  que traduce rol → capacidades.
+- Hoy ese módulo es un diccionario en código (`admin` tiene todas, `usuario` las
+  básicas). Migrar a tablas es cambiar **un módulo y una migración**, no cada
+  endpoint.
+- Las reglas por karma son lógica de negocio en ese mismo módulo, con umbrales en
+  `config` (p. ej. `karma_minimo_para_validar`).
+
+**Cuándo pasar a B:** cuando aparezca el segundo rol con privilegios (moderador),
+un permiso con alcance por local, o la necesidad de editar permisos sin
+desplegar. Hasta entonces B sería sobreingeniería.
+
 ## 2. Alta de local por cualquier usuario (corte 5)
 
-**Cambia el Doc 1** («por ahora solo el admin crea locales»). Decisión del
-dueño del proyecto: se permite a un usuario anónimo crear el local donde está,
-para poder seguir probando y cargando.
+Mientras no haya forma de crear usuarios con rol (hoy todos son anónimos), la
+regla del Doc 1 («solo el admin crea locales») impediría probar. **Solución: un
+interruptor de configuración**, `config.alta_locales_abierta`, en `true` durante
+las pruebas. Con `false`, solo un admin crea locales, como dice el Doc 1. No se
+cambia el Doc 1: es una comodidad temporal y se apaga cuando haya setup de
+usuarios.
 
 Diseño:
 
@@ -68,9 +111,17 @@ Diseño:
   verifica, corrige o fusiona con un duplicado.
 - `POST /v1/locales` con nombre y la ubicación **actual** (lat/lng). La
   ubicación sale del GPS, no se tipea: es lo que da sentido al geofence.
-- **Anti-duplicados:** si ya hay un local a menos de ~50 m, el backend lo
-  devuelve como sugerencia y la app pregunta «¿es este?» en vez de crear otro.
-- **Límite por usuario:** pocos locales nuevos por día (valor en `config`).
+- **Anti-duplicados, sin bloquear.** Hay locales contiguos legítimos (dos
+  kioscos pegados), así que la distancia sola **no** puede impedir el alta. Cómo
+  se resuelve:
+  - Al crear, la app muestra los locales cercanos (~50 m) y pregunta «¿es alguno
+    de estos?», con una salida siempre visible: «Es otro local, crear nuevo».
+  - El backend **solo bloquea** el caso casi seguro de duplicado: **mismo nombre
+    (normalizado, comparado con similitud de texto) a muy poca distancia**. Ahí
+    responde con el local existente en vez de crear.
+  - Para la similitud se usa la extensión `pg_trgm` de Postgres.
+- **Límite por usuario:** 50 locales nuevos por día al principio. El valor vive
+  en `config` (`max_locales_por_dia`) y se baja cuando haya más usuarios.
 - `GET /v1/locales/cerca?lat=&lng=` ordenado por distancia (PostGIS,
   `ST_DWithin` + `ST_Distance` sobre el índice GiST que ya existe).
 - La app detecta el local más cercano dentro del geofence; si no hay ninguno,
@@ -97,28 +148,88 @@ la app).
 - Leer precios sigue sin pedir ubicación (Doc 1).
 - Para probar en el emulador: `adb emu geo fix <lng> <lat>`.
 
-## 4. Catálogo real: ETL de Open Food Facts (corte 7)
+## 4. Catálogo real: un ETL por fuente (corte 7)
 
-- Pipeline en `etl/` (Python, aparte del backend), con target `make etl`.
-- **Fuente:** el volcado completo de Open Food Facts (no la API producto por
-  producto). Es un archivo de varios GB: se baja a `etl/data/` (ya ignorado por
-  git) y se procesa en streaming. **La descarga grande requiere tu OK** cuando
-  llegue el momento.
-- **Pasos:** filtrar productos de Argentina → validar el EAN (largo y dígito
-  verificador) → normalizar `quantity` a `tamano_valor` + `tamano_unidad`
-  (`"900 ml"`, `"1,5 L"`, `"500g"`; los multipack se tratan aparte o se
-  descartan) → *upsert* por EAN con `origen = 'off'`.
-- **Idempotente y sin pisar al admin:** no sobrescribe filas con
-  `origen = 'manual'`. Se puede correr de nuevo sin duplicar.
+### Principio: un ETL por fuente, un solo destino
+
+- Cada fuente tiene su propio pipeline (`etl/off/`, `etl/<otra-fuente>/`, ...)
+  con su lógica propia. No se fuerza una abstracción común: es más simple y más
+  flexible.
+- Todos escriben al mismo catálogo (`productos_canonicos`) a través de una capa
+  mínima compartida (conexión, *upsert*, normalización de tamaño/unidad). Target
+  del Makefile por fuente (`make etl-off`).
+- **Idempotentes**: correrlos de nuevo no duplica ni pisa lo que cargó el admin.
+
+### Primera fuente: Open Food Facts, todo el mundo
+
+- Fuente: el **volcado completo** de OFF (no la API producto por producto), sin
+  filtrar por país: en un local de barrio puede haber productos importados.
+  El archivo pesa varios GB: se baja a `etl/data/` (ignorado por git) y se procesa
+  en streaming. **La descarga grande requiere tu OK** cuando llegue el momento.
+- Pasos: validar el EAN (largo y dígito verificador) → normalizar `quantity` a
+  `tamano_valor` + `tamano_unidad` → *upsert* por EAN con `origen = 'off'`.
 - Imagen: URL de OFF, no se guarda el archivo (Doc 2).
-- Tendrá tests sobre la normalización (es donde se ensucian los datos) y un
-  reporte de cuántos productos se cargaron y cuántos se descartaron y por qué.
-- **Otras fuentes a investigar** (cada una sería su propio ETL): los datos
-  abiertos de precios del Estado argentino (SEPA / «Precios Claros») traen
-  productos con EAN y precios por comercio; hay que revisar formato, licencia y
-  frecuencia antes de decidir. También aportes manuales del admin.
-- A futuro se podría ofrecer «alta mínima de producto» desde la app para EAN que
-  ningún ETL cubra; queda fuera de v0.0.2.
+- Reporte al final: cuántos se cargaron y cuántos se descartaron, y por qué.
+- Tests sobre la normalización, que es donde se ensucian los datos.
+
+### Tamaño: medir antes de prometer
+
+Cargar «todo» son **millones de filas** (el número exacto se mide con el
+volcado). En local no hay problema. En producción hay que tener en cuenta que el
+plan gratis de Supabase tiene un tope de almacenamiento de base de datos
+(verificar el valor vigente), y el catálogo completo con índices podría pasarlo.
+Plan: **cargar todo en local, medir el tamaño real** y recién ahí decidir entre:
+
+1. Pagar un plan con más espacio.
+2. Cargar completo solo lo «útil» (con nombre y tamaño utilizables) y el resto
+   bajo demanda.
+3. **Carga bajo demanda:** si un EAN no está en el catálogo, el backend lo busca
+   en la API de OFF, lo guarda y lo devuelve. Cubre todo el mundo sin almacenar
+   todo. Se puede combinar con la carga masiva de la región.
+
+### Búsqueda por EAN y caché
+
+- **Ya está indexado:** `productos_canonicos.ean` es `unique`, y esa restricción
+  crea un índice B-tree. Buscar por EAN es una lectura por índice, del orden del
+  milisegundo, aun con millones de filas.
+- **Caché: no al principio.** Con ese índice probablemente no haga falta. Se mide
+  primero. Dos advertencias para cuando llegue el momento:
+  - `@lru_cache` **no funciona con funciones `async`** (cachea el *coroutine*,
+    que solo se puede esperar una vez). Para cachear en el backend async se usa
+    `cachetools.TTLCache` (acotado y con vencimiento) detrás de una función
+    propia.
+  - La caché en memoria es por proceso: con varios workers cada uno tiene la
+    suya. Si hace falta compartirla, el siguiente paso es Redis. Se cachea el
+    **producto** (casi no cambia), nunca los precios.
+
+### Varias fuentes y conflictos
+
+Cuando dos fuentes (o una fuente y el admin) discrepan sobre un EAN, no se pisa
+nada en silencio: queda en una **lista corta para revisar a mano**.
+
+- `producto_fuentes`: el dato crudo de cada fuente por EAN (`ean`, `fuente`,
+  `datos` jsonb, `cargado_en`). El catálogo canónico se arma desde acá, con un
+  **orden de prioridad de fuentes** configurable.
+- `conflictos_catalogo`: `ean`, `campo`, valor y fuente A, valor y fuente B,
+  `estado` (pendiente / resuelto), quién lo resolvió y cuándo.
+- **Qué cuenta como conflicto** (para que la lista siga corta): tamaño o unidad
+  distintos tras normalizar, y marca o nombre **muy** distintos (por similitud de
+  texto). Las diferencias de forma (mayúsculas, acentos, «Aceite Girasol» vs.
+  «aceite de girasol») **no** son conflicto.
+- Un campo que el admin resolvió queda **bloqueado**: ningún ETL lo vuelve a
+  tocar.
+- Revisión en v0.0.2: endpoint de admin y `make conflictos` en consola. Una
+  pantalla en la app, más adelante.
+
+### Otras fuentes a investigar (cada una, su propio ETL)
+
+- Datos abiertos de precios del Estado argentino (SEPA / «Precios Claros»):
+  traen productos con EAN y precios por comercio. Hay que revisar formato,
+  licencia y frecuencia de actualización antes de decidir.
+- Aportes manuales del admin.
+
+El «alta mínima de producto» desde la app (para un EAN que ninguna fuente cubra)
+queda fuera de v0.0.2.
 
 ## 5. Frescura y precio vigente (corte 8)
 
@@ -140,9 +251,11 @@ la más barata a la más pesada:
 1. **Aplicar `modo_acceso`** (ya existe en `config`, hoy en `solo_invitacion`,
    pero nada lo lee). Con ese modo, crear una sesión anónima exige un **código de
    invitación**. Es la defensa más fuerte para un grupo cerrado de ~50 personas
-   y está en el Doc 1. Códigos por persona (tabla `invitaciones`: código, usos
-   máximos, usos, vencimiento), emitidos por el admin; así se puede revocar uno
-   sin afectar a los demás. La app pide el código solo en el primer arranque.
+   y está en el Doc 1. **Decisión: un código compartido** para el grupo. Va en una
+   tabla `invitaciones` (código, usos máximos opcional, usos, vencimiento): hoy
+   con una sola fila, y si más adelante se quieren códigos por persona (revocables
+   uno a uno) no hace falta cambiar el diseño. La app pide el código solo en el
+   primer arranque. Contra: si el código se filtra, hay que rotarlo para todos.
 2. **Rate limit por IP** en `/v1/auth/anonymous` y `/v1/auth/refresh` (por
    ejemplo unas pocas altas por hora por IP). Detrás de un proxy hay que leer la
    IP real del header correcto, no la del proxy. Además, el auth de Supabase trae
@@ -200,15 +313,58 @@ así que conviene el *session pooler* o ajustar el cliente: probarlo antes),
 anon), `JWKS_URL`. Las migraciones se aplican a mano a la base remota; **no** se
 corre el seed de desarrollo, solo la config inicial y los datos reales.
 
-### ¿Hace falta un dominio?
+### Dominio: uno solo alcanza para todos tus proyectos
 
-No para probar: alcanza el subdominio HTTPS del host. Pero **conviene comprarlo
-antes de repartir el APK**, por una razón práctica: la URL de la API queda
-grabada en el APK. Con un dominio propio (`api.tudominio.com`) se puede cambiar
-de host (de Render a Fly, o a una VPS) **sin recompilar ni reinstalar nada**.
-Además da una imagen más profesional y permite poner Cloudflare delante (capa
-extra anti-spam). Costo orientativo: unos USD 10-15 al año por un `.com`; un
-`.com.ar` se gestiona en NIC Argentina y pide CUIT/CUIL (verificar).
+Se compra **un dominio** y los subdominios son **gratis e ilimitados**: son
+registros DNS que creás en el panel, sin comprar nada. Cada uno puede apuntar a un
+servicio y un proveedor distintos.
+
+```
+api-almacenero.ejemplo.com   → backend de este proyecto (Fly/Render/...)
+proyecto2-api.ejemplo.com    → backend de otro proyecto, en otro host
+blog.ejemplo.com             → un blog
+cv.ejemplo.com               → tu CV
+```
+
+- **HTTPS por subdominio:** cada host emite el certificado de su subdominio solo
+  (Let's Encrypt). No pagás certificados.
+- **Un solo nivel de subdominio** (`proyecto1-api.ejemplo.com`, como proponés).
+  Evitá `api.proyecto1.ejemplo.com`: los certificados comodín y el proxy gratis de
+  Cloudflare cubren un solo nivel.
+- **Registrador y DNS:** recomiendo Cloudflare (registro al costo, sin sobreprecio,
+  DNS gratis, y delante del backend da rate limiting y WAF: capa anti-spam
+  extra). Alternativas: Namecheap, Porkbun. Lo importante es poder editar el DNS
+  libremente.
+- **Al comprar:** activar la renovación automática y el 2FA en el registrador
+  (perder el dominio o que te lo roben es peor que cualquier bug), y dejar activa
+  la privacidad del WHOIS.
+- **Si usás el proxy de Cloudflare**, el backend debe leer la IP real del cliente
+  del header que corresponde (para el rate limit de §6).
+- **Un caso aparte** son los `.com.ar`: se gestionan en NIC Argentina y piden
+  CUIT/CUIL (verificar requisitos).
+
+La URL de la API queda grabada en el APK, así que con dominio propio se puede
+cambiar de host **sin recompilar ni reinstalar nada**.
+
+### `applicationId`
+
+El estándar (heredado de los nombres de paquete de Java) es el **dominio
+invertido de algo que controlás** más el nombre de la app: `com.ejemplo.almacenero`.
+Así se evitan colisiones entre apps de distintos autores. Reglas: segmentos
+separados por punto, al menos dos, cada uno empieza con letra y usa letras,
+números o guion bajo.
+
+El actual, `ar.almacenero.almacenero`, **no sigue el estándar del todo**: usé `ar`
+como si fuera el TLD y el nombre del proyecto como si fuera un dominio, que no es
+tuyo. Funciona, pero no es el criterio recomendado.
+
+**Recomendación:** decidir el `applicationId` **después de comprar el dominio** y
+**antes del primer release firmado** (`com.<tu-dominio>.almacenero`). Cambiarlo
+ahora es barato: hay que renombrar el paquete en `build.gradle.kts` y mover
+`MainActivity`. Efecto secundario: Android lo trata como otra app, así que se
+pierde la sesión guardada en los celulares de prueba (el usuario anónimo se
+recrea y el karma de prueba queda con el usuario viejo). Una vez publicado, **no
+se puede cambiar**.
 
 ### Qué tendrías que hacer vos
 
@@ -221,20 +377,34 @@ Yo preparo el resto (Dockerfile listo para prod, guía paso a paso en `docs/`,
 `make` targets, configuración del `build.gradle.kts`) sin tocar tus cuentas ni
 credenciales.
 
-## Decisiones que necesito de vos
+## Decisiones
 
-1. **Alta de local por cualquier usuario, sin verificar** (§2): ¿confirmás, con
-   el anti-duplicados y el límite diario?
-2. **Invitaciones por persona** (§6) vs. un único código compartido: recomiendo
-   por persona.
-3. **Host del backend** (§7): Fly.io, Render o Railway. Recomiendo decidirlo con
-   los precios vigentes a mano cuando lleguemos al corte 10.
-4. **Dominio:** ¿lo comprás antes del primer reparto del APK?
-5. **`applicationId`:** ¿queda `ar.almacenero.almacenero`?
+**Tomadas**
+
+1. Alta de local por cualquier usuario, sin verificar, **solo para pruebas** y
+   controlada por `config.alta_locales_abierta`. El Doc 1 no cambia.
+2. Anti-duplicados **sin bloqueo por distancia** (locales contiguos), bloqueando
+   solo nombre casi idéntico a muy poca distancia.
+3. Límite de locales nuevos por día: **50**, en `config`.
+4. Invitaciones: **un código compartido**.
+5. ETL: **uno por fuente**, todo el mundo (no solo Argentina), con lista de
+   conflictos para revisión manual.
+6. Roles: empezar con una columna `rol` detrás de un módulo de capacidades, para
+   migrar a tablas sin tocar endpoints (§1).
+
+**Abiertas**
+
+- **Host del backend:** en evaluación por el dueño del proyecto.
+- **Dominio:** lo busca el dueño del proyecto (uno solo, con subdominios).
+- **`applicationId`:** decidir tras comprar el dominio y antes del primer release
+  firmado (§7).
+- **Tamaño del catálogo en producción:** se decide tras medir la carga completa
+  en local (§4).
 
 ## Documentación a actualizar al ejecutar el plan
 
-- Doc 1: alta de locales por usuarios; invitaciones; roles.
+- Doc 1: invitaciones y roles (el alta de locales por usuarios **no**: es solo
+  un interruptor de prueba).
 - `CLAUDE.md`: alcance de v0.0.2 (hoy solo describe v0.0.1).
 - `docs/03-problemas-soluciones.md`: lo que vaya apareciendo en cada corte
   (como hasta ahora).
