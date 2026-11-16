@@ -51,35 +51,42 @@ eso el plan cambia de «volcado completo (varios GB)» a «CSV (1,4 GiB)». Se a
 a diario. Licencia: **ODbL** para la base (atribución y share-alike si se redistribuye
 la base) y CC-BY-SA para las imágenes (por eso solo guardamos la URL, nunca el archivo).
 
-### Prueba con una muestra real (primeros 30 MB del CSV, 94 015 filas)
+### Carga completa medida (CSV de 1,43 GiB, 2026-11-16)
 
-- Tiempo: ~10 s para cargar 94 k filas (≈ 9 000 filas/s) → el completo (estimado en
-  ~4,8 M filas por proporción de bytes) tardaría del orden de **10 minutos**.
-- Resultado: 93 479 cargados; 536 descartados (494 sin nombre, 41 dígito verificador
-  inválido, 1 EAN de balanza). **~51 % no trae `quantity`** en OFF; de los que sí
-  traen, el parser entiende el 98 % (el resto son «1/2 gallon», «25 sachets», etc.).
-- Espacio por producto: canónico 15 MB + índices 7 MB + `producto_fuentes` 28 MB
-  = ~535 B/producto. **Extrapolando a ~4,8 M productos: ≈ 2,5 GB** (estimación
-  gruesa: la muestra tiene casi todo EE. UU. y los nombres de otras regiones
-  son más largos). Es **5 veces** el tope de 500 MB del plan gratis de Supabase
-  (valor a verificar al desplegar).
-- Búsqueda por EAN con 93 k filas: **0,29 ms** (Index Scan sobre `ean`).
-  No hace falta caché; si se mide una necesidad, `cachetools.TTLCache` detrás de
-  una función propia (no `lru_cache` sobre `async`).
-- La muestra es sesgada (el CSV viene ordenado por código: empieza por EE. UU.), así
-  que **faltan datos reales de Argentina**: solo 3 productos argentinos en la muestra.
-  La medición definitiva requiere el volcado completo.
+Descargado con tu OK (≈ 40 min a ~600 KB/s) y cargado en local:
+
+- **4 916 182 filas leídas → 4 084 328 productos en el catálogo** (el resto:
+  831 817 descartadas). Tiempo: **14 min** (≈ 5 800 filas/s) en una Mac, con la base
+  en Docker.
+- Descartes: 330 479 EAN de balanza, 307 453 sin nombre, 122 164 con dígito
+  verificador inválido, 71 721 de largo inválido.
+- **Tamaño en la base: 2,4 GB en total.** `productos_canonicos` 1 067 MB (751 de datos +
+  316 de índices) y `producto_fuentes` 1 342 MB (el jsonb crudo pesa más que el
+  catálogo). Son ≈ 590 B/producto. El tope de 500 MB del plan gratis de Supabase
+  (a verificar) queda **5 veces** excedido.
+- **Cobertura útil:** solo 1,29 M productos (31 %) tienen tamaño interpretable; 3,0 M
+  tienen imagen. Por país (productos con ese país en `countries_tags`, un producto
+  puede estar en varios): Francia 1,03 M, EE. UU. 0,90 M, Alemania 0,39 M, España
+  0,28 M, Italia 0,25 M. **Argentina: 14 040** (4 985 con tamaño); Argentina + vecinos
+  (PY, BR, CL, UY, BO): 61 462. O sea que OFF cubre muy poco de la góndola argentina.
+- **Búsqueda por EAN con 4 M de filas: 3,7 ms** en la primera lectura (Index Scan
+  sobre `ean`). No hace falta caché.
+- **Un subconjunto «Argentina + vecinos»** ocuparía del orden de **35 MB**
+  (61 k × 590 B): entra de sobra en el plan gratis.
+- Problemas que aparecieron **solo con el volcado real**: caracteres NUL sueltos que
+  rompen el lector CSV (corregido y con test) y EAN de 14 dígitos o de largo raro.
 
 ### Decisión pendiente sobre producción (después de cargar todo en local)
 
-1. Cargar todo (~2,5 GB): requiere plan pago de base.
+1. Cargar todo (2,4 GB medidos): requiere plan pago de base.
 2. **Subconjunto**: `producto_fuentes.datos->'paises'` ya guarda los países de cada
    producto, así que se puede cargar solo lo que tenga `en:argentina` (más países
    vecinos) y con nombre; un `delete`/filtro posterior es simple.
 3. **Bajo demanda** (recomendado combinar con 2): si un EAN no está, el backend
    consulta `world.openfoodfacts.org/api/v2/product/{ean}`, lo guarda y lo devuelve.
-   La API pide un User-Agent identificable y tiene límites (≈100 lecturas/min por
-   producto, a verificar). Falta implementarlo en `backend/`.
+   La API pide un User-Agent identificable y tiene límites (a verificar). Falta
+   implementarlo en `backend/`. Con 14 k productos argentinos en OFF, la carga bajo
+   demanda sola no alcanza: la cobertura real de Argentina la daría SEPA (§3.1).
 
 ### Detalle a resolver en el backend
 
@@ -110,11 +117,21 @@ Verificado en `datos.produccion.gob.ar/dataset/sepa-precios`:
   términos de `preciosclaros.gob.ar` dicen CC BY 2.5 AR para sus contenidos. Ambas
   exigen atribución y permiten uso comercial. Los datos los cargan los comercios y el
   Estado **no garantiza su veracidad** (hay que mostrarlo así).
-- **No se verificó**: el tamaño de cada zip (el servidor no devuelve
-  `Content-Length`) ni la estructura interna. Según la documentación pública cada zip
-  trae por comercio un `comercio.csv`, un `sucursales.csv` (con dirección y
-  latitud/longitud) y un `productos.csv` (EAN, descripción, marca, presentación,
-  precio). Hay que bajar **un** zip (con tu OK) para confirmar columnas y tamaño.
+- **Medido con el zip del domingo 2026-11-15** (330 MB, descarga completa y válida;
+  los de viernes y martes quedaron truncados: el servidor corta conexiones largas y no
+  admite reanudar, así que hay que reintentar). Es un **zip de zips**: uno por
+  comercio (16 en ese archivo), y cada uno con `comercio.csv`, `sucursales.csv` y
+  `productos.csv`, separados por `|`.
+  - `productos.csv`: `id_producto` (**el EAN**; `productos_ean` es solo un flag 1/0),
+    descripción, `cantidad_presentacion` + `unidad_medida_presentacion`, marca, precio
+    de lista, precio de referencia y promos. **14,7 M de filas, 81 325 EAN distintos**
+    (76 202 válidos; 398 k filas son EAN de balanza y 7 k tienen dígito inválido).
+  - `sucursales.csv`: nombre, tipo, calle, número, **latitud/longitud**, localidad,
+    provincia (código ISO, p. ej. `AR-N` = Misiones), horarios por día. 3 060
+    sucursales, 97 % con coordenadas.
+  - Suciedad real: 9 de 16 archivos con BOM, caracteres NUL, unidades inconsistentes
+    (`UNI`, `GR`, `gr.`, `grm`, `cm3`, `cmq`...), 205 k filas sin marca, nombres en
+    mayúsculas y abreviados («ACEITE OLIVA NUCETE EXTRA VIRGEN BOT 250 CC»).
 - **Valor para nosotros:** (a) catálogo con EAN real de góndolas argentinas, que
   complementa a OFF justo donde OFF es flojo; (b) **sucursales con coordenadas** de
   los grandes (Coto, Carrefour, Día, Jumbo...), que sirven para validar/enriquecer
@@ -124,7 +141,13 @@ Verificado en `datos.produccion.gob.ar/dataset/sepa-precios`:
   (`fuente = 'sepa'`, ya admitida por la migración), con la misma fusión y conflictos.
   Con prioridad menor a OFF salvo que se mida lo contrario, porque en SEPA las
   descripciones son de cada cadena (MAYÚSCULAS, abreviadas) y generarían ruido.
-  Como las cadenas repiten el mismo EAN, hay que deduplicar por EAN antes de cargar.
+  Como las cadenas repiten el mismo EAN (14,7 M de filas para 81 k EAN), hay que
+  deduplicar por EAN antes de cargar. Es **el aporte más grande para Argentina**:
+  81 k EAN contra 14 k de OFF; falta medir cuántos se solapan con OFF (el ETL de
+  SEPA lo mostraría como conflictos y completados).
+- **Sucursales de Misiones en SEPA: solo 17** (13 en Posadas; California
+  Supermercados, Farmacity, Changomas, La Anónima), contra 1 043 en OSM: para locales
+  de Misiones SEPA casi no sirve.
 
 ## 4. Catálogo de locales vía OpenStreetMap
 
@@ -177,6 +200,17 @@ la realidad (Córdoba: 312 contra miles de comercios reales), con almacenes de b
 subrepresentados. Sirve como **base para «locales cerca» y para no empezar de cero**,
 no como directorio completo.
 
+### 4.1.b Misiones (consulta a pedido)
+
+1 043 supermercados y almacenes (`shop=supermarket|convenience`, consulta por
+límite administrativo). 86 % con nombre, 61 % con calle, 22 % con número, 8 % con
+horario, 1 % con marca; casi todo comercio de barrio («Despensa» 42, Full 10, 143 sin
+nombre). Por ciudad (cuadro aproximado): Posadas 418 (381 con nombre), Oberá 56,
+Puerto Iguazú 45, Jardín América 21, Eldorado 16, Apóstoles 16, Leandro N. Alem 13,
+San Vicente 8. Posadas está bien cubierta; el resto tiene pocos locales por ciudad
+(entre 8 y 56) pero suficientes para arrancar. Decisión pendiente: contrastar con tu
+lista real de comercios antes de cargar y de asumir la atribución ODbL.
+
 ### 4.2 ETL de locales propuesto (`etl/osm/`, no implementado)
 
 1. Fuente: **extracto de Geofabrik** (`argentina-latest.osm.pbf`, actualización
@@ -213,9 +247,9 @@ EAN, `make etl-off` y `make conflictos`, investigación de fuentes y de locales.
 
 Pendiente (necesita tu decisión o tu OK):
 
-1. **OK para descargar el CSV completo de OFF (1,43 GiB)** y medir el tamaño real.
-2. OK para bajar un zip diario de SEPA y confirmar su estructura.
-3. Decidir producción: subconjunto por país + carga bajo demanda desde la API de OFF.
-4. Si querés el ETL de locales OSM, es un corte aparte (requiere migración en `locales`).
-5. `backend/`: endpoint de admin para conflictos, búsqueda por EAN normalizada y
+1. Decidir producción: con 2,4 GB medidos, el plan gratis no alcanza para todo; el
+   subconjunto Argentina+vecinos (~35 MB) sí. SEPA (81 k EAN argentinos) sería la
+   fuente principal para Argentina: ¿abrimos `etl/sepa/`?
+2. Decidir si vale el ETL de locales de OSM para Misiones (§4.1.b).
+3. `backend/`: endpoint de admin para conflictos, búsqueda por EAN normalizada y
    la carga bajo demanda.

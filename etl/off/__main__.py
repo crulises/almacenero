@@ -46,7 +46,9 @@ def filas(archivo: io.TextIOBase) -> Iterator[dict[str, str]]:
     """Filas del CSV como dict (solo las columnas que usamos). Tolera un .gz truncado
     (p. ej. la muestra bajada por rango): termina sin error al llegar al corte."""
     csv.field_size_limit(10**9)
-    lector = csv.reader(archivo, delimiter="\t", quoting=csv.QUOTE_NONE)
+    # El volcado completo trae caracteres NUL sueltos, que el módulo csv no acepta.
+    lineas = (linea.replace("\0", "") for linea in archivo)
+    lector = csv.reader(lineas, delimiter="\t", quoting=csv.QUOTE_NONE)
     cabecera = next(lector)
     idx = {c: cabecera.index(c) for c in COLUMNAS if c in cabecera}
     if "code" not in idx:

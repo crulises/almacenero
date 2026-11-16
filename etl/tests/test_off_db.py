@@ -210,3 +210,11 @@ def test_ean_indexado():
         )
     )
     assert usa_indice >= 2
+
+
+def test_tolera_caracteres_nul(tmp_path):
+    e = ean(1)
+    ruta = csv_off(tmp_path, fila(e, "Aceite\x00 de girasol", "Coci\x00nero", "900 ml"))
+    rep = asyncio.run(cargar(ruta))
+    assert rep.catalogo_nuevos == 1
+    assert producto(e)["nombre"] == "Aceite de girasol"

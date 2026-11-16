@@ -416,6 +416,18 @@ instalá esos.
   verificadores inválidos. El EAN de ejemplo `7791234567890` del seed tiene dígito
   inválido: es manual y no entra en el emparejamiento.
 
+### El volcado completo de OFF trae NUL; los CSV de SEPA, BOM y NUL
+- **Síntoma:** `_csv.Error: line contains NUL` a los 60 s de correr con el volcado
+  completo (la muestra de 30 MB andaba bien).
+- **Solución:** filtrar `\0` línea por línea antes del lector CSV (con test). En SEPA
+  además 9 de 16 archivos empiezan con BOM: abrir con `utf-8-sig`. Moraleja: probar con
+  el volcado completo antes de dar por bueno un ETL.
+
+### Las descargas grandes de SEPA se cortan
+- **Síntoma:** `curl: (18) Transferred a partial file` y zips truncados («End-of-central-
+  directory signature not found»).
+- **Solución:** reintentar y validar con `unzip -tq`; el servidor no soporta reanudar.
+
 ### `$1` sin tipo en sentencias con asyncpg
 - **Síntoma:** `could not determine data type of parameter $1` al usar el parámetro
   en un `select`/`case`. **Solución:** castear (`$1::text`).
@@ -428,5 +440,5 @@ instalá esos.
 - Los desacuerdos no se reabren una vez vistos (`unique` sobre el desacuerdo completo).
 - Los ETL no tienen CI contra datos reales: los tests usan un CSV generado y la base
   local; **los datos de prueba empiezan con `79999`** y se limpian solos.
-- Medido en la muestra de 94 k productos: ~535 B/producto; extrapolado ~2,5 GB para
-  todo OFF (ver `docs/05-fuentes-catalogo.md`).
+- Medido con el volcado completo: 4,08 M productos, 2,4 GB en la base, 14 min de carga,
+  14 k productos argentinos (ver `docs/05-fuentes-catalogo.md`).
