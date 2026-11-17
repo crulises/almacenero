@@ -428,11 +428,21 @@ instalá esos.
   directory signature not found»).
 - **Solución:** reintentar y validar con `unzip -tq`; el servidor no soporta reanudar.
 
+### SEPA: zip interno roto y «1 unidad»
+- **Síntoma:** `BadZipFile: File is not a zip file` a mitad de la carga; y 813 conflictos
+  falsos de tamaño contra OFF (tras el arreglo quedan 157 reales), casi todos «1 u» (SEPA) vs «400 g» (OFF).
+- **Causa:** el zip diario trae algún zip de comercio vacío (0 bytes); y SEPA pone la
+  cantidad de envases («1 UNI») en la presentación.
+- **Solución:** saltar y contar los zips internos inválidos; no tomar «1 u» como tamaño y
+  no comparar tamaños de familias distintas (masa/volumen/unidades).
+
 ### `$1` sin tipo en sentencias con asyncpg
 - **Síntoma:** `could not determine data type of parameter $1` al usar el parámetro
   en un `select`/`case`. **Solución:** castear (`$1::text`).
 
 ### Decisiones del corte 7
+- Prioridad por defecto `manual > sepa > off`; SEPA para Argentina, OFF para vecinos:
+  `make etl-off` filtra por países (`OFF_PAISES`). Medido: 132 k productos = 75 MB.
 - Un ETL por fuente (`etl/<fuente>/`) sobre una capa mínima común; la fusión se hace
   con SQL por lotes (`COPY` a tabla temporal), no fila por fila.
 - Los campos que el admin resuelve se **bloquean con un trigger** (integridad en

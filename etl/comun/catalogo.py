@@ -9,7 +9,7 @@ Reglas de fusión por EAN, con `fuente` = la fuente que se está cargando:
 - EAN nuevo: se crea en `productos_canonicos` con `origen = fuente`.
 - El catálogo ya viene de esta misma fuente: se refresca (salvo campos bloqueados).
 - El catálogo viene de otra fuente: si la que se carga tiene más prioridad (config
-  `catalogo_prioridad_fuentes`; `manual` siempre manda) pisa los campos no
+  `catalogo_prioridad_fuentes`, por defecto manual > sepa > off) pisa los campos no
   bloqueados; si no, solo completa los vacíos. Lo que discrepa de verdad queda en
   `conflictos_catalogo`.
 """
@@ -155,6 +155,11 @@ select count(*) from upd
 
 # 4. Discrepancias reales con un catálogo que NO viene de esta fuente (tras el paso 3,
 #    si esta fuente ganó, el catálogo ya es de ella y no hay nada que comparar).
+#    Entre fuentes automáticas el nombre y la marca los resuelve la prioridad (sus
+#    textos siempre difieren: «ACEITE OLIVA NUCETE BOT 250 CC» vs «Aceite de oliva»);
+#    contra lo cargado a mano sí se avisa. El tamaño es un dato duro: se avisa si
+#    discrepan dentro de la misma familia (masa, volumen, unidades); «50 u» contra
+#    «75 g» no se compara.
 _SQL_CONFLICTOS = """
 with par as (
     select p.ean, p.origen, p.campos_bloqueados as bl,
@@ -165,14 +170,16 @@ with par as (
 ),
 cand as (
     select ean, 'nombre' as campo, n0 as va, origen as fa, n1 as vb
-      from par where not 'nombre' = any (bl) and not textos_similares(n0, n1)
+      from par where origen = 'manual' and not 'nombre' = any (bl)
+                 and not textos_similares(n0, n1)
     union all
     select ean, 'marca', m0, origen, m1
-      from par where not 'marca' = any (bl) and m0 is not null and m1 is not null
-                 and not textos_similares(m0, m1)
+      from par where origen = 'manual' and not 'marca' = any (bl)
+                 and m0 is not null and m1 is not null and not textos_similares(m0, m1)
     union all
     select ean, 'tamano', tv0::text || ' ' || tu0, origen, tv1::text || ' ' || tu1
       from par where not 'tamano' = any (bl) and tv0 is not null and tv1 is not null
+                 and tamano_familia(tu0) = tamano_familia(tu1)
                  and not tamanos_equivalentes(tv0, tu0, tv1, tu1)
 ),
 ins as (

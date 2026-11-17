@@ -10,6 +10,21 @@ from decimal import Decimal, InvalidOperation
 
 # unidad reconocida -> (unidad base, factor). Base: g, ml, u.
 _UNIDADES: dict[str, tuple[str, Decimal]] = {
+    # Abreviaturas que usa SEPA (la unidad viene en un campo aparte).
+    "grm": ("g", Decimal(1)),
+    "kgm": ("g", Decimal(1000)),
+    "kgr": ("g", Decimal(1000)),
+    "cm3": ("ml", Decimal(1)),
+    "cmq": ("ml", Decimal(1)),
+    "dm3": ("ml", Decimal(1000)),
+    "ltr": ("ml", Decimal(1000)),
+    "uni": ("u", Decimal(1)),
+    "ea": ("u", Decimal(1)),
+    "ud": ("u", Decimal(1)),
+    "cu": ("u", Decimal(1)),
+    "pck": ("u", Decimal(1)),
+    "pc": ("u", Decimal(1)),
+    "cj": ("u", Decimal(1)),
     "mg": ("g", Decimal("0.001")),
     "g": ("g", Decimal(1)),
     "gr": ("g", Decimal(1)),

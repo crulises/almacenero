@@ -62,7 +62,16 @@ def filas(archivo: io.TextIOBase) -> Iterator[dict[str, str]]:
         return
 
 
-def transformar(fila: dict[str, str], reporte: Reporte) -> Producto | None:
+def transformar(
+    fila: dict[str, str], reporte: Reporte, paises: frozenset[str] | None = None
+) -> Producto | None:
+    """`paises`: si se da, solo pasan los productos vendidos en alguno de esos países
+    (tags de OFF, p. ej. `en:argentina`); el resto se cuenta como `fuera_de_paises`."""
+    if paises is not None:
+        vendido_en = set((fila.get("countries_tags") or "").split(","))
+        if not vendido_en & paises:
+            reporte.descartadas["fuera_de_paises"] += 1
+            return None
     ean, motivo = normalizar_ean(fila.get("code"))
     if motivo:
         reporte.descartadas[motivo] += 1
@@ -96,7 +105,12 @@ def transformar(fila: dict[str, str], reporte: Reporte) -> Producto | None:
     )
 
 
-async def cargar(ruta: Path, lote: int = 20_000, limite: int | None = None) -> Reporte:
+async def cargar(
+    ruta: Path,
+    lote: int = 20_000,
+    limite: int | None = None,
+    paises: frozenset[str] | None = None,
+) -> Reporte:
     reporte = Reporte()
     conn = await conectar()
     try:
@@ -106,7 +120,7 @@ async def cargar(ruta: Path, lote: int = 20_000, limite: int | None = None) -> R
                 if limite is not None and reporte.leidas >= limite:
                     break
                 reporte.leidas += 1
-                producto = transformar(fila, reporte)
+                producto = transformar(fila, reporte, paises)
                 if producto:
                     buffer.append(producto)
                 if len(buffer) >= lote:
@@ -124,12 +138,19 @@ def main() -> None:
     ap.add_argument("archivo", type=Path, help="volcado CSV de OFF (.csv o .csv.gz)")
     ap.add_argument("--limite", type=int, help="procesar solo las primeras N filas")
     ap.add_argument("--lote", type=int, default=20_000)
+    ap.add_argument(
+        "--paises",
+        default="",
+        help="solo productos vendidos en estos países (tags de OFF, separados por coma); "
+        "vacío = todo el mundo",
+    )
     args = ap.parse_args()
     if not args.archivo.exists():
         raise SystemExit(
             f"No existe {args.archivo}. Ver `make etl-off-muestra` / `make etl-off-descargar`."
         )
-    print(asyncio.run(cargar(args.archivo, args.lote, args.limite)).texto())
+    paises = frozenset(p.strip() for p in args.paises.split(",") if p.strip()) or None
+    print(asyncio.run(cargar(args.archivo, args.lote, args.limite, paises)).texto())
 
 
 if __name__ == "__main__":

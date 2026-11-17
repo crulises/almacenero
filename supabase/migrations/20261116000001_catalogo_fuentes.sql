@@ -85,7 +85,7 @@ create index conflictos_catalogo_pendientes_idx
 
 -- ------------------------------------------------------- funciones de apoyo
 -- Prioridad de una fuente según config `catalogo_prioridad_fuentes` (array JSON,
--- de mayor a menor). Sin config: manual > off > sepa. Desconocida: la última.
+-- de mayor a menor). Sin config: manual > sepa > off (SEPA es la fuente principal para Argentina). Desconocida: la última.
 create function prioridad_fuente(p_fuente text) returns integer
 language sql stable as $$
     select coalesce(
@@ -93,7 +93,7 @@ language sql stable as $$
            from jsonb_array_elements_text(
                     coalesce((select valor from config
                                where clave = 'catalogo_prioridad_fuentes' and rubro is null),
-                             '["manual", "off", "sepa"]'::jsonb)
+                             '["manual", "sepa", "off"]'::jsonb)
                 ) with ordinality as t(f, ord)
           where f = p_fuente),
         1000

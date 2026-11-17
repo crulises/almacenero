@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed admin test lint build venv apk etl-off etl-off-muestra etl-off-descargar conflictos
+.PHONY: up down migrate seed admin test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar conflictos
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -69,10 +69,33 @@ etl-off-descargar: ## Baja el volcado COMPLETO de OFF (~1,5 GB). Pedí OK antes 
 	@mkdir -p etl/data
 	curl -fL -C - -o $(OFF_ARCHIVO) $(OFF_URL)
 
-etl-off: $(PY) ## Carga OFF al catálogo: make etl-off [OFF_ARCHIVO=etl/data/off-muestra.csv.gz]
+# Países de OFF que se cargan: Argentina y sus vecinos (SEPA es la fuente principal
+# para Argentina). OFF_PAISES= (vacío) carga todo el mundo (~2,4 GB en la base).
+OFF_PAISES ?= en:argentina,en:paraguay,en:brazil,en:chile,en:uruguay,en:bolivia
+
+etl-off: $(PY) ## Carga OFF al catálogo: make etl-off [OFF_ARCHIVO=...] [OFF_PAISES=]
 	@test -f $(OFF_ARCHIVO) || { echo "Falta $(OFF_ARCHIVO): make etl-off-muestra (chico) o make etl-off-descargar (completo)"; exit 1; }
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
-	$(PY) -m etl.off $(OFF_ARCHIVO)
+	$(PY) -m etl.off $(OFF_ARCHIVO) --paises "$(OFF_PAISES)"
+
+SEPA_DIR ?= etl/data/sepa
+# Día de SEPA a bajar (lunes..domingo); el id de recurso de cada día está en la ficha
+# del dataset: https://datos.produccion.gob.ar/dataset/sepa-precios
+SEPA_URL ?=
+
+etl-sepa-descargar: ## Baja un zip diario de SEPA: make etl-sepa-descargar SEPA_URL=<url del recurso> (reintenta; el servidor corta)
+	@test -n "$(SEPA_URL)" || { echo "Uso: make etl-sepa-descargar SEPA_URL=<url .zip de datos.produccion.gob.ar>"; exit 1; }
+	@mkdir -p $(SEPA_DIR)
+	@f=$(SEPA_DIR)/$$(basename "$(SEPA_URL)"); \
+	for i in 1 2 3 4 5; do \
+		curl -fL --max-time 1800 -A "almacenero-etl/0.1" -o "$$f" "$(SEPA_URL)" && unzip -tq "$$f" >/dev/null 2>&1 && { echo "OK: $$f"; exit 0; }; \
+		echo "intento $$i falló, reintento..."; \
+	done; echo "no se pudo bajar un zip válido"; exit 1
+
+etl-sepa: $(PY) ## Carga SEPA al catálogo: make etl-sepa SEPA_ARCHIVOS="etl/data/sepa/sepa_domingo.zip"
+	@test -n "$(SEPA_ARCHIVOS)" || { echo "Uso: make etl-sepa SEPA_ARCHIVOS=\"ruta1.zip ruta2.zip\""; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.sepa $(SEPA_ARCHIVOS)
 
 conflictos: $(PY) ## Lista los conflictos de catálogo pendientes de revisión
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
