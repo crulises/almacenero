@@ -29,6 +29,10 @@ class _Backend {
   Object? errorAlCargar;
   Object? errorHistorial;
   Object? errorVigentes;
+  final ubicacionesVigentes = <Ubicacion?>[];
+
+  /// Simula que no hay precios en el radio: solo aparecen sin ubicación.
+  bool soloLejos = false;
   final vigentes = <PrecioVigente>[];
   Object? errorUbicacion;
   Object? errorAlCrear;
@@ -69,7 +73,9 @@ class _Backend {
       cerca.insert(0, local);
       return local;
     },
-    loadVigentes: (_) async {
+    loadVigentes: (_, {ubicacion}) async {
+      ubicacionesVigentes.add(ubicacion);
+      if (soloLejos && ubicacion != null) return [];
       final error = errorVigentes;
       if (error != null) {
         errorVigentes = null; // falla una sola vez
@@ -179,7 +185,7 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
-          loadVigentes: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
           cargarPrecio: ({required ean, required localId, required precio}) =>
               throw UnimplementedError(),
         ),
@@ -280,7 +286,7 @@ void main() {
       expect(find.text('Historial de precios'), findsOneWidget);
       expect(
         find.text('Todavía nadie cargó un precio de este producto.'),
-        findsNWidgets(2), // en «precios por local» y en el historial
+        findsOneWidget, // el historial; en «precios por local» dice «cerca tuyo»
       );
     });
 
@@ -465,11 +471,11 @@ void main() {
     testWidgets('permiso de ubicación negado: lo explica y reintenta', (
       tester,
     ) async {
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
       backend.errorUbicacion = const UbicacionException(
         UbicacionError.permisoDenegado,
       );
-      await abrir(tester);
-      await _buscar(tester, _aceite.ean);
       await tester.tap(_botonCargar);
       await tester.pumpAndSettle();
       expect(find.textContaining('Necesitamos tu ubicación'), findsOneWidget);
@@ -482,11 +488,11 @@ void main() {
     testWidgets('permiso negado para siempre: manda a los ajustes', (
       tester,
     ) async {
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
       backend.errorUbicacion = const UbicacionException(
         UbicacionError.permisoDenegadoParaSiempre,
       );
-      await abrir(tester);
-      await _buscar(tester, _aceite.ean);
       await tester.tap(_botonCargar);
       await tester.pumpAndSettle();
 
@@ -495,11 +501,11 @@ void main() {
     });
 
     testWidgets('GPS apagado: pide prenderlo', (tester) async {
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
       backend.errorUbicacion = const UbicacionException(
         UbicacionError.servicioApagado,
       );
-      await abrir(tester);
-      await _buscar(tester, _aceite.ean);
       await tester.tap(_botonCargar);
       await tester.pumpAndSettle();
       expect(find.textContaining('Prendé la ubicación'), findsOneWidget);
@@ -552,10 +558,96 @@ void main() {
       await _buscar(tester, _aceite.ean);
       expect(find.text('Precios por local'), findsOneWidget);
       expect(find.byType(FlutterMap), findsNothing);
+      expect(find.text('No hay precios cargados cerca tuyo.'), findsOneWidget);
       expect(
         find.text('Todavía nadie cargó un precio de este producto.'),
-        findsNWidgets(2), // en la lista de vigentes y en el historial
+        findsOneWidget, // el historial
       );
+    });
+
+    testWidgets('sin precios cerca: ofrece ver los de otros lugares', (
+      tester,
+    ) async {
+      pantallaAlta(tester);
+      backend
+        ..soloLejos = true
+        ..vigentes.add(vigente('lejos', '900.00'));
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      expect(find.byType(FlutterMap), findsNothing);
+      expect(find.text('No hay precios cargados cerca tuyo.'), findsOneWidget);
+
+      await tester.tap(find.text('Ver precios en otros lugares'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FlutterMap), findsOneWidget);
+      expect(find.text(r'$ 900,00'), findsWidgets);
+      expect(backend.ubicacionesVigentes.last, isNull);
+    });
+
+    testWidgets('pide los precios con la ubicación del usuario', (
+      tester,
+    ) async {
+      backend.vigentes.add(vigente('a', '900.00'));
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      expect(backend.ubicacionesVigentes.single, isNotNull);
+    });
+
+    testWidgets('sin ubicación (GPS apagado) muestra todos igual', (
+      tester,
+    ) async {
+      backend
+        ..errorUbicacion = const UbicacionException(
+          UbicacionError.servicioApagado,
+        )
+        ..vigentes.add(vigente('a', '900.00'));
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      expect(find.text(r'$ 900,00'), findsWidgets);
+      expect(backend.ubicacionesVigentes.single, isNull);
+    });
+
+    testWidgets('con más de 5 locales muestra 5 y «Mostrar más»', (
+      tester,
+    ) async {
+      pantallaAlta(tester);
+      for (var i = 1; i <= 8; i++) {
+        backend.vigentes.add(vigente('l$i', '${1000 + i}.00'));
+      }
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      expect(find.byType(ListTile), findsNWidgets(5));
+      expect(find.text('Mostrar más (3)'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Mostrar más (3)'));
+      await tester.tap(find.text('Mostrar más (3)'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ListTile), findsNWidgets(8));
+      expect(find.text('Mostrar menos'), findsOneWidget);
+    });
+
+    testWidgets('se puede ordenar por frescura', (tester) async {
+      pantallaAlta(tester);
+      backend.vigentes.addAll([
+        vigente('barato', '100.00', dias: 20, frescura: 'amarillo'),
+        vigente('fresco', '300.00', dias: 1),
+      ]);
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      final antes = tester.getTopLeft(filaDe('barato')).dy;
+      expect(antes, lessThan(tester.getTopLeft(filaDe('fresco')).dy));
+
+      await tester.tap(find.text('Frescura'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.getTopLeft(filaDe('fresco')).dy,
+        lessThan(tester.getTopLeft(filaDe('barato')).dy),
+      );
+      // «Más barato» sigue en el más barato aunque cambie el orden.
+      expect(find.text('Más barato'), findsOneWidget);
     });
 
     testWidgets('lista del más barato al más caro, con frescura', (

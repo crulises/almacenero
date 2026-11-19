@@ -1,5 +1,6 @@
 import 'api_client.dart';
 import 'authed_api.dart';
+import 'location_service.dart';
 
 /// Resultado de cargar un precio: su id y el karma ya actualizado del usuario.
 class PrecioCargado {
@@ -53,6 +54,7 @@ class PrecioVigente {
     required this.edadDias,
     required this.frescura,
     required this.vencido,
+    this.distanciaM,
   });
 
   final String localId;
@@ -72,6 +74,9 @@ class PrecioVigente {
   /// Más viejo que la ventana de frescura.
   final bool vencido;
 
+  /// Distancia al usuario; solo viene si se pidió con ubicación.
+  final double? distanciaM;
+
   factory PrecioVigente.fromJson(Map<String, dynamic> json) => PrecioVigente(
     localId: json['local_id'] as String,
     localNombre: json['local_nombre'] as String,
@@ -83,6 +88,7 @@ class PrecioVigente {
     edadDias: json['edad_dias'] as int,
     frescura: json['frescura'] as String,
     vencido: json['vencido'] as bool? ?? false,
+    distanciaM: (json['distancia_m'] as num?)?.toDouble(),
   );
 }
 
@@ -122,9 +128,21 @@ class PriceRepository {
       PrecioHistorial.fromJson(p as Map<String, dynamic>),
   ];
 
-  /// El último precio de cada local, del más barato al más caro.
-  Future<List<PrecioVigente>> vigentes(String ean) async => [
-    for (final p in await _api.getList('/productos/$ean/precios/vigentes'))
-      PrecioVigente.fromJson(p as Map<String, dynamic>),
-  ];
+  /// El último precio de cada local, del más barato al más caro. Con [ubicacion]
+  /// el backend trae solo los locales dentro del radio configurado (`config`) y la
+  /// distancia a cada uno; sin ella, todos.
+  Future<List<PrecioVigente>> vigentes(
+    String ean, {
+    Ubicacion? ubicacion,
+  }) async {
+    final consulta = ubicacion == null
+        ? ''
+        : '?lat=${ubicacion.lat}&lng=${ubicacion.lng}';
+    return [
+      for (final p in await _api.getList(
+        '/productos/$ean/precios/vigentes$consulta',
+      ))
+        PrecioVigente.fromJson(p as Map<String, dynamic>),
+    ];
+  }
 }

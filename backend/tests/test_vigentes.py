@@ -118,3 +118,61 @@ def test_producto_sin_precios_devuelve_lista_vacia(client, auth):
     r = client.get("/v1/productos/7799999999999/precios/vigentes", headers=auth)
     assert r.status_code == 200
     assert r.json() == []
+
+
+def _local_en(client, admin, lat, lng) -> str:
+    r = client.post(
+        "/v1/locales",
+        headers=admin,
+        json={"nombre": f"vig-{uuid.uuid4().hex[:8]}", "lat": lat, "lng": lng},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def test_con_ubicacion_solo_trae_los_locales_dentro_del_radio(client, admin):
+    # Un punto del Atlántico Sur, como en los otros tests; ~1,1 km por 0,01° de lat.
+    lat, lng = random.uniform(-60, -50), random.uniform(-40, -30)
+    cerca = _local_en(client, admin, lat + 0.01, lng)  # ~1,1 km
+    lejos = _local_en(client, admin, lat + 0.2, lng)  # ~22 km
+    _precio(client, admin, cerca, "100")
+    _precio(client, admin, lejos, "50")
+
+    r = client.get(
+        f"/v1/productos/{EAN}/precios/vigentes",
+        params={"lat": lat, "lng": lng},
+        headers=admin,
+    )
+
+    assert r.status_code == 200
+    ids = [v["local_id"] for v in r.json() if v["local_id"] in (cerca, lejos)]
+    assert ids == [cerca]  # el de 22 km queda fuera del radio por defecto (5 km)
+    assert 1000 < r.json()[0]["distancia_m"] < 1300
+
+
+def test_el_radio_se_puede_ampliar(client, admin):
+    lat, lng = random.uniform(-60, -50), random.uniform(-40, -30)
+    lejos = _local_en(client, admin, lat + 0.2, lng)
+    _precio(client, admin, lejos, "50")
+
+    r = client.get(
+        f"/v1/productos/{EAN}/precios/vigentes",
+        params={"lat": lat, "lng": lng, "radio_m": 30000},
+        headers=admin,
+    )
+
+    assert lejos in [v["local_id"] for v in r.json()]
+
+
+def test_sin_ubicacion_trae_todos_y_sin_distancia(client, admin):
+    local = _local(client, admin)
+    _precio(client, admin, local, "100")
+
+    v = _vigentes(client, admin, locales={local})[0]
+
+    assert v["distancia_m"] is None
+
+
+def test_lat_sin_lng_es_invalido(client, admin):
+    r = client.get(f"/v1/productos/{EAN}/precios/vigentes", params={"lat": -34}, headers=admin)
+    assert r.status_code == 422

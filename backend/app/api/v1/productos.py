@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.auth import Usuario, current_user
@@ -44,6 +44,7 @@ class PrecioVigenteOut(BaseModel):
     precio: Decimal
     fecha: datetime
     edad_dias: int
+    distancia_m: float | None = None
     frescura: str  # verde | amarillo | rojo
     vencido: bool  # más viejo que la ventana de frescura
 
@@ -99,27 +100,47 @@ async def historial_precios(
 @router.get("/productos/{ean}/precios/vigentes", response_model=list[PrecioVigenteOut])
 async def precios_vigentes(
     ean: str,
+    lat: float | None = Query(None, ge=-90, le=90),
+    lng: float | None = Query(None, ge=-180, le=180),
+    radio_m: int | None = Query(None, gt=0, le=100_000),
     _: Usuario = Depends(current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> list[PrecioVigenteOut]:
     """El último precio de cada local, del más barato al más caro.
 
-    Con esto se arma la lista y el mapa de «cuánto sale en cada lugar». El historial
-    completo sigue en `/precios`.
+    Con `lat` y `lng` trae solo los locales dentro de `radio_m` (por defecto
+    `config.radio_precios_m`) y agrega la distancia: sin esto, precios de locales a
+    miles de kilómetros se mezclarían con los de tu zona. Sin ubicación trae todos.
     """
+    if (lat is None) != (lng is None):
+        raise HTTPException(422, "lat y lng van juntos")
+    if lat is None:
+        radio = None
+    else:
+        radio = radio_m or int(await config.leer(pool, "radio_precios_m"))
     rows = await pool.fetch(
         """
-        select distinct on (p.local_id)
-               p.local_id, l.nombre as local_nombre, l.verificado as local_verificado,
-               st_y(l.ubicacion::geometry) as lat, st_x(l.ubicacion::geometry) as lng,
-               p.precio, p.fecha, (current_date - p.fecha::date) as edad_dias
-        from precios p
-        join productos_canonicos pc on pc.id = p.producto_canonico_id
-        join locales l on l.id = p.local_id
-        where pc.ean = $1
-        order by p.local_id, p.fecha desc
+        select * from (
+          select distinct on (p.local_id)
+                 p.local_id, l.nombre as local_nombre, l.verificado as local_verificado,
+                 st_y(l.ubicacion::geometry) as lat, st_x(l.ubicacion::geometry) as lng,
+                 p.precio, p.fecha, (current_date - p.fecha::date) as edad_dias,
+                 case when $2::float8 is null then null
+                      else st_distance(l.ubicacion,
+                           st_makepoint($3::float8, $2::float8)::geography) end
+                   as distancia_m
+          from precios p
+          join productos_canonicos pc on pc.id = p.producto_canonico_id
+          join locales l on l.id = p.local_id
+          where pc.ean = $1
+          order by p.local_id, p.fecha desc
+        ) v
+        where $4::float8 is null or v.distancia_m <= $4::float8
         """,
         ean,
+        lat,
+        lng,
+        None if radio is None else float(radio),
     )
     verde = int(await config.leer(pool, "umbral_verde_dias"))
     amarillo = int(await config.leer(pool, "umbral_amarillo_dias"))

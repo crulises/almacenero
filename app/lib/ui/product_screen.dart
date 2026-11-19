@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../app_deps.dart';
+import '../data/location_service.dart';
 import '../data/price_repository.dart';
 import '../data/product_repository.dart';
 import '../domain/precio.dart';
@@ -22,9 +23,7 @@ class ProductScreen extends StatefulWidget {
 
 class _ProductScreenState extends State<ProductScreen> {
   late Future<Producto> _producto = widget.deps.loadProducto(widget.ean);
-  late Future<List<PrecioVigente>> _vigentes = widget.deps.loadVigentes(
-    widget.ean,
-  );
+  late Future<List<PrecioVigente>> _vigentes = _cargarVigentes();
   late Future<List<PrecioHistorial>> _historial = widget.deps.loadHistorial(
     widget.ean,
   );
@@ -33,9 +32,43 @@ class _ProductScreenState extends State<ProductScreen> {
   String? _seleccionado;
   final _clavesLista = <String, GlobalKey>{};
 
+  /// Cuántos precios se ven antes de «Mostrar más».
+  static const _visiblesInicial = 5;
+
+  OrdenPrecios _orden = OrdenPrecios.precio;
+  bool _expandida = false;
+
+  /// Si se pidió ver los precios de todos los locales, sin límite de distancia.
+  bool _verTodos = false;
+
+  /// Si se pudo filtrar por cercanía (hay ubicación del usuario).
+  bool _conUbicacion = false;
+
+  /// Precios vigentes cerca del usuario. Sin ubicación (permiso, GPS apagado)
+  /// trae todos: la ficha no se rompe por eso.
+  Future<List<PrecioVigente>> _cargarVigentes() async {
+    Ubicacion? ubicacion;
+    if (!_verTodos) {
+      try {
+        ubicacion = await widget.deps.obtenerUbicacion();
+      } on Object {
+        ubicacion = null;
+      }
+    }
+    _conUbicacion = ubicacion != null;
+    return widget.deps.loadVigentes(widget.ean, ubicacion: ubicacion);
+  }
+
+  void _verTodosLosLocales() {
+    setState(() {
+      _verTodos = true;
+      _vigentes = _cargarVigentes();
+    });
+  }
+
   void _recargarPrecios() {
     setState(() {
-      _vigentes = widget.deps.loadVigentes(widget.ean);
+      _vigentes = _cargarVigentes();
       _historial = widget.deps.loadHistorial(widget.ean);
     });
   }
@@ -57,7 +90,11 @@ class _ProductScreenState extends State<ProductScreen> {
   }
 
   void _elegir(String localId, {bool desplazarLista = false}) {
-    setState(() => _seleccionado = localId);
+    setState(() {
+      _seleccionado = localId;
+      // Un precio tocado en el mapa puede estar oculto en la lista.
+      if (desplazarLista) _expandida = true;
+    });
     if (!desplazarLista) return;
     // Desde el mapa: lleva la lista hasta el precio tocado.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -203,18 +240,56 @@ class _ProductScreenState extends State<ProductScreen> {
     if (precios.isEmpty) {
       return [
         titulo,
-        const Text('Todavía nadie cargó un precio de este producto.'),
+        if (_conUbicacion && !_verTodos) ...[
+          const SizedBox(height: 4),
+          const Text('No hay precios cargados cerca tuyo.'),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _verTodosLosLocales,
+            icon: const Icon(Icons.public),
+            label: const Text('Ver precios en otros lugares'),
+          ),
+        ] else
+          const Text('Todavía nadie cargó un precio de este producto.'),
       ];
     }
     final ahora = DateTime.now();
+    // El más barato se marca siempre, sin importar cómo se ordene la lista.
+    final masBaratoId = precios.first.localId;
+    final ordenados = ordenarPrecios(precios, _orden);
+    final visibles = _expandida
+        ? ordenados
+        : ordenados.take(_visiblesInicial).toList();
     return [
       titulo,
-      for (var i = 0; i < precios.length; i++)
+      if (precios.length > 1)
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final o in OrdenPrecios.values)
+              if (o != OrdenPrecios.cercania || _conUbicacion)
+                ChoiceChip(
+                  label: Text(o.etiqueta),
+                  selected: _orden == o,
+                  onSelected: (_) => setState(() => _orden = o),
+                ),
+          ],
+        ),
+      for (final p in visibles)
         _fila(
           context,
-          precios[i],
+          p,
           ahora,
-          masBarato: i == 0 && precios.length > 1,
+          masBarato: p.localId == masBaratoId && precios.length > 1,
+        ),
+      if (ordenados.length > _visiblesInicial)
+        TextButton(
+          onPressed: () => setState(() => _expandida = !_expandida),
+          child: Text(
+            _expandida
+                ? 'Mostrar menos'
+                : 'Mostrar más (${ordenados.length - _visiblesInicial})',
+          ),
         ),
     ];
   }
@@ -257,6 +332,8 @@ class _ProductScreenState extends State<ProductScreen> {
           children: [
             TextSpan(text: p.localNombre),
             if (!p.localVerificado) const TextSpan(text: ' (sin verificar)'),
+            if (p.distanciaM != null)
+              TextSpan(text: ' · ${formatearDistancia(p.distanciaM!)}'),
             const TextSpan(text: '\n'),
             TextSpan(
               text: etiquetaFrescura(p),

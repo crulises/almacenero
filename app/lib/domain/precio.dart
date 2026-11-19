@@ -51,3 +51,9 @@ String formatearPrecioCorto(String canonico) {
   final largo = formatearPrecio(canonico);
   return largo.endsWith(',00') ? largo.substring(0, largo.length - 3) : largo;
 }
+
+/// Distancia legible: «350 m» o «1,4 km».
+String formatearDistancia(double metros) {
+  if (metros < 1000) return '${metros.round()} m';
+  return '${(metros / 1000).toStringAsFixed(1).replaceAll('.', ',')} km';
+}

@@ -171,6 +171,31 @@ void main() {
     });
   });
 
+  test('vigentes con ubicación: la manda y parsea la distancia', () async {
+    estado = (_) => 200;
+    cuerpo = [
+      {
+        'local_id': 'l1',
+        'local_nombre': 'Cerca',
+        'local_verificado': true,
+        'lat': -34.6,
+        'lng': -58.4,
+        'precio': '10.00',
+        'fecha': '2026-11-15T13:45:00Z',
+        'edad_dias': 1,
+        'frescura': 'verde',
+        'vencido': false,
+        'distancia_m': 350.5,
+      },
+    ];
+
+    final v = await PriceRepository(api: build())
+        .vigentes('1', ubicacion: const Ubicacion(lat: -34.6, lng: -58.4));
+
+    expect(pedidos.last.url.queryParameters, {'lat': '-34.6', 'lng': '-58.4'});
+    expect(v.single.distanciaM, 350.5);
+  });
+
   group('LocalRepository', () {
     const aca = Ubicacion(lat: -34.6, lng: -58.4);
 

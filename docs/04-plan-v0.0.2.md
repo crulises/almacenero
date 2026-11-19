@@ -227,6 +227,14 @@ nada en silencio: queda en una **lista corta para revisar a mano**.
   traen productos con EAN y precios por comercio. Hay que revisar formato,
   licencia y frecuencia de actualización antes de decidir.
 - Aportes manuales del admin.
+- **Locales de cadenas conocidas (seed de ubicaciones):** fuente candidata
+  OpenStreetMap (Overpass API: `shop=supermarket`, `brand=...`, por país o zona).
+  Es abierta (licencia ODbL: exige atribución), a diferencia de scrapear Google
+  Maps, que viola sus términos, o de la Places API, que es paga y prohíbe guardar
+  los datos. Entrarían como locales `verificado = false` hasta que un admin los
+  confirme, con su propio ETL por fuente. Investigar cobertura real antes de
+  prometer nada. Complemento: los localizadores de tiendas que publican las
+  propias cadenas (revisar sus términos).
 
 El «alta mínima de producto» desde la app (para un EAN que ninguna fuente cubra)
 queda fuera de v0.0.2.
@@ -250,8 +258,49 @@ con la frescura de cada uno pasa a ser lo central de la ficha.
   Las teselas públicas de OSM **no son para uso masivo** (política de uso): sirven
   para el grupo cerrado; antes de abrir la app hay que pasar a un proveedor de
   teselas (varios tienen plan gratis) o servirlas uno mismo. Cambiar el proveedor
-  es cambiar la URL de la capa. Alternativa descartada por ahora: Google Maps
-  (pide clave y una cuenta de facturación).
+  es cambiar la URL de la capa. **Es una decisión abierta con fecha límite: antes
+  de repartir la app fuera del grupo cerrado** (ver «Decisiones»). Google Maps:
+  descartado por ahora (clave y cuenta de facturación); **se reevalúa tras usar la
+  app con el grupo cerrado**.
+- **Ajustes tras la prueba en el celular:**
+  - **Globo con punta:** el cartel de precio es más chico y termina en una punta
+    (▼) que señala el local; el globo queda por encima de la posición exacta.
+  - **Solo precios cerca:** con la ubicación del usuario, el backend filtra por
+    `config.radio_precios_m` (5000 m por defecto) y devuelve `distancia_m`. Sin
+    precios en el radio, la ficha lo dice y ofrece «Ver precios en otros lugares»
+    (sin filtro). Sin ubicación (permiso o GPS apagado), se muestran todos.
+  - **Lista corta:** 5 precios y «Mostrar más (N)» / «Mostrar menos». Tocar un
+    cartel del mapa despliega la lista si ese local estaba oculto.
+  - **Orden:** chips Precio (por defecto) · Cercanía · Frescura. «Más barato» se
+    marca siempre en el más barato, sin importar el orden elegido.
+
+### Orden por reputación y locales patrocinados (propuesta, no implementado)
+
+**Reputación del local** (para un orden «Reputación»): derivada, no editable.
+Combinar (a) cantidad de precios cargados en los últimos N días, (b) cuánto
+coinciden con los demás (cuando exista la validación colaborativa), (c) `verificado`.
+Se calcula en el backend (negocio) y se expone como `reputacion` (0 a 1); hasta que
+exista (b), sería solo (a) y (c), así que conviene no mostrar la palabra
+«reputación» todavía.
+
+**Patrocinio** (un local paga para que su producto aparezca arriba):
+- *Modelo:* tabla `patrocinios(id, local_id, producto_canonico_id | null, desde,
+  hasta, activo, creado_por, nota)`; en Postgres, con `check (hasta > desde)`.
+  `producto_canonico_id` nulo = todo el local. Integridad en la base; la regla de
+  «cuántos y dónde» en el backend (`config.max_patrocinados` = 1 por lista).
+- *API:* `GET .../precios/vigentes` agrega `patrocinado: bool`. Un patrocinado
+  aparece **primero y siempre marcado «Patrocinado»**, separado del ranking, y sin
+  cambiar su precio ni su frescura reales. Solo entran locales dentro del radio.
+  Permiso nuevo `patrocinio.gestionar` (solo admin).
+- *Honestidad:* el mapa y el «Más barato» **nunca** se alteran por patrocinio.
+  Fijarlo en el Doc 1 antes de implementarlo (cambia lo que promete el producto).
+- *UI del admin* (una pantalla de la app, solo rol admin): lista de patrocinios
+  con estado (activo / vencido), «Nuevo patrocinio» (elegir local con buscador,
+  producto opcional por EAN, fechas desde/hasta) y botón «Pausar». Sin cobro en la
+  app: el acuerdo comercial se hace afuera y el admin lo carga.
+- *Antes de implementar:* revisar el marco legal de publicidad etiquetada y decidir
+  si hay un tope de patrocinados por zona.
+
 - Sin estimación por IPC en esta versión (Doc 1 la prevé, marcada como
   estimación; más adelante).
 - Pendiente para después: ordenar o filtrar por distancia al usuario, y mostrar la
@@ -449,8 +498,41 @@ credenciales.
 - **Dominio:** lo busca el dueño del proyecto (uno solo, con subdominios).
 - **`applicationId`:** decidir tras comprar el dominio y antes del primer release
   firmado (§7).
+- **Proveedor de teselas del mapa:** OSM público solo sirve para el grupo
+  cerrado; decidir (proveedor con plan gratis o propio) **antes de abrir la app**.
+- **Timeouts de red configurables:** el tiempo de espera de `ApiClient` (hoy 15 s)
+  pasa a ser un valor de configuración (`--dart-define` al compilar o ajuste
+  remoto) para poder pasar a 30/60/90 s sin tocar código; con reintento y el
+  mensaje «Despertando servidor…» cuando el primer pedido tarda. Se hace en el
+  corte 10 (antes de repartir el APK).
+- **Base de datos y pausa de Supabase gratis:** ver §7 «Elegir host»; si la pausa
+  no es tolerable, evaluar Postgres en otro servicio (costo-beneficio).
+- **Imágenes subidas por usuarios** (diferidas): compresión en el cliente y
+  re-codificación en el servidor; moderación antes de publicar (§7).
 - **Tamaño del catálogo en producción:** se decide tras medir la carga completa
   en local (§4).
+
+## Plan de escape: recrear todo en otro lugar
+
+Hacerlo **antes de cargar datos reales** y repasarlo cada tanto.
+
+- **Esquema:** migraciones SQL planas en `supabase/migrations/` (sin nada propio de
+  Supabase en el código). Probar de vez en cuando que levantan en un Postgres
+  común con PostGIS y `pg_trgm`.
+- **Auth:** el backend valida el JWT con `JWT_SECRET`/`JWKS_URL`/`AUTH_URL`. Hoy
+  los emite GoTrue; irse implica o desplegar GoTrue aparte o emitir los tokens
+  desde el propio backend. Es el punto más acoplado: decidirlo y probarlo antes
+  de salir.
+- **Datos:** `pg_dump` periódico (lógico, `make backup`) a un lugar fuera de
+  Supabase, más una prueba de restauración en un Postgres limpio. Los ETL
+  (`make etl-*`) regeneran el catálogo, así que el backup crítico son usuarios,
+  locales y precios cargados.
+- **Storage (cuando haya fotos):** cliente S3-compatible detrás de una interfaz,
+  con el bucket configurable por variables de entorno.
+- **Config:** todo por variables de entorno (`.env.example` al día), imágenes
+  Docker reproducibles, y la guía de deploy en `docs/`.
+- **Simulacro:** un día antes del release, restaurar un backup en otro Postgres y
+  apuntar el backend con `DATABASE_URL`; anotar lo que falle en el doc 03.
 
 ## Documentación a actualizar al ejecutar el plan
 

@@ -66,4 +66,9 @@ void main() {
     expect(formatearPrecioCorto('1234.50'), r'$ 1.234,50');
     expect(formatearPrecioCorto('0.99'), r'$ 0,99');
   });
+
+  test('formatearDistancia: metros o kilómetros', () {
+    expect(formatearDistancia(350.4), '350 m');
+    expect(formatearDistancia(1449), '1,4 km');
+  });
 }

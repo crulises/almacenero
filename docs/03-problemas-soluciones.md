@@ -403,3 +403,20 @@ instalá esos.
   automáticos de la cámara.
 - Para distribuir a testers falta: backend desplegado con HTTPS y un build release
   firmado.
+
+
+## Precios vigentes cerca del usuario (corte 8, ajustes tras la prueba en el celular)
+
+- **Decisión:** el filtro por radio vive en el backend (`config.radio_precios_m`,
+  5000 m), porque mezclar precios de lugares a miles de km confunde. El orden
+  (precio, cercanía, frescura) y el «Mostrar más» son de la app: no cambian qué
+  datos se devuelven.
+- **Síntoma:** «No puedo conectar con el servidor» en el celular, con el backend
+  sano y alcanzable desde el navegador del celular. **Causa:** se había instalado
+  un APK viejo con otra URL de API. **Solución:** desinstalar e instalar el APK
+  recién generado; ver `strings` de `assets/flutter_assets/kernel_blob.bin` para
+  confirmar la URL compilada.
+- **Síntoma:** nada responde y `docker ps` está vacío. **Causa:** Docker o el stack
+  estaban apagados. **Solución:** `make up` y `docker compose up -d --build backend`.
+- **Nota de Flutter:** en `mapa_precios.dart`, `Path` es de `flutter_map`
+  (`Path<LatLng>`): para dibujar con `Canvas` usar `ui.Path` (`import 'dart:ui' as ui`).

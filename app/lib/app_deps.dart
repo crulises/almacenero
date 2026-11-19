@@ -37,5 +37,6 @@ class AppDeps {
   })
   cargarPrecio;
   final Future<List<PrecioHistorial>> Function(String ean) loadHistorial;
-  final Future<List<PrecioVigente>> Function(String ean) loadVigentes;
+  final Future<List<PrecioVigente>> Function(String ean, {Ubicacion? ubicacion})
+  loadVigentes;
 }
