@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     jwt_secret: str = "super-secret-jwt-token-with-at-least-32-characters-long"
     jwt_audience: str = "authenticated"
 
+    # Orígenes web que pueden llamar a la API (panel de admin), separados por coma.
+    # La app móvil no usa CORS. Con HTTPS en producción: poner el origen real del panel.
+    cors_origins: str = "http://localhost:8080,http://127.0.0.1:8080"
+
     log_level: str = "INFO"
 
 
