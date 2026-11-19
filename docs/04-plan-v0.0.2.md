@@ -147,6 +147,10 @@ la app).
   reputación y attestation (§6), no con más geofence.
 - Leer precios sigue sin pedir ubicación (Doc 1).
 - Para probar en el emulador: `adb emu geo fix <lng> <lat>`.
+- **Implementado (corte 6):** `POST /v1/precios` exige `lat`, `lng` y `precision_m`;
+  403 con `detail.codigo` = `fuera_de_rango` (con `distancia_m` y `radio_m`) o
+  `precision_baja` (umbral `config.geofence_precision_max_m`, 100 m). La app toma
+  una ubicación fresca al enviar y explica el rechazo.
 
 ## 4. Catálogo real: un ETL por fuente (corte 7)
 
@@ -273,6 +277,14 @@ con la frescura de cada uno pasa a ser lo central de la ficha.
     cartel del mapa despliega la lista si ese local estaba oculto.
   - **Orden:** chips Precio (por defecto) · Cercanía · Frescura. «Más barato» se
     marca siempre en el más barato, sin importar el orden elegido.
+
+### Pendientes cosméticos y de pulido (TODO)
+
+- **Globos de precio en el mapa:** pulir el diseño (tamaño, tipografía, solapado entre
+  globos cercanos). Es una mejora cosmética; la versión actual quedó aprobada en la prueba
+  en el celular.
+- **Precisión del GPS:** a veces es inexacta; alcanza por ahora (el geofence rechaza con
+  `precision_baja` cuando pasa `geofence_precision_max_m`).
 
 ### Orden por reputación y locales patrocinados (propuesta, no implementado)
 

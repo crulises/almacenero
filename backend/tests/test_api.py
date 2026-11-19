@@ -1,5 +1,7 @@
 """Smoke de endpoints contra Postgres real (requiere `make up`)."""
 
+from tests.db import cuerpo_carga
+
 EAN_SEED = "7790070411112"
 
 
@@ -33,7 +35,7 @@ def test_cargar_precio_suma_karma_y_aparece_en_historial(client, auth):
     r = client.post(
         "/v1/precios",
         headers=auth,
-        json={"ean": EAN_SEED, "local_id": local["id"], "precio": "1234.50"},
+        json=cuerpo_carga(local["id"], EAN_SEED, "1234.50"),
     )
     assert r.status_code == 201
     assert r.json()["karma"] == 1
@@ -48,6 +50,6 @@ def test_precio_invalido_422(client, auth):
     r = client.post(
         "/v1/precios",
         headers=auth,
-        json={"ean": EAN_SEED, "local_id": local["id"], "precio": "-1"},
+        json=cuerpo_carga(local["id"], EAN_SEED, "-1"),
     )
     assert r.status_code == 422

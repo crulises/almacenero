@@ -1,5 +1,7 @@
 """Carga de precios y karma, contra Postgres real."""
 
+from tests.db import cuerpo_carga
+
 EAN_SEED = "7790070411112"
 
 
@@ -11,11 +13,7 @@ def _cargar(client, auth, precio="100.00", ean=EAN_SEED, local_id=None):
     return client.post(
         "/v1/precios",
         headers=auth,
-        json={
-            "ean": ean,
-            "local_id": local_id or _local_id(client, auth),
-            "precio": precio,
-        },
+        json=cuerpo_carga(local_id or _local_id(client, auth), ean, precio),
     )
 
 
@@ -76,3 +74,49 @@ def test_historial_de_un_producto_sin_precios_es_lista_vacia(client, auth):
     r = client.get("/v1/productos/7799999999999/precios", headers=auth)
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_geofence_rechaza_si_estas_lejos_del_local(client, auth):
+    local = _local_id(client, auth)
+    cuerpo = cuerpo_carga(local, EAN_SEED, "100.00")
+    cuerpo["lat"] += 0.005  # ~550 m al norte, fuera de los 150 m
+
+    r = client.post("/v1/precios", headers=auth, json=cuerpo)
+
+    assert r.status_code == 403
+    d = r.json()["detail"]
+    assert d["codigo"] == "fuera_de_rango"
+    assert 500 < d["distancia_m"] < 600
+    assert d["radio_m"] == 150
+    # y no sumó karma ni guardó nada
+    assert client.get("/v1/me", headers=auth).json()["karma"] == 0
+
+
+def test_geofence_acepta_dentro_del_radio(client, auth):
+    cuerpo = cuerpo_carga(_local_id(client, auth), EAN_SEED, "100.00")
+    cuerpo["lat"] += 0.0005  # ~55 m
+
+    assert client.post("/v1/precios", headers=auth, json=cuerpo).status_code == 201
+
+
+def test_gps_impreciso_pide_reintentar_en_vez_de_rechazar(client, auth):
+    cuerpo = cuerpo_carga(_local_id(client, auth), EAN_SEED, "100.00", precision_m=500)
+
+    r = client.post("/v1/precios", headers=auth, json=cuerpo)
+
+    assert r.status_code == 403
+    assert r.json()["detail"]["codigo"] == "precision_baja"
+
+
+def test_sin_ubicacion_no_se_puede_cargar(client, auth):
+    cuerpo = cuerpo_carga(_local_id(client, auth), EAN_SEED, "100.00")
+    del cuerpo["lat"], cuerpo["lng"]
+
+    assert client.post("/v1/precios", headers=auth, json=cuerpo).status_code == 422
+
+
+def test_local_inexistente_sigue_siendo_404(client, auth):
+    cuerpo = cuerpo_carga(_local_id(client, auth), EAN_SEED, "100.00")
+    cuerpo["local_id"] = "00000000-0000-0000-0000-00000000dead"
+
+    assert client.post("/v1/precios", headers=auth, json=cuerpo).status_code == 404

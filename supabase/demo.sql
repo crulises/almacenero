@@ -1,6 +1,7 @@
 -- Datos de DEMO para ver el mapa y la frescura (NO es el seed de arranque).
 -- Idempotente: se puede correr de nuevo y vuelve a dejar lo mismo.
 -- Se borra con `make demo-borrar`. Todo lo de demo lleva el prefijo `demo-`.
+-- Se ubica alrededor de (:lat, :lng): `make demo LAT=-25.92 LNG=-54.57`.
 
 delete from precios where local_id in (select id from locales where nombre like 'demo-%');
 delete from locales where nombre like 'demo-%';
@@ -11,9 +12,9 @@ values ('00000000-0000-0000-0000-00000000de40', 'demo-usuario')
 on conflict (auth_id) do nothing;
 
 insert into locales (nombre, direccion, ubicacion, verificado) values
-    ('demo-Almacén Don Pepe',   'Calle 1', st_setsrid(st_makepoint(-58.3860, -34.6010), 4326)::geography, true),
-    ('demo-Super Chino Ahorro', 'Calle 2', st_setsrid(st_makepoint(-58.3790, -34.6070), 4326)::geography, true),
-    ('demo-Kiosco Esquina',     'Calle 3', st_setsrid(st_makepoint(-58.3900, -34.6080), 4326)::geography, false);
+    ('demo-Almacén Don Pepe',   'Calle 1', st_setsrid(st_makepoint(:lng + 0.0030, :lat + 0.0020), 4326)::geography, true),
+    ('demo-Super Chino Ahorro', 'Calle 2', st_setsrid(st_makepoint(:lng - 0.0040, :lat - 0.0030), 4326)::geography, true),
+    ('demo-Kiosco Esquina',     'Calle 3', st_setsrid(st_makepoint(:lng + 0.0010, :lat - 0.0040), 4326)::geography, false);
 
 -- Aceite de girasol (del seed) con precios de distinta antigüedad: verde, amarillo, rojo.
 insert into precios (producto_canonico_id, local_id, precio, user_id, fecha)

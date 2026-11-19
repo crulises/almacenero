@@ -134,3 +134,7 @@ kilo/litro y comparar productos de distinto tamaño.
 - Opiniones / calidad de producto (subjetivo).
 - Apertura del alta de locales y del registro de usuarios.
 - iOS.
+- Orden por reputación del local y lista de **locales patrocinados** (un local
+  paga para que su producto aparezca primero, siempre marcado «Patrocinado» y
+  separado del ranking; nunca altera el mapa ni el «Más barato»). Propuesta
+  técnica y UI de admin en `docs/04-plan-v0.0.2.md` (§5).

@@ -11,6 +11,7 @@ import asyncpg
 
 DEFAULTS: dict[str, Any] = {
     "geofence_metros": 150,
+    "geofence_precision_max_m": 100,  # GPS peor que esto: se pide reintentar
     "radio_precios_m": 5000,  # precios vigentes: solo locales a esta distancia
     "ventana_frescura_dias": 30,
     "umbral_verde_dias": 7,

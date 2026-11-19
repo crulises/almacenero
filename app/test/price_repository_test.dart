@@ -60,8 +60,12 @@ void main() {
 
   group('PriceRepository', () {
     test('cargar: manda el JSON con el token y devuelve el karma', () async {
-      final r = await PriceRepository(api: build())
-          .cargar(ean: '7790070411112', localId: 'l1', precio: '1234.50');
+      final r = await PriceRepository(api: build()).cargar(
+        ean: '7790070411112',
+        localId: 'l1',
+        precio: '1234.50',
+        ubicacion: const Ubicacion(lat: -34.6, lng: -58.4, precisionM: 12),
+      );
 
       final post = pedidos.last;
       expect(post.method, 'POST');
@@ -72,6 +76,10 @@ void main() {
         'local_id': 'l1',
         // string, no número: el precio nunca pasa por double
         'precio': '1234.50',
+        // el backend valida que esté cerca del local (geofence)
+        'lat': -34.6,
+        'lng': -58.4,
+        'precision_m': 12,
       });
       expect(r.precioId, 'pr1');
       expect(r.karma, 4);
@@ -81,7 +89,12 @@ void main() {
       Future<Object> falla(int status) async {
         estado = (_) => status;
         return PriceRepository(api: build())
-            .cargar(ean: '1', localId: 'l', precio: '1.00')
+            .cargar(
+              ean: '1',
+              localId: 'l',
+              precio: '1.00',
+              ubicacion: const Ubicacion(lat: 0, lng: 0),
+            )
             .then<Object>((_) => 'ok', onError: (Object e) => e);
       }
 
@@ -91,12 +104,36 @@ void main() {
       expect(clasificarErrorCarga(Exception('x')), CargaError.otro);
     });
 
+    test('clasifica el rechazo del geofence y la distancia', () {
+      final lejos = ApiException(
+        'x',
+        statusCode: 403,
+        detail: {'codigo': 'fuera_de_rango', 'distancia_m': 480},
+      );
+      final impreciso = ApiException(
+        'x',
+        statusCode: 403,
+        detail: {'codigo': 'precision_baja'},
+      );
+      expect(clasificarErrorCarga(lejos), CargaError.fueraDeRango);
+      expect(distanciaFueraDeRango(lejos), 480);
+      expect(clasificarErrorCarga(impreciso), CargaError.precisionBaja);
+      expect(
+        clasificarErrorCarga(ApiException('x', statusCode: 403)),
+        CargaError.otro,
+      );
+    });
+
     test('un 401 renueva la sesión y reintenta una vez', () async {
       var intentos = 0;
       estado = (_) => ++intentos == 1 ? 401 : 201;
 
-      final r = await PriceRepository(api: build())
-          .cargar(ean: '7790070411112', localId: 'l1', precio: '10.00');
+      final r = await PriceRepository(api: build()).cargar(
+        ean: '7790070411112',
+        localId: 'l1',
+        precio: '10.00',
+        ubicacion: const Ubicacion(lat: 0, lng: 0),
+      );
 
       expect(r.karma, 4);
       expect(intentos, 2);

@@ -29,9 +29,18 @@ seed: ## Carga datos de arranque (idempotente)
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
 
-demo: ## Datos de demo (3 locales con precios de distinta frescura) para ver el mapa
+demo: ## Datos de demo (3 locales con precios) cerca de LAT/LNG o del último local cargado a mano
+	@# Sin LAT/LNG usa el último local creado por un usuario (el que cargaste vos);
+	@# si no hay ninguno, el Obelisco de Buenos Aires.
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
-	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/demo.sql
+	lat="$(LAT)"; lng="$(LNG)"; \
+	if [ -z "$$lat" ] || [ -z "$$lng" ]; then \
+		p=$$(psql "$$DATABASE_URL" -tA -F' ' -c "select st_y(ubicacion::geometry), st_x(ubicacion::geometry) from locales where creado_por is not null and nombre not like 'demo-%' order by created_at desc limit 1"); \
+		lat=$$(echo $$p | cut -d' ' -f1); lng=$$(echo $$p | cut -d' ' -f2); \
+	fi; \
+	[ -n "$$lat" ] || { lat=-34.6037; lng=-58.3816; }; \
+	echo "Demo cerca de $$lat, $$lng"; \
+	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -v lat=$$lat -v lng=$$lng -f supabase/demo.sql
 
 demo-borrar: ## Borra los datos de demo
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \

@@ -22,6 +22,7 @@ insert into config (clave, valor, rubro) values
     ('pesables_habilitados',  'false', null),
     ('modo_acceso',           '"solo_invitacion"', null),
     ('geofence_metros',       '150', null),
+    ('geofence_precision_max_m', '100', null),
     ('radio_precios_m',       '5000', null),
     ('karma_por_carga',       '1',   null),
     -- Alta de locales por cualquier usuario: solo mientras se prueba (Doc 1: la
