@@ -420,3 +420,15 @@ instalá esos.
   estaban apagados. **Solución:** `make up` y `docker compose up -d --build backend`.
 - **Nota de Flutter:** en `mapa_precios.dart`, `Path` es de `flutter_map`
   (`Path<LatLng>`): para dibujar con `Canvas` usar `ui.Path` (`import 'dart:ui' as ui`).
+
+## Geofence al cargar un precio (corte 6)
+
+- **Decisión:** la distancia la calcula el backend con PostGIS
+  (`st_distance` sobre `geography`, en metros) y rechaza con 403 + `detail.codigo`
+  (no 422, que la app ya usa para «precio inválido»). `ApiException` ahora guarda el
+  `detail` de la respuesta para poder mostrar «Estás a 480 m».
+- **Tests:** las cargas de los tests parten de las coordenadas del propio local
+  (`tests/db.py::cuerpo_carga`). Ojo: el UUID `…0001` es el local del seed, no sirve
+  como «local inexistente».
+- **Límite conocido:** la ubicación la informa el celular; una ubicación simulada la
+  falsifica (se mitiga con reputación, corte 9).

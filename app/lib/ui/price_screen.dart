@@ -116,10 +116,15 @@ class _PriceScreenState extends State<PriceScreen> {
       _enviando = true;
     });
     try {
+      // Ubicación fresca: el usuario pudo moverse desde que abrió la pantalla.
+      final ubicacion = await widget.deps.obtenerUbicacion().catchError(
+        (Object _) => _ubicacion!,
+      );
       final resultado = await widget.deps.cargarPrecio(
         ean: widget.producto.ean,
         localId: local.id,
         precio: precio,
+        ubicacion: ubicacion,
       );
       if (!mounted) return;
       setState(() {
@@ -134,6 +139,12 @@ class _PriceScreenState extends State<PriceScreen> {
           CargaError.noEncontrado =>
             'No encontramos el producto o el local. Probá de nuevo más tarde.',
           CargaError.precioInvalido => 'El servidor rechazó ese precio.',
+          CargaError.fueraDeRango =>
+            'Estás a ${distanciaFueraDeRango(e) ?? '?'} m de ${local.nombre}. '
+                'Acercate al local para cargar el precio.',
+          CargaError.precisionBaja =>
+            'Tu ubicación es muy imprecisa. Esperá unos segundos a que '
+                'mejore el GPS y probá de nuevo.',
           CargaError.otro => 'No pudimos cargar el precio. Probá de nuevo.',
         };
       });

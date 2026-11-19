@@ -6,7 +6,7 @@ import uuid
 import pytest
 
 from tests.conftest import make_token
-from tests.db import hacer_admin, sql
+from tests.db import cuerpo_carga, hacer_admin, sql
 
 EAN = "7790070411112"
 
@@ -40,9 +40,7 @@ def _local(client, admin) -> str:
 
 def _precio(client, headers, local_id, precio, dias=0, ean=EAN):
     """Carga un precio y lo «envejece» `dias` días."""
-    r = client.post(
-        "/v1/precios", headers=headers, json={"ean": ean, "local_id": local_id, "precio": precio}
-    )
+    r = client.post("/v1/precios", headers=headers, json=cuerpo_carga(local_id, ean, precio))
     assert r.status_code == 201
     if dias:
         sql(

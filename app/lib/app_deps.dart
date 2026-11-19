@@ -34,6 +34,7 @@ class AppDeps {
     required String ean,
     required String localId,
     required String precio,
+    required Ubicacion ubicacion,
   })
   cargarPrecio;
   final Future<List<PrecioHistorial>> Function(String ean) loadHistorial;

@@ -93,14 +93,43 @@ class PrecioVigente {
 }
 
 /// Por qué falló la carga de un precio.
-enum CargaError { noEncontrado, precioInvalido, otro }
+enum CargaError {
+  noEncontrado,
+  precioInvalido,
+
+  /// Estás lejos del local (geofence).
+  fueraDeRango,
+
+  /// El GPS no es lo bastante preciso: esperar y reintentar.
+  precisionBaja,
+  otro,
+}
 
 CargaError clasificarErrorCarga(Object error) {
   if (error is ApiException) {
     if (error.statusCode == 404) return CargaError.noEncontrado;
     if (error.statusCode == 422) return CargaError.precioInvalido;
+    if (error.statusCode == 403) {
+      return switch (_codigo(error)) {
+        'fuera_de_rango' => CargaError.fueraDeRango,
+        'precision_baja' => CargaError.precisionBaja,
+        _ => CargaError.otro,
+      };
+    }
   }
   return CargaError.otro;
+}
+
+String? _codigo(ApiException e) {
+  final d = e.detail;
+  return d is Map ? d['codigo'] as String? : null;
+}
+
+/// A cuántos metros del local estabas, cuando la carga se rechazó por lejos.
+int? distanciaFueraDeRango(Object error) {
+  if (error is! ApiException) return null;
+  final d = error.detail;
+  return d is Map ? (d['distancia_m'] as num?)?.round() : null;
 }
 
 class PriceRepository {
@@ -114,11 +143,16 @@ class PriceRepository {
     required String ean,
     required String localId,
     required String precio,
+    required Ubicacion ubicacion,
   }) async => PrecioCargado.fromJson(
     await _api.post('/precios', {
       'ean': ean,
       'local_id': localId,
       'precio': precio,
+      // Dónde está el usuario: el backend valida que esté cerca del local.
+      'lat': ubicacion.lat,
+      'lng': ubicacion.lng,
+      'precision_m': ubicacion.precisionM,
     }),
   );
 

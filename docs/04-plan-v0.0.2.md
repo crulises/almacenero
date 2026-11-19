@@ -147,6 +147,10 @@ la app).
   reputación y attestation (§6), no con más geofence.
 - Leer precios sigue sin pedir ubicación (Doc 1).
 - Para probar en el emulador: `adb emu geo fix <lng> <lat>`.
+- **Implementado (corte 6):** `POST /v1/precios` exige `lat`, `lng` y `precision_m`;
+  403 con `detail.codigo` = `fuera_de_rango` (con `distancia_m` y `radio_m`) o
+  `precision_baja` (umbral `config.geofence_precision_max_m`, 100 m). La app toma
+  una ubicación fresca al enviar y explica el rechazo.
 
 ## 4. Catálogo real: un ETL por fuente (corte 7)
 

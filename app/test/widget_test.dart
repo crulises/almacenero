@@ -25,7 +25,8 @@ const _aca = Ubicacion(lat: -34.6, lng: -58.4, precisionM: 12);
 /// Backend de mentira: el karma sube con cada precio cargado, como en el real.
 class _Backend {
   int karma = 0;
-  final cargas = <({String ean, String localId, String precio})>[];
+  final cargas =
+      <({String ean, String localId, String precio, Ubicacion ubicacion})>[];
   Object? errorAlCargar;
   Object? errorHistorial;
   Object? errorVigentes;
@@ -91,41 +92,52 @@ class _Backend {
       }
       return precios.reversed.toList(); // el más nuevo primero
     },
-    cargarPrecio: ({required ean, required localId, required precio}) async {
-      final error = errorAlCargar;
-      if (error != null) {
-        errorAlCargar = null; // falla una sola vez
-        throw error;
-      }
-      cargas.add((ean: ean, localId: localId, precio: precio));
-      vigentes
-        ..removeWhere((v) => v.localId == localId)
-        ..add(
-          PrecioVigente(
+    cargarPrecio:
+        ({
+          required ean,
+          required localId,
+          required precio,
+          required ubicacion,
+        }) async {
+          final error = errorAlCargar;
+          if (error != null) {
+            errorAlCargar = null; // falla una sola vez
+            throw error;
+          }
+          cargas.add((
+            ean: ean,
             localId: localId,
-            localNombre: 'Local $localId',
-            localVerificado: true,
-            lat: -34.6,
-            lng: -58.4,
             precio: precio,
-            fecha: DateTime.now(),
-            edadDias: 0,
-            frescura: 'verde',
-            vencido: false,
-          ),
-        )
-        ..sort((a, b) => a.precio.compareTo(b.precio));
-      precios.add(
-        PrecioHistorial(
-          id: 'pr${cargas.length}',
-          localNombre: _local.nombre,
-          precio: precio,
-          fecha: DateTime.now(),
-        ),
-      );
-      karma++;
-      return PrecioCargado(precioId: 'pr${cargas.length}', karma: karma);
-    },
+            ubicacion: ubicacion,
+          ));
+          vigentes
+            ..removeWhere((v) => v.localId == localId)
+            ..add(
+              PrecioVigente(
+                localId: localId,
+                localNombre: 'Local $localId',
+                localVerificado: true,
+                lat: -34.6,
+                lng: -58.4,
+                precio: precio,
+                fecha: DateTime.now(),
+                edadDias: 0,
+                frescura: 'verde',
+                vencido: false,
+              ),
+            )
+            ..sort((a, b) => a.precio.compareTo(b.precio));
+          precios.add(
+            PrecioHistorial(
+              id: 'pr${cargas.length}',
+              localNombre: _local.nombre,
+              precio: precio,
+              fecha: DateTime.now(),
+            ),
+          );
+          karma++;
+          return PrecioCargado(precioId: 'pr${cargas.length}', karma: karma);
+        },
   );
 }
 
@@ -186,8 +198,12 @@ void main() {
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
           loadVigentes: (_, {ubicacion}) async => [],
-          cargarPrecio: ({required ean, required localId, required precio}) =>
-              throw UnimplementedError(),
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
         ),
       );
       expect(find.text('No pudimos conectar con el servidor'), findsOneWidget);
@@ -824,6 +840,47 @@ void main() {
 
       await _enviarPrecio(tester, '500');
       expect(find.textContaining('No encontramos el producto'), findsOneWidget);
+    });
+
+    testWidgets('lejos del local: dice a cuántos metros y no suma karma', (
+      tester,
+    ) async {
+      backend.errorAlCargar = ApiException(
+        'Error 403',
+        statusCode: 403,
+        detail: {'codigo': 'fuera_de_rango', 'distancia_m': 480},
+      );
+      await abrir(tester);
+      await _irAlFormulario(tester);
+
+      await _enviarPrecio(tester, '500');
+
+      expect(find.textContaining('Estás a 480 m de'), findsOneWidget);
+      expect(find.text('¡Precio cargado!'), findsNothing);
+      expect(backend.karma, 0);
+    });
+
+    testWidgets('GPS impreciso: pide esperar y reintentar', (tester) async {
+      backend.errorAlCargar = ApiException(
+        'Error 403',
+        statusCode: 403,
+        detail: {'codigo': 'precision_baja'},
+      );
+      await abrir(tester);
+      await _irAlFormulario(tester);
+
+      await _enviarPrecio(tester, '500');
+
+      expect(find.textContaining('muy imprecisa'), findsOneWidget);
+    });
+
+    testWidgets('manda la ubicación actual con la carga', (tester) async {
+      await abrir(tester);
+      await _irAlFormulario(tester);
+
+      await _enviarPrecio(tester, '500');
+
+      expect(backend.cargas.single.ubicacion.lat, _aca.lat);
     });
   });
 }

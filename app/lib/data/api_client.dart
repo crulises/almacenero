@@ -5,10 +5,13 @@ import 'package:http/http.dart' as http;
 
 /// Error de la API: respuesta no-2xx, o falla de red (statusCode == null).
 class ApiException implements Exception {
-  ApiException(this.message, {this.statusCode});
+  ApiException(this.message, {this.statusCode, this.detail});
 
   final String message;
   final int? statusCode;
+
+  /// El `detail` de la respuesta de error (texto o JSON), si lo hay.
+  final Object? detail;
 
   bool get isUnauthorized => statusCode == 401;
 
@@ -68,6 +71,16 @@ class ApiClient {
     throw ApiException(
       'Error ${response.statusCode}',
       statusCode: response.statusCode,
+      detail: _detalle(response),
     );
+  }
+
+  static Object? _detalle(http.Response response) {
+    try {
+      final cuerpo = jsonDecode(utf8.decode(response.bodyBytes));
+      return cuerpo is Map<String, dynamic> ? cuerpo['detail'] : null;
+    } on Object {
+      return null;
+    }
   }
 }
