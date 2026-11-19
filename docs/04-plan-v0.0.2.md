@@ -24,7 +24,7 @@ offline, iOS, OAuth, pesables/genéricos.
 | 5 | Roles + alta de local + «locales cerca» | — | medio |
 | 6 | Geofence al cargar un precio | 5 | medio |
 | 7 | ETL de Open Food Facts | — (en paralelo a 5/6) | medio |
-| 8 | Frescura visible + precio vigente por local | — | chico |
+| 8 | **Precios vigentes por local: lista con frescura + mapa** (adelantado: va antes que 6) | — | medio |
 | 9 | Anti-spam (invitaciones, rate limit, límites por usuario) | 5 | medio |
 | 10 | Preparar release: firma del APK y guía de deploy | — | chico |
 
@@ -227,20 +227,84 @@ nada en silencio: queda en una **lista corta para revisar a mano**.
   traen productos con EAN y precios por comercio. Hay que revisar formato,
   licencia y frecuencia de actualización antes de decidir.
 - Aportes manuales del admin.
+- **Locales de cadenas conocidas (seed de ubicaciones):** fuente candidata
+  OpenStreetMap (Overpass API: `shop=supermarket`, `brand=...`, por país o zona).
+  Es abierta (licencia ODbL: exige atribución), a diferencia de scrapear Google
+  Maps, que viola sus términos, o de la Places API, que es paga y prohíbe guardar
+  los datos. Entrarían como locales `verificado = false` hasta que un admin los
+  confirme, con su propio ETL por fuente. Investigar cobertura real antes de
+  prometer nada. Complemento: los localizadores de tiendas que publican las
+  propias cadenas (revisar sus términos).
 
 El «alta mínima de producto» desde la app (para un EAN que ninguna fuente cubra)
 queda fuera de v0.0.2.
 
-## 5. Frescura y precio vigente (corte 8)
+## 5. Precios vigentes, frescura y mapa (corte 8, adelantado)
 
-- Nuevo `GET /v1/productos/{ean}/precios/vigentes`: **el último precio de cada
-  local**, con antigüedad en días y un estado `fresco` / `viejo` / `vencido`.
-  El backend lo calcula con los umbrales de `config` (`umbral_verde_dias`,
-  `umbral_amarillo_dias`, `ventana_frescura_dias`): es lógica de negocio.
-- La ficha muestra primero los vigentes por local, con color (verde / amarillo /
-  rojo) y la fecha siempre visible; el historial completo queda debajo.
+Un producto va a tener varios «precios activos» (uno por local), así que la lista
+con la frescura de cada uno pasa a ser lo central de la ficha.
+
+- `GET /v1/productos/{ean}/precios/vigentes`: **el último precio de cada local**,
+  del más barato al más caro, con ubicación del local, antigüedad en días,
+  `frescura` (`verde` / `amarillo` / `rojo`) y `vencido`. El backend lo calcula con
+  los umbrales de `config` (`umbral_verde_dias`, `umbral_amarillo_dias`,
+  `ventana_frescura_dias`): es lógica de negocio. El historial completo sigue en
+  `/precios`.
+- **Ficha:** arriba el mapa con un **cartel de precio por local**, coloreado por
+  frescura; debajo la lista («Más barato», local, estado de frescura y fecha
+  siempre visible). **Tocar un precio de la lista lo resalta en el mapa** y lo
+  centra; **tocar un cartel del mapa resalta su fila** y lleva la lista hasta ahí.
+- **Mapa:** `flutter_map` con teselas de OpenStreetMap, sin clave de API ni cuenta.
+  Las teselas públicas de OSM **no son para uso masivo** (política de uso): sirven
+  para el grupo cerrado; antes de abrir la app hay que pasar a un proveedor de
+  teselas (varios tienen plan gratis) o servirlas uno mismo. Cambiar el proveedor
+  es cambiar la URL de la capa. **Es una decisión abierta con fecha límite: antes
+  de repartir la app fuera del grupo cerrado** (ver «Decisiones»). Google Maps:
+  descartado por ahora (clave y cuenta de facturación); **se reevalúa tras usar la
+  app con el grupo cerrado**.
+- **Ajustes tras la prueba en el celular:**
+  - **Globo con punta:** el cartel de precio es más chico y termina en una punta
+    (▼) que señala el local; el globo queda por encima de la posición exacta.
+  - **Solo precios cerca:** con la ubicación del usuario, el backend filtra por
+    `config.radio_precios_m` (5000 m por defecto) y devuelve `distancia_m`. Sin
+    precios en el radio, la ficha lo dice y ofrece «Ver precios en otros lugares»
+    (sin filtro). Sin ubicación (permiso o GPS apagado), se muestran todos.
+  - **Lista corta:** 5 precios y «Mostrar más (N)» / «Mostrar menos». Tocar un
+    cartel del mapa despliega la lista si ese local estaba oculto.
+  - **Orden:** chips Precio (por defecto) · Cercanía · Frescura. «Más barato» se
+    marca siempre en el más barato, sin importar el orden elegido.
+
+### Orden por reputación y locales patrocinados (propuesta, no implementado)
+
+**Reputación del local** (para un orden «Reputación»): derivada, no editable.
+Combinar (a) cantidad de precios cargados en los últimos N días, (b) cuánto
+coinciden con los demás (cuando exista la validación colaborativa), (c) `verificado`.
+Se calcula en el backend (negocio) y se expone como `reputacion` (0 a 1); hasta que
+exista (b), sería solo (a) y (c), así que conviene no mostrar la palabra
+«reputación» todavía.
+
+**Patrocinio** (un local paga para que su producto aparezca arriba):
+- *Modelo:* tabla `patrocinios(id, local_id, producto_canonico_id | null, desde,
+  hasta, activo, creado_por, nota)`; en Postgres, con `check (hasta > desde)`.
+  `producto_canonico_id` nulo = todo el local. Integridad en la base; la regla de
+  «cuántos y dónde» en el backend (`config.max_patrocinados` = 1 por lista).
+- *API:* `GET .../precios/vigentes` agrega `patrocinado: bool`. Un patrocinado
+  aparece **primero y siempre marcado «Patrocinado»**, separado del ranking, y sin
+  cambiar su precio ni su frescura reales. Solo entran locales dentro del radio.
+  Permiso nuevo `patrocinio.gestionar` (solo admin).
+- *Honestidad:* el mapa y el «Más barato» **nunca** se alteran por patrocinio.
+  Fijarlo en el Doc 1 antes de implementarlo (cambia lo que promete el producto).
+- *UI del admin* (una pantalla de la app, solo rol admin): lista de patrocinios
+  con estado (activo / vencido), «Nuevo patrocinio» (elegir local con buscador,
+  producto opcional por EAN, fechas desde/hasta) y botón «Pausar». Sin cobro en la
+  app: el acuerdo comercial se hace afuera y el admin lo carga.
+- *Antes de implementar:* revisar el marco legal de publicidad etiquetada y decidir
+  si hay un tope de patrocinados por zona.
+
 - Sin estimación por IPC en esta versión (Doc 1 la prevé, marcada como
-  estimación; se deja para más adelante).
+  estimación; más adelante).
+- Pendiente para después: ordenar o filtrar por distancia al usuario, y mostrar la
+  posición del usuario en el mapa (hay que pedir ubicación en la ficha).
 
 ## 6. Anti-spam sobre `/v1/auth/anonymous` (corte 9)
 
@@ -302,7 +366,7 @@ el backend FastAPI es una imagen Docker y necesita un host de contenedores.
 | Pieza | Dónde | Notas |
 |-------|-------|-------|
 | Postgres + PostGIS, Auth | Proyecto de Supabase (plan gratis para empezar) | Región Sudamérica (São Paulo). El plan gratis pausa proyectos inactivos y tiene límites de tamaño; revisar condiciones vigentes. |
-| Backend FastAPI | Fly.io, Render o Railway (hay que elegir) | Los tres dan HTTPS automático en su subdominio, **sin comprar dominio**. Costo bajo pero no necesariamente cero; el plan gratis de algunos duerme el servicio (primer request lento). Verificar precios vigentes. |
+| Backend FastAPI | Fly.io, Render o Railway (hay que elegir; ver «Elegir host» abajo) | Los tres dan HTTPS automático en su subdominio, **sin comprar dominio**. |
 | App | APK firmado | Se instala a mano. |
 
 Variables del backend en producción (secrets de la plataforma, nunca en git):
@@ -312,6 +376,42 @@ así que conviene el *session pooler* o ajustar el cliente: probarlo antes),
 `AUTH_URL` (`https://<proyecto>.supabase.co/auth/v1`), `AUTH_API_KEY` (la clave
 anon), `JWKS_URL`. Las migraciones se aplican a mano a la base remota; **no** se
 corre el seed de desarrollo, solo la config inicial y los datos reales.
+
+#### Elegir host: «escala a cero» y arranque en frío
+
+Requisito del dueño: lo más barato posible; no importa que el servicio se duerma
+si despierta solo con una petición. Lo que hay que mirar (y **verificar en las
+páginas de precios al momento de decidir**, porque cambian):
+
+- **Fly.io:** modelo de pago por segundo y máquinas que se apagan solas
+  (`auto_stop_machines`) y arrancan con la primera petición, en pocos segundos. Se
+  maneja con la terminal (`flyctl`). Pide tarjeta. Apagada, cuesta solo el disco de
+  la imagen. Cuidado: no asumir que «las facturas chicas se perdonan»; confirmarlo
+  en la página de precios.
+- **Render (plan gratis):** gratis y sin tarjeta, pero el servicio se duerme tras
+  unos 15 minutos y el arranque en frío tarda **30 a 60 segundos**. Su Postgres
+  gratis caduca: no sirve para este proyecto (la base va en Supabase).
+- **Efecto en la app:** hoy la app corta cada pedido a los 15 segundos. Con un
+  arranque en frío de medio minuto (Render) habría que **subir el tiempo de espera
+  y reintentar**, o mostrar «despertando el servidor…». Con Fly alcanza con un
+  reintento. Es un cambio chico en `ApiClient`, y conviene hacerlo antes del primer
+  reparto del APK.
+- **Base de datos:** Supabase (plan gratis). Ojo: el plan gratis **pausa** los
+  proyectos sin actividad durante una semana; un uso mínimo semanal lo evita.
+- **Recomendación provisoria:** Fly.io por el arranque rápido y el costo mínimo, si
+  no te molesta darle una tarjeta; Render si querés evitar la tarjeta y aceptás el
+  arranque lento. La decisión final sigue siendo tuya.
+
+### Dónde van las imágenes
+
+- **Fotos del catálogo (productos canónicos):** son **URLs de Open Food Facts**,
+  no se guardan (Doc 2). La app las muestra desde ahí. Más adelante se podría poner
+  una caché delante (Cloudflare) si OFF fuera lento o inestable.
+- **Fotos subidas por usuarios** (producto nuevo, genérico, foto de góndola):
+  **Supabase Storage** (compatible con S3). Están diferidas: no hay subida de fotos
+  en v0.0.2. Si el almacenamiento gratis se quedara corto, el siguiente paso es un
+  bucket S3-compatible aparte (p. ej. Cloudflare R2, que no cobra la salida de
+  datos; verificar condiciones), sin cambiar el código porque la API es S3.
 
 ### Dominio: uno solo alcanza para todos tus proyectos
 
@@ -398,8 +498,41 @@ credenciales.
 - **Dominio:** lo busca el dueño del proyecto (uno solo, con subdominios).
 - **`applicationId`:** decidir tras comprar el dominio y antes del primer release
   firmado (§7).
+- **Proveedor de teselas del mapa:** OSM público solo sirve para el grupo
+  cerrado; decidir (proveedor con plan gratis o propio) **antes de abrir la app**.
+- **Timeouts de red configurables:** el tiempo de espera de `ApiClient` (hoy 15 s)
+  pasa a ser un valor de configuración (`--dart-define` al compilar o ajuste
+  remoto) para poder pasar a 30/60/90 s sin tocar código; con reintento y el
+  mensaje «Despertando servidor…» cuando el primer pedido tarda. Se hace en el
+  corte 10 (antes de repartir el APK).
+- **Base de datos y pausa de Supabase gratis:** ver §7 «Elegir host»; si la pausa
+  no es tolerable, evaluar Postgres en otro servicio (costo-beneficio).
+- **Imágenes subidas por usuarios** (diferidas): compresión en el cliente y
+  re-codificación en el servidor; moderación antes de publicar (§7).
 - **Tamaño del catálogo en producción:** se decide tras medir la carga completa
   en local (§4).
+
+## Plan de escape: recrear todo en otro lugar
+
+Hacerlo **antes de cargar datos reales** y repasarlo cada tanto.
+
+- **Esquema:** migraciones SQL planas en `supabase/migrations/` (sin nada propio de
+  Supabase en el código). Probar de vez en cuando que levantan en un Postgres
+  común con PostGIS y `pg_trgm`.
+- **Auth:** el backend valida el JWT con `JWT_SECRET`/`JWKS_URL`/`AUTH_URL`. Hoy
+  los emite GoTrue; irse implica o desplegar GoTrue aparte o emitir los tokens
+  desde el propio backend. Es el punto más acoplado: decidirlo y probarlo antes
+  de salir.
+- **Datos:** `pg_dump` periódico (lógico, `make backup`) a un lugar fuera de
+  Supabase, más una prueba de restauración en un Postgres limpio. Los ETL
+  (`make etl-*`) regeneran el catálogo, así que el backup crítico son usuarios,
+  locales y precios cargados.
+- **Storage (cuando haya fotos):** cliente S3-compatible detrás de una interfaz,
+  con el bucket configurable por variables de entorno.
+- **Config:** todo por variables de entorno (`.env.example` al día), imágenes
+  Docker reproducibles, y la guía de deploy en `docs/`.
+- **Simulacro:** un día antes del release, restaurar un backup en otro Postgres y
+  apuntar el backend con `DATABASE_URL`; anotar lo que falle en el doc 03.
 
 ## Documentación a actualizar al ejecutar el plan
 

@@ -60,4 +60,15 @@ void main() {
       '02/11/2026 (hace 13 días)',
     );
   });
+
+  test('formatearPrecioCorto: sin centavos si son cero', () {
+    expect(formatearPrecioCorto('1234.00'), r'$ 1.234');
+    expect(formatearPrecioCorto('1234.50'), r'$ 1.234,50');
+    expect(formatearPrecioCorto('0.99'), r'$ 0,99');
+  });
+
+  test('formatearDistancia: metros o kilómetros', () {
+    expect(formatearDistancia(350.4), '350 m');
+    expect(formatearDistancia(1449), '1,4 km');
+  });
 }
