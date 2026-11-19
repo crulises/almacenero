@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed demo demo-borrar admin test lint build venv apk
+.PHONY: up down migrate seed demo demo-borrar admin test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -47,20 +47,84 @@ admin: ## Promueve a un usuario a admin: make admin ALIAS=anon-1ff221
 # --- calidad ---------------------------------------------------------------
 $(PY):
 	python3 -m venv $(VENV)
-	$(PY) -m pip install -q -e "backend[dev]"
+	$(PY) -m pip install -q -e "backend[dev,etl]"
 
 venv: $(PY)
 
 test: $(PY) ## Tests de backend (Postgres local real) y de la app
 	cd backend && .venv/bin/python -m pytest
+	$(PY) -m pytest etl/tests -q
 	cd app && flutter test
 
 lint: $(PY)
 	cd backend && .venv/bin/ruff check . && .venv/bin/ruff format --check .
+	$(VENV)/bin/ruff check --config backend/pyproject.toml etl && $(VENV)/bin/ruff format --check --config backend/pyproject.toml etl
 	cd app && flutter analyze
 
 build: ## Build de imágenes
 	docker compose build
+
+# --- ETL del catálogo (uno por fuente) ---------------------------------------
+OFF_URL := https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz
+OFF_ARCHIVO ?= etl/data/off.csv.gz
+
+etl-off-muestra: ## Baja ~30 MB del principio del volcado de OFF (para probar)
+	@mkdir -p etl/data
+	curl -fL -r 0-30000000 -o etl/data/off-muestra.csv.gz $(OFF_URL)
+	@echo "Listo: etl/data/off-muestra.csv.gz (truncado a propósito; el ETL lo tolera)"
+
+etl-off-descargar: ## Baja el volcado COMPLETO de OFF (~1,5 GB). Pedí OK antes de correrlo
+	@mkdir -p etl/data
+	curl -fL -C - -o $(OFF_ARCHIVO) $(OFF_URL)
+
+# Países de OFF que se cargan: Argentina y sus vecinos (SEPA es la fuente principal
+# para Argentina). OFF_PAISES= (vacío) carga todo el mundo (~2,4 GB en la base).
+OFF_PAISES ?= en:argentina,en:paraguay,en:brazil,en:chile,en:uruguay,en:bolivia
+
+etl-off: $(PY) ## Carga OFF al catálogo: make etl-off [OFF_ARCHIVO=...] [OFF_PAISES=]
+	@test -f $(OFF_ARCHIVO) || { echo "Falta $(OFF_ARCHIVO): make etl-off-muestra (chico) o make etl-off-descargar (completo)"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.off $(OFF_ARCHIVO) --paises "$(OFF_PAISES)"
+
+SEPA_DIR ?= etl/data/sepa
+# Día de SEPA a bajar (lunes..domingo); el id de recurso de cada día está en la ficha
+# del dataset: https://datos.produccion.gob.ar/dataset/sepa-precios
+SEPA_URL ?=
+
+etl-sepa-descargar: ## Baja un zip diario de SEPA: make etl-sepa-descargar SEPA_URL=<url del recurso> (reintenta; el servidor corta)
+	@test -n "$(SEPA_URL)" || { echo "Uso: make etl-sepa-descargar SEPA_URL=<url .zip de datos.produccion.gob.ar>"; exit 1; }
+	@mkdir -p $(SEPA_DIR)
+	@f=$(SEPA_DIR)/$$(basename "$(SEPA_URL)"); \
+	for i in 1 2 3 4 5; do \
+		curl -fL --max-time 1800 -A "almacenero-etl/0.1" -o "$$f" "$(SEPA_URL)" && unzip -tq "$$f" >/dev/null 2>&1 && { echo "OK: $$f"; exit 0; }; \
+		echo "intento $$i falló, reintento..."; \
+	done; echo "no se pudo bajar un zip válido"; exit 1
+
+etl-sepa: $(PY) ## Carga SEPA al catálogo: make etl-sepa SEPA_ARCHIVOS="etl/data/sepa/sepa_domingo.zip"
+	@test -n "$(SEPA_ARCHIVOS)" || { echo "Uso: make etl-sepa SEPA_ARCHIVOS=\"ruta1.zip ruta2.zip\""; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.sepa $(SEPA_ARCHIVOS)
+
+etl-sepa-locales: $(PY) ## Carga las sucursales de SEPA como locales: make etl-sepa-locales [SEPA_ARCHIVOS=...] [PROVINCIA=misiones]
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.sepa.locales $(or $(SEPA_ARCHIVOS),$(SEPA_DIR)/sepa_domingo.zip) $(if $(PROVINCIA),--provincia $(PROVINCIA))
+
+OSM_URL ?= https://download.geofabrik.de/south-america/argentina-latest.osm.pbf
+OSM_ARCHIVO ?= etl/data/osm/argentina-latest.osm.pbf
+
+etl-osm-descargar: ## Baja el extracto de Argentina de Geofabrik (~440 MB; Geofabrik no parte por provincia)
+	@mkdir -p etl/data/osm
+	curl -fL --retry 5 -C - -o $(OSM_ARCHIVO) $(OSM_URL)
+
+etl-osm: $(PY) ## Carga supermercados/almacenes de OSM como locales: make etl-osm PROVINCIA=misiones
+	@test -n "$(PROVINCIA)" || { echo "Uso: make etl-osm PROVINCIA=misiones (slug o código AR-N)"; exit 1; }
+	@test -f $(OSM_ARCHIVO) || { echo "Falta $(OSM_ARCHIVO): make etl-osm-descargar"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.osm $(OSM_ARCHIVO) --provincia $(PROVINCIA)
+
+conflictos: $(PY) ## Lista los conflictos de catálogo pendientes de revisión
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.conflictos
 
 # --- app en un celular -----------------------------------------------------
 apk: ## APK debug (arm64) para probar en un celular de la misma red Wi-Fi

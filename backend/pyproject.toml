@@ -17,6 +17,10 @@ dev = [
     "pytest>=8",
     "ruff>=0.5",
 ]
+# Solo para el ETL de OpenStreetMap (etl/osm); el backend no lo usa.
+etl = [
+    "osmium>=4",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
