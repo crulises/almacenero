@@ -16,7 +16,8 @@ Flutter, `psql`.
 ## Uso
 
 ```bash
-make up       # Supabase local + backend (http://localhost:8000/docs)
+make up       # Supabase local + backend (http://localhost:8000/docs) + panel de admin (http://localhost:8080)
+make admin-crear EMAIL=vos@mail.com   # crea el admin del panel (pide la contraseña)
 make seed     # datos de arranque (las migraciones las aplica `supabase start`)
 make test
 make lint

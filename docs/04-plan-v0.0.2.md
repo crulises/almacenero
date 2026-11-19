@@ -525,6 +525,61 @@ ajustan a medida que se usa.
 - **Seguridad:** solo rol `admin`; CORS y HTTPS al desplegar; el panel no se publica
   junto con la app sin proteger.
 
+### Implementado (corte 11)
+
+**Cómo se levanta:** `make up` ya construye y levanta el panel (servicio `admin-web` del
+`docker-compose`, nginx + HTML/JS con Alpine por CDN, sin build) en http://localhost:8080;
+`make admin-web` lo reconstruye solo. Se crea el admin con
+`make admin-crear EMAIL=vos@mail.com` (pide la contraseña, o `PASSWORD=...`).
+
+**Decisión de login (prerrequisito).** Email y contraseña de GoTrue, **vía el backend**:
+`POST /v1/admin/login` pide la sesión a GoTrue (`/token?grant_type=password`) y solo la
+entrega si `usuarios.rol = 'admin'` (si no, 403 y no sale ningún token). El panel renueva
+con el `/v1/auth/refresh` de siempre y cada `/v1/admin/*` exige la capacidad
+`admin.acceder` además de la propia de cada acción (`permisos.py`). Por qué así y no otra
+cosa:
+- *No* se «mejora» el login anónimo: un anónimo no tiene credenciales, no se puede
+  reingresar desde una pantalla grande. El admin necesita una cuenta de verdad.
+- *No* se agrega un rol por API: el rol sigue protegido por trigger. `make admin-crear`
+  registra el email en GoTrue (o verifica la contraseña si ya existe) y habilita
+  `rol = 'admin'` dentro de su propia transacción, igual que `make admin ALIAS=...`
+  (ese sigue sirviendo para la app, pero un anónimo promovido **no** puede entrar al panel).
+- El rol vive en Postgres, no en un claim del JWT: revocar un admin es un `update` y vale
+  en el siguiente request.
+- Sin rate limit propio en el login: lo cubre el de GoTrue y el corte 9 (anti-spam).
+
+**Usuarios anónimos y registrados.** `usuarios` suma `email`, `es_anonimo` y
+`anonimo_auth_id`; `app/auth.py` los sincroniza desde los claims del JWT (`email`,
+`is_anonymous`) en cada request. Con GoTrue, ligar un anónimo a un email conserva su id,
+así que `anonimo_auth_id` (el id anónimo con el que empezó) coincide con `auth_id`; queda
+null para quien nació registrado (el admin). El panel muestra la asociación, alias, rol,
+karma, cargas, locales creados y alta. Desde el panel solo se edita el **alias**: rol y
+karma siguen protegidos en la base.
+
+**API `/v1/admin`** (capacidad entre paréntesis; todo con tests contra Postgres real):
+
+| Recurso | Qué hay |
+|---------|---------|
+| `usuarios` (`usuario.ver/editar`) | listar con filtros (tipo, rol, texto) y orden; editar alias |
+| `locales` (`local.*`) | listar (verificado, fuente, texto, sin precios); corregir nombre/dirección/ubicación/verificado; **validar en masa**; **fusionar** duplicados (mueve precios, ítems y vínculos ETL); **borrar en masa** (omite los que tienen precios) |
+| `precios` (`precio.*`) | listar por local/EAN/usuario/fechas; corregir el monto (no la fecha: la frescura es la de la carga); borrar uno o en masa |
+| `config` (`config.editar`) | ver todo (con el default del código) y cambiar el valor global; valida clave conocida, mismo tipo y no negativo |
+| `productos`, `conflictos` (`catalogo.*`) | listar/corregir productos (lo corregido queda **bloqueado** contra el ETL) y resolver conflictos A/B, como `make conflictos` |
+| `auditoria` (`auditoria.ver`) | listado filtrable |
+
+**Auditoría.** Tabla `auditoria_admin` (quién, qué, cuándo, antes, después, nota),
+**solo-agregar por trigger** (ni el backend la modifica ni la borra). Cada corrección la
+escribe en la misma transacción. Al borrar un precio, el rastro guarda la fila entera
+(es la única copia); el karma que ganó el autor **no** se revierte.
+
+**CORS.** `CORS_ORIGINS` (por defecto `http://localhost:8080,http://127.0.0.1:8080`). El
+panel toma la URL del backend de `config.js` (mismo host, puerto 8000). Para abrirlo desde
+otra máquina de la red, agregar ese origen en `.env`. Con HTTPS, poner el origen real.
+
+**Pendiente del corte** (no entró): patrocinios (§5: falta fijar la regla en el Doc 1
+antes de implementarlos), atribuciones y alta de productos nuevos. Sin HTTPS ni
+protección extra el panel **no se publica junto con la app** (ver Seguridad).
+
 ## Decisiones
 
 **Tomadas**

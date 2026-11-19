@@ -507,3 +507,39 @@ instalá esos.
   como «local inexistente».
 - **Límite conocido:** la ubicación la informa el celular; una ubicación simulada la
   falsifica (se mitiga con reputación, corte 9).
+
+---
+
+## Panel web de admin (corte 11)
+
+- **Decisión:** login con email y contraseña de GoTrue vía `POST /v1/admin/login`; solo
+  entra `rol = 'admin'`. Crear el admin: `make admin-crear EMAIL=...`. Detalle y
+  motivos en `docs/04` §8. Un anónimo promovido con `make admin` **no** entra al panel
+  (no tiene credenciales).
+- **Síntoma:** `AmbiguousParameterError: could not determine data type of parameter $1`
+  (todos los endpoints en 500) tras ampliar el `insert into usuarios` de `app/auth.py`.
+  **Causa:** el mismo `$1` se usaba como `uuid` (columna) y dentro de un `case when $4
+  then $1 end`; asyncpg no infiere el tipo. **Solución:** castear explícito
+  (`$4::boolean`, `$1::uuid`).
+- **Síntoma:** usuarios nuevos con `anonimo_auth_id` nulo aunque sean anónimos.
+  **Causa:** había un backend viejo (otra imagen Docker) corriendo contra la misma base
+  ya migrada: su `insert` no conoce las columnas nuevas. **Solución:**
+  `docker compose up -d --build backend` para que corra el código nuevo.
+- **Síntoma:** `make admin-crear` con un email que ya existe no devuelve el id.
+  **Causa:** GoTrue responde el signup de un email existente sin sesión. **Solución:**
+  el CLI cae a iniciar sesión con la contraseña y toma el id de ahí (si la contraseña
+  no coincide, falla con el motivo).
+- **Síntoma:** el panel dice «No puedo conectar con el backend» o el navegador
+  bloquea por CORS al abrirlo desde otra máquina. **Causa:** el origen
+  (`http://192.168.x.x:8080`) no está en `CORS_ORIGINS`. **Solución:** agregarlo en `.env`
+  y reiniciar el backend. La URL del backend sale de `admin-web/public/config.js`
+  (mismo host que el panel, puerto 8000).
+- **Gotcha de Alpine:** `x-model.debounce` junto con `@input` dispara el `@input` con el
+  valor viejo. Se usa `x-model` plano y `@input.debounce.400ms`.
+- **Gotcha de tests:** `auditoria_admin` es solo-agregar, así que los tests dejan filas que
+  no se pueden limpiar (como los usuarios de prueba, que ya se acumulaban). No usar la
+  auditoría para contar filas totales en los tests: filtrar por `entidad_id`.
+- **Gotcha de entorno:** correr `make up` desde un worktree levanta otro proyecto de
+  compose que choca con el puerto 8000 del backend ya levantado en el checkout
+  principal. Para probar una rama sin tocarlo: `uvicorn` en otro puerto + servir
+  `admin-web/public` con un `config.js` apuntando ahí (y `CORS_ORIGINS` con ese origen).

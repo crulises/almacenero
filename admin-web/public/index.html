@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Almacenero · Admin</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+</head>
+<body x-data="panel()" x-init="init()" x-cloak>
+
+  <!-- ============================================================ LOGIN -->
+  <form class="login" x-show="!sesion" @submit.prevent="entrar()">
+    <h1>Almacenero · Admin</h1>
+    <input type="email" placeholder="Email" autocomplete="username" required x-model="login.email">
+    <input type="password" placeholder="Contraseña" autocomplete="current-password" required x-model="login.password">
+    <button class="primario" :disabled="login.enviando">Entrar</button>
+    <div class="error" x-text="login.error"></div>
+    <div class="suave">Solo cuentas con rol admin. Se crean con <span class="mono">make admin-crear</span>.</div>
+  </form>
+
+  <div class="app" x-show="sesion">
+    <!-- ======================================================== NAVEGACIÓN -->
+    <nav>
+      <h2>Almacenero</h2>
+      <template x-for="v in Object.keys(TITULOS)" :key="v">
+        <button :class="{activo: vista === v}" @click="cambiarVista(v)" x-text="TITULOS[v]"></button>
+      </template>
+      <div class="pie">
+        <span x-text="sesion?.usuario?.email"></span>
+        <button @click="salir()">Salir</button>
+      </div>
+    </nav>
+
+    <main>
+      <h1 x-text="TITULOS[vista]"></h1>
+
+      <!-- ========================================================= LOCALES -->
+      <section x-show="vista === 'locales'">
+        <div class="filtros">
+          <select x-model="sec.locales.f.verificado" @change="cargar('locales', true)">
+            <option value="">Todos</option><option value="false">Sin verificar</option><option value="true">Verificados</option>
+          </select>
+          <select x-model="sec.locales.f.fuente" @change="cargar('locales', true)">
+            <option value="">Cualquier fuente</option><option value="osm">OSM</option><option value="sepa">SEPA</option><option value="manual">Usuario / admin</option>
+          </select>
+          <input type="search" placeholder="Nombre o dirección" x-model="sec.locales.f.q" @input.debounce.400ms="cargar('locales', true)">
+          <label><input type="checkbox" x-model="sec.locales.f.sin_precios" @change="cargar('locales', true)"> Sin precios</label>
+          <select x-model="sec.locales.f.orden" @change="cargar('locales', true)">
+            <option value="alta">Más nuevos</option><option value="nombre">Nombre</option><option value="precios">Más precios</option>
+          </select>
+        </div>
+        <div class="masivas" x-show="elegidos('locales').length">
+          <b x-text="elegidos('locales').length + ' seleccionados'"></b>
+          <button class="primario" @click="validarLocales(elegidos('locales'))">Validar</button>
+          <button class="peligro" @click="borrarLocales(elegidos('locales'))">Borrar</button>
+          <template x-if="elegidos('locales').length > 1">
+            <span>
+              Fusionar en
+              <select x-model="destino">
+                <option value="">— elegí el destino —</option>
+                <template x-for="l in sec.locales.items.filter(i => sec.locales.sel[i.id])" :key="l.id">
+                  <option :value="l.id" x-text="l.nombre"></option>
+                </template>
+              </select>
+              <button @click="fusionar(elegidos('locales'))">Fusionar</button>
+            </span>
+          </template>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr>
+            <th><input type="checkbox" @change="marcarTodos('locales', $event.target.checked)"></th>
+            <th>Nombre</th><th>Dirección</th><th>Lat</th><th>Lng</th><th>Estado</th><th>Fuente</th>
+            <th>Precios</th><th>Creado por</th><th>Vínculos ETL</th><th></th>
+          </tr></thead>
+          <tbody>
+            <template x-for="l in sec.locales.items" :key="l.id">
+              <tr>
+                <td><input type="checkbox" x-model="sec.locales.sel[l.id]"></td>
+                <td><input type="text" :value="l.nombre" @change="local(l, 'nombre', $event.target.value)"></td>
+                <td><input type="text" :value="l.direccion" @change="local(l, 'direccion', $event.target.value)"></td>
+                <td><input type="number" step="any" class="num" :value="l.lat" @change="ubicacion(l, parseFloat($event.target.value), l.lng)"></td>
+                <td><input type="number" step="any" class="num" :value="l.lng" @change="ubicacion(l, l.lat, parseFloat($event.target.value))"></td>
+                <td><span class="badge" :class="l.verificado ? 'ok' : 'mal'" x-text="l.verificado ? 'verificado' : 'sin verificar'"></span></td>
+                <td x-text="l.fuente"></td>
+                <td><a href="#" @click.prevent="ir('precios', {local_id: l.id})" x-text="l.precios"></a></td>
+                <td class="suave" x-text="l.creado_por_alias || '—'"></td>
+                <td class="mono suave" x-text="l.refs.join(', ')"></td>
+                <td>
+                  <button x-show="!l.verificado" @click="validarLocales([l.id])">Validar</button>
+                  <a :href="mapa(l)" target="_blank" rel="noopener">mapa</a>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('locales', -1)" :disabled="sec.locales.offset === 0">←</button>
+          <span x-text="rango('locales')"></span>
+          <button @click="pagina('locales', 1)" :disabled="sec.locales.offset + sec.locales.limit >= sec.locales.total">→</button>
+        </div>
+      </section>
+
+      <!-- ======================================================== USUARIOS -->
+      <section x-show="vista === 'usuarios'">
+        <div class="filtros">
+          <select x-model="sec.usuarios.f.tipo" @change="cargar('usuarios', true)">
+            <option value="">Anónimos y registrados</option><option value="anonimo">Anónimos</option><option value="registrado">Registrados</option>
+          </select>
+          <select x-model="sec.usuarios.f.rol" @change="cargar('usuarios', true)">
+            <option value="">Cualquier rol</option><option value="usuario">usuario</option><option value="admin">admin</option>
+          </select>
+          <input type="search" placeholder="Alias, email o id" x-model="sec.usuarios.f.q" @input.debounce.400ms="cargar('usuarios', true)">
+          <select x-model="sec.usuarios.f.orden" @change="cargar('usuarios', true)">
+            <option value="alta">Más nuevos</option><option value="karma">Karma</option><option value="cargas">Cargas</option>
+          </select>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr><th>Alias</th><th>Tipo</th><th>Email</th><th>Anónimo asociado</th><th>Rol</th><th>Karma</th><th>Cargas</th><th>Locales creados</th><th>Alta</th><th>Id</th></tr></thead>
+          <tbody>
+            <template x-for="u in sec.usuarios.items" :key="u.id">
+              <tr>
+                <td><input type="text" :value="u.alias" @change="alias(u, $event.target.value)"></td>
+                <td><span class="badge" :class="u.es_anonimo ? 'mal' : 'ok'" x-text="u.es_anonimo ? 'anónimo' : 'registrado'"></span></td>
+                <td x-text="u.email || '—'"></td>
+                <td class="mono">
+                  <span x-show="!u.anonimo_auth_id" class="suave">nació registrado</span>
+                  <span x-show="u.anonimo_auth_id" x-text="u.es_anonimo ? 'es este' : corto(u.anonimo_auth_id) + '…'"></span>
+                </td>
+                <td x-text="u.rol"></td>
+                <td x-text="u.karma"></td>
+                <td><a href="#" @click.prevent="ir('precios', {user_id: u.id})" x-text="u.cargas"></a></td>
+                <td x-text="u.locales_creados"></td>
+                <td class="suave" x-text="fecha(u.created_at)"></td>
+                <td class="mono suave" :title="u.id" x-text="corto(u.id)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('usuarios', -1)" :disabled="sec.usuarios.offset === 0">←</button>
+          <span x-text="rango('usuarios')"></span>
+          <button @click="pagina('usuarios', 1)" :disabled="sec.usuarios.offset + sec.usuarios.limit >= sec.usuarios.total">→</button>
+        </div>
+        <p class="suave">El rol y el karma no se editan desde acá: están protegidos en la base (rol: <span class="mono">make admin-crear</span> / <span class="mono">make admin</span>).</p>
+      </section>
+
+      <!-- ========================================================= PRECIOS -->
+      <section x-show="vista === 'precios'">
+        <div class="filtros">
+          <input placeholder="Id de local" size="36" x-model="sec.precios.f.local_id" @input.debounce.400ms="cargar('precios', true)">
+          <input placeholder="EAN" size="14" x-model="sec.precios.f.ean" @input.debounce.400ms="cargar('precios', true)">
+          <input placeholder="Id de usuario" size="36" x-model="sec.precios.f.user_id" @input.debounce.400ms="cargar('precios', true)">
+          <label>Desde <input type="date" x-model="sec.precios.f.desde" @change="cargar('precios', true)"></label>
+          <label>Hasta <input type="date" x-model="sec.precios.f.hasta" @change="cargar('precios', true)"></label>
+          <button @click="Object.assign(sec.precios.f, {local_id:'', ean:'', user_id:'', desde:'', hasta:''}); cargar('precios', true)">Limpiar</button>
+        </div>
+        <div class="masivas" x-show="elegidos('precios').length">
+          <b x-text="elegidos('precios').length + ' seleccionados'"></b>
+          <button class="peligro" @click="borrarPrecios(elegidos('precios'))">Borrar</button>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr>
+            <th><input type="checkbox" @change="marcarTodos('precios', $event.target.checked)"></th>
+            <th>Fecha</th><th>Local</th><th>EAN</th><th>Producto</th><th>Precio</th><th>Usuario</th>
+          </tr></thead>
+          <tbody>
+            <template x-for="p in sec.precios.items" :key="p.id">
+              <tr>
+                <td><input type="checkbox" x-model="sec.precios.sel[p.id]"></td>
+                <td class="suave" x-text="fecha(p.fecha)"></td>
+                <td><a href="#" @click.prevent="ir('precios', {local_id: p.local_id})" x-text="p.local_nombre"></a></td>
+                <td class="mono" x-text="p.ean"></td>
+                <td x-text="p.producto_nombre"></td>
+                <td><input type="number" step="0.01" min="0.01" class="num" :value="p.precio" @change="monto(p, $event.target.value)"></td>
+                <td><a href="#" @click.prevent="ir('precios', {user_id: p.user_id})" x-text="p.user_alias"></a></td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('precios', -1)" :disabled="sec.precios.offset === 0">←</button>
+          <span x-text="rango('precios')"></span>
+          <button @click="pagina('precios', 1)" :disabled="sec.precios.offset + sec.precios.limit >= sec.precios.total">→</button>
+        </div>
+      </section>
+
+      <!-- ======================================================= PRODUCTOS -->
+      <section x-show="vista === 'productos'">
+        <div class="filtros">
+          <input type="search" placeholder="Nombre, marca o EAN" x-model="sec.productos.f.q" @input.debounce.400ms="cargar('productos', true)">
+          <select x-model="sec.productos.f.origen" @change="cargar('productos', true)">
+            <option value="">Cualquier origen</option><option value="off">OFF</option><option value="sepa">SEPA</option><option value="manual">Manual</option>
+          </select>
+          <label><input type="checkbox" x-model="sec.productos.f.con_conflictos" @change="cargar('productos', true)"> Con conflictos</label>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr><th>EAN</th><th>Nombre</th><th>Marca</th><th>Tamaño</th><th>Unidad</th><th>Origen</th><th>Bloqueados</th><th>Conflictos</th></tr></thead>
+          <tbody>
+            <template x-for="p in sec.productos.items" :key="p.id">
+              <tr>
+                <td class="mono" x-text="p.ean"></td>
+                <td><input type="text" :value="p.nombre" @change="producto(p, {nombre: $event.target.value})"></td>
+                <td><input type="text" :value="p.marca" @change="producto(p, {marca: $event.target.value})"></td>
+                <td><input type="number" step="any" class="num" :value="p.tamano_valor" @change="producto(p, {tamano_valor: $event.target.value || null, tamano_unidad: p.tamano_unidad})"></td>
+                <td>
+                  <select :value="p.tamano_unidad" @change="producto(p, {tamano_valor: p.tamano_valor, tamano_unidad: $event.target.value || null})">
+                    <template x-for="u in ['', 'g', 'kg', 'ml', 'l', 'u']"><option :value="u" :selected="(p.tamano_unidad || '') === u" x-text="u || '—'"></option></template>
+                  </select>
+                </td>
+                <td x-text="p.origen"></td>
+                <td class="suave" x-text="p.campos_bloqueados.join(', ')"></td>
+                <td><a href="#" x-show="p.conflictos_pendientes" @click.prevent="cambiarVista('conflictos')" x-text="p.conflictos_pendientes"></a></td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('productos', -1)" :disabled="sec.productos.offset === 0">←</button>
+          <span x-text="rango('productos')"></span>
+          <button @click="pagina('productos', 1)" :disabled="sec.productos.offset + sec.productos.limit >= sec.productos.total">→</button>
+        </div>
+        <p class="suave">Lo que corregís acá queda bloqueado: ningún ETL lo vuelve a pisar.</p>
+      </section>
+
+      <!-- ====================================================== CONFLICTOS -->
+      <section x-show="vista === 'conflictos'">
+        <div class="filtros">
+          <select x-model="sec.conflictos.f.estado" @change="cargar('conflictos', true)">
+            <option value="pendiente">Pendientes</option><option value="resuelto">Resueltos</option>
+          </select>
+          <span class="suave" x-text="rango('conflictos')"></span>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr><th>EAN</th><th>Producto</th><th>Campo</th><th>A (catálogo)</th><th>B (otra fuente)</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="c in sec.conflictos.items" :key="c.id">
+              <tr>
+                <td class="mono" x-text="c.ean"></td>
+                <td x-text="c.producto_nombre"></td>
+                <td x-text="c.campo"></td>
+                <td><span x-text="c.valor_a"></span> <span class="suave" x-text="'(' + c.fuente_a + ')'"></span></td>
+                <td><span x-text="c.valor_b"></span> <span class="suave" x-text="'(' + c.fuente_b + ')'"></span></td>
+                <td>
+                  <template x-if="c.estado === 'pendiente'">
+                    <span><button @click="resolver(c, 'a')">Dejar A</button> <button class="primario" @click="resolver(c, 'b')">Usar B</button></span>
+                  </template>
+                  <span x-show="c.estado === 'resuelto'" class="suave" x-text="'eligió ' + c.elegido.toUpperCase()"></span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('conflictos', -1)" :disabled="sec.conflictos.offset === 0">←</button>
+          <button @click="pagina('conflictos', 1)" :disabled="sec.conflictos.offset + sec.conflictos.limit >= sec.conflictos.total">→</button>
+        </div>
+      </section>
+
+      <!-- ========================================================== CONFIG -->
+      <section x-show="vista === 'config'">
+        <div class="tabla"><table>
+          <thead><tr><th>Clave</th><th>Valor</th><th>Por defecto</th><th>Rubro</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="c in config" :key="c.clave + '/' + (c.rubro || '')">
+              <tr>
+                <td class="mono" x-text="c.clave"></td>
+                <td>
+                  <template x-if="c.rubro">
+                    <span class="mono" x-text="json(c.valor)"></span>
+                  </template>
+                  <template x-if="!c.rubro && typeof c.valor === 'boolean'">
+                    <input type="checkbox" :checked="c.valor" @change="cambiarConfig(c, $event.target.checked)">
+                  </template>
+                  <template x-if="!c.rubro && typeof c.valor === 'number'">
+                    <input type="number" step="any" min="0" class="num" :value="c.valor" @change="cambiarConfig(c, $event.target.value)">
+                  </template>
+                  <template x-if="!c.rubro && typeof c.valor === 'string'">
+                    <input type="text" :value="c.valor" @change="cambiarConfig(c, $event.target.value)">
+                  </template>
+                  <template x-if="!c.rubro && typeof c.valor === 'object'">
+                    <span class="mono" x-text="json(c.valor)"></span>
+                  </template>
+                </td>
+                <td class="mono suave" x-text="json(c.default)"></td>
+                <td class="suave" x-text="c.rubro || 'global'"></td>
+                <td><span x-show="!c.en_base" class="badge mal">rige el default</span></td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+      </section>
+
+      <!-- ====================================================== AUDITORÍA -->
+      <section x-show="vista === 'auditoria'">
+        <div class="filtros">
+          <select x-model="sec.auditoria.f.entidad" @change="cargar('auditoria', true)">
+            <option value="">Todo</option>
+            <template x-for="e in ['local','precio','config','producto','conflicto','usuario']"><option :value="e" x-text="e"></option></template>
+          </select>
+          <span class="suave" x-text="rango('auditoria')"></span>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr><th>Cuándo</th><th>Quién</th><th>Acción</th><th>Entidad</th><th>Antes</th><th>Después</th><th>Nota</th></tr></thead>
+          <tbody>
+            <template x-for="a in sec.auditoria.items" :key="a.id">
+              <tr>
+                <td class="suave" x-text="fecha(a.created_at)"></td>
+                <td x-text="a.admin_alias"></td>
+                <td x-text="a.accion"></td>
+                <td class="mono" :title="a.entidad_id" x-text="a.entidad + ' ' + corto(a.entidad_id)"></td>
+                <td class="ancho"><pre x-text="json(a.antes)"></pre></td>
+                <td class="ancho"><pre x-text="json(a.despues)"></pre></td>
+                <td class="suave" x-text="a.nota"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('auditoria', -1)" :disabled="sec.auditoria.offset === 0">←</button>
+          <button @click="pagina('auditoria', 1)" :disabled="sec.auditoria.offset + sec.auditoria.limit >= sec.auditoria.total">→</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" :class="{mal: toast?.mal}" x-show="toast" x-text="toast?.texto"></div>
+</body>
+</html>
