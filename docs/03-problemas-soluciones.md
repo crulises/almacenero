@@ -539,7 +539,28 @@ instalá esos.
 - **Gotcha de tests:** `auditoria_admin` es solo-agregar, así que los tests dejan filas que
   no se pueden limpiar (como los usuarios de prueba, que ya se acumulaban). No usar la
   auditoría para contar filas totales en los tests: filtrar por `entidad_id`.
-- **Gotcha de entorno:** correr `make up` desde un worktree levanta otro proyecto de
-  compose que choca con el puerto 8000 del backend ya levantado en el checkout
-  principal. Para probar una rama sin tocarlo: `uvicorn` en otro puerto + servir
+
+### `make up` falla con «port is already allocated» (0.0.0.0:8000 o :8080)
+- **Síntoma:** `Bind for 0.0.0.0:8000 failed: port is already allocated`; un `make down`
+  seguido de `make up` da el mismo error.
+- **Causa:** Docker Compose nombra el proyecto por la **carpeta**. El checkout principal
+  (`almacenero`) y cada worktree de Claude (`admin-web-e8bb1c`, etc.) son proyectos
+  distintos con los mismos puertos (8000, 8080). Si el backend de uno sigue corriendo,
+  el `make up` del otro choca. Además `make down` solo baja los contenedores del
+  proyecto de la carpeta donde se corre (más `supabase stop`, que es global), así que
+  el backend del *otro* proyecto sigue ocupando el puerto, o queda «Exited» con su red.
+- **Diagnóstico:**
+  ```bash
+  docker ps -a --format '{{.Names}}\t{{.Ports}}\t{{.Status}}' | grep -v supabase
+  docker compose ls -a          # un proyecto por carpeta desde la que se corrió make up
+  lsof -nP -iTCP:8000 -sTCP:LISTEN
+  ```
+- **Solución:** bajar el otro proyecto con su carpeta —
+  `docker compose -p almacenero -f <ruta al checkout>/docker-compose.yml down` (o
+  `docker compose down` dentro de esa carpeta)— y volver a correr `make up`.
+- **Regla:** un solo stack a la vez, siempre desde la misma carpeta. Para probar una
+  rama de un worktree, bajá primero el del checkout principal. Ojo: el stack que queda
+  corriendo es el del código de esa carpeta (el del checkout principal no tiene el panel
+  hasta que se mergee).
+- **Probar una rama sin tocar el stack levantado:** `uvicorn` en otro puerto + servir
   `admin-web/public` con un `config.js` apuntando ahí (y `CORS_ORIGINS` con ese origen).
