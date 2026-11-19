@@ -278,6 +278,14 @@ con la frescura de cada uno pasa a ser lo central de la ficha.
   - **Orden:** chips Precio (por defecto) · Cercanía · Frescura. «Más barato» se
     marca siempre en el más barato, sin importar el orden elegido.
 
+### Pendientes cosméticos y de pulido (TODO)
+
+- **Globos de precio en el mapa:** pulir el diseño (tamaño, tipografía, solapado entre
+  globos cercanos). Es una mejora cosmética; la versión actual quedó aprobada en la prueba
+  en el celular.
+- **Precisión del GPS:** a veces es inexacta; alcanza por ahora (el geofence rechaza con
+  `precision_baja` cuando pasa `geofence_precision_max_m`).
+
 ### Orden por reputación y locales patrocinados (propuesta, no implementado)
 
 **Reputación del local** (para un orden «Reputación»): derivada, no editable.
