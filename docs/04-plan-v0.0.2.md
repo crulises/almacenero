@@ -27,6 +27,7 @@ offline, iOS, OAuth, pesables/genéricos.
 | 8 | **Precios vigentes por local: lista con frescura + mapa** (adelantado: va antes que 6) | — | medio |
 | 9 | Anti-spam (invitaciones, rate limit, límites por usuario) | 5 | medio |
 | 10 | Preparar release: firma del APK y guía de deploy | — | chico |
+| 11 | **Panel web de admin** (front chico con nginx + endpoints `/v1/admin`), en paralelo, sin tocar la app | 5 | grande |
 
 El ETL (7) toca solo `etl/` y el Makefile, así que puede correr en paralelo con
 5 y 6. Los demás van de a uno.
@@ -488,6 +489,41 @@ se puede cambiar**.
 Yo preparo el resto (Dockerfile listo para prod, guía paso a paso en `docs/`,
 `make` targets, configuración del `build.gradle.kts`) sin tocar tus cuentas ni
 credenciales.
+
+## 8. Panel web de admin (corte 11, en paralelo)
+
+**Para qué:** ver y corregir todo desde una pantalla grande, con acciones masivas. Se
+sirve como un servicio más del `docker-compose` (nginx con HTML + JS, sin build pesado)
+y habla **solo con el backend** (`/v1/admin/...`), como todo lo demás. No toca la app.
+El gestor de base de datos no hace falta: `make up` ya levanta Supabase Studio
+(http://127.0.0.1:54323).
+
+**Se pule sobre la marcha:** las necesidades del front y las de datos (migraciones) se
+ajustan a medida que se usa.
+
+### Requisitos anotados (para no perderlos)
+
+- **Login de admin desde la web.** Hoy la auth es anónima y un admin es un anónimo
+  promovido con `make admin`. La web necesita login real: propuesta, email/contraseña de
+  GoTrue, con el rol en `usuarios.rol`. Es prerrequisito del panel.
+- **Listado de usuarios**, de dos tipos: **anónimos** y **registrados**. Un usuario
+  registrado queda asociado al id anónimo con el que empezó (Doc 1, «Identidad»); en esta
+  versión hay un solo anónimo por usuario. El panel debe mostrar esa asociación, alias,
+  rol, karma, cantidad de cargas y fecha de alta.
+- **Locales:** ver todos, filtrar (`verificado = false`, fuente: OSM/SEPA/usuario/admin),
+  **validar** los que vienen del ETL, corregir nombre/dirección/ubicación, fusionar
+  duplicados, y acciones masivas.
+- **Precios:** listar, filtrar por local/producto/usuario, corregir o borrar (con rastro).
+- **Productos y conflictos del ETL** (`make conflictos`): resolverlos desde el panel;
+  los campos que resuelve el admin quedan bloqueados contra el ETL (ya existe el trigger).
+- **Configuración:** editar `config` (geofence, radios, frescura, `alta_locales_abierta`,
+  etc.).
+- **Patrocinios** (§5): lista, alta y pausa.
+- **Atribuciones** de datos (ODbL, CC BY): texto en `docs/05-fuentes-catalogo.md`; la
+  pantalla de la app es otro corte.
+- **Auditoría:** toda corrección del admin deja registro (quién, qué, cuándo).
+- **Seguridad:** solo rol `admin`; CORS y HTTPS al desplegar; el panel no se publica
+  junto con la app sin proteger.
 
 ## Decisiones
 
