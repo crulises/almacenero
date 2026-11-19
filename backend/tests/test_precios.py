@@ -20,7 +20,7 @@ def _cargar(client, auth, precio="100.00", ean=EAN_SEED, local_id=None):
 def test_respuesta_trae_precio_id_y_karma(client, auth):
     r = _cargar(client, auth)
     assert r.status_code == 201
-    assert set(r.json()) == {"precio_id", "karma"}
+    assert set(r.json()) == {"precio_id", "karma", "karma_sumado"}
     # el id del precio no es el del usuario
     assert r.json()["precio_id"] != client.get("/v1/me", headers=auth).json()["id"]
 

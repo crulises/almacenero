@@ -1,16 +1,30 @@
 import 'api_client.dart';
 import 'session.dart';
 
+/// El backend pide (o rechazó) el código de invitación para crear el usuario.
+/// La UI debe pedirlo y llamar a [AuthRepository.guardarInvitacion].
+class InvitacionRequerida implements Exception {
+  const InvitacionRequerida({this.rechazada = false});
+
+  /// true si había un código y el backend lo rechazó (inválido, vencido o agotado).
+  final bool rechazada;
+
+  @override
+  String toString() => 'InvitacionRequerida(rechazada: $rechazada)';
+}
+
 /// Maneja la sesión: arranca anónima, la persiste y la renueva sola.
 class AuthRepository {
   AuthRepository({
     required this._api,
     required this._store,
+    this._invitations,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
   final ApiClient _api;
   final SessionStore _store;
+  final InvitationStore? _invitations;
   final DateTime Function() _now;
 
   Future<Session>? _inFlight;
@@ -40,8 +54,29 @@ class AuthRepository {
     }
   }
 
-  Future<Session> _signInAnonymously() async =>
-      _save(await _api.post('/auth/anonymous'));
+  /// Guarda el código de invitación para el próximo alta.
+  Future<void> guardarInvitacion(String codigo) async =>
+      _invitations?.write(codigo.trim());
+
+  Future<Session> _signInAnonymously() async {
+    final codigo = await _invitations?.read();
+    try {
+      return await _save(
+        await _api.post(
+          '/auth/anonymous',
+          body: codigo == null ? null : {'codigo_invitacion': codigo},
+        ),
+      );
+    } on ApiException catch (e) {
+      final motivo = e.codigo;
+      if (motivo == 'invitacion_requerida') throw const InvitacionRequerida();
+      if (motivo == 'invitacion_invalida') {
+        await _invitations?.clear(); // no sirve: que lo vuelva a escribir
+        throw const InvitacionRequerida(rechazada: true);
+      }
+      rethrow;
+    }
+  }
 
   Future<Session> _save(Map<String, dynamic> json) async {
     final session = Session.fromBackend(json, _now());

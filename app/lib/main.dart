@@ -21,12 +21,17 @@ const apiUrl = String.fromEnvironment(
 
 void main() {
   final api = ApiClient(baseUrl: apiUrl);
-  final auth = AuthRepository(api: api, store: SecureSessionStore());
+  final auth = AuthRepository(
+    api: api,
+    store: SecureSessionStore(),
+    invitations: SecureInvitationStore(),
+  );
   final authed = AuthedApi(api: api, auth: auth);
   final location = LocationService();
   runApp(
     AlmaceneroApp(
       deps: AppDeps(
+        guardarInvitacion: auth.guardarInvitacion,
         loadMe: UserRepository(api: authed).me,
         loadProducto: ProductRepository(api: authed).porEan,
         obtenerUbicacion: location.actual,

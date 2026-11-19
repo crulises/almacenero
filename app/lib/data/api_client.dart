@@ -15,6 +15,15 @@ class ApiException implements Exception {
 
   bool get isUnauthorized => statusCode == 401;
 
+  /// Demasiados pedidos o cargas: hay que esperar.
+  bool get isRateLimited => statusCode == 429;
+
+  /// El `codigo` del backend dentro del `detail` (p. ej. `invitacion_invalida`).
+  String? get codigo {
+    final d = detail;
+    return d is Map ? d['codigo'] as String? : null;
+  }
+
   @override
   String toString() => 'ApiException($statusCode): $message';
 }

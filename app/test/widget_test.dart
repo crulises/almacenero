@@ -1,5 +1,6 @@
 import 'package:almacenero/app_deps.dart';
 import 'package:almacenero/data/api_client.dart';
+import 'package:almacenero/data/auth_repository.dart';
 import 'package:almacenero/data/local_repository.dart';
 import 'package:almacenero/data/location_service.dart';
 import 'package:almacenero/data/price_repository.dart';
@@ -178,6 +179,48 @@ void main() {
       expect(find.text('Almacenero'), findsOneWidget);
       expect(find.text('anon-abc123'), findsOneWidget);
       expect(find.text('Karma: 3'), findsOneWidget);
+    });
+
+    testWidgets('pide el código de invitación y reintenta con él', (
+      tester,
+    ) async {
+      String? guardado;
+      var rechazar = false;
+      await abrir(
+        tester,
+        deps: AppDeps(
+          guardarInvitacion: (c) async => guardado = c,
+          loadMe: () async {
+            if (guardado == null) throw const InvitacionRequerida();
+            if (rechazar) {
+              rechazar = false;
+              throw const InvitacionRequerida(rechazada: true);
+            }
+            return const Me(id: 'u1', alias: 'anon-abc123', karma: 0);
+          },
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      expect(find.text('Código de invitación'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, ' grupo ');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle();
+      expect(guardado, 'grupo');
+      expect(find.text('anon-abc123'), findsOneWidget);
     });
 
     testWidgets('si falla, ofrece reintentar y se recupera', (tester) async {
@@ -810,6 +853,24 @@ void main() {
       }
       expect(backend.cargas, isEmpty);
       expect(backend.karma, 0);
+    });
+
+    testWidgets('si llegó al tope de cargas, lo explica', (tester) async {
+      backend.errorAlCargar = ApiException(
+        'Error 429',
+        statusCode: 429,
+        detail: {'codigo': 'limite_cargas'},
+      );
+      await abrir(tester);
+      await _irAlFormulario(tester);
+
+      await _enviarPrecio(tester, '500');
+      expect(
+        find.text(
+          'Cargaste muchos precios seguidos. Esperá un rato y probá de nuevo.',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('si falla la red, avisa y deja reintentar', (tester) async {

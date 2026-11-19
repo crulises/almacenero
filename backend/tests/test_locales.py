@@ -6,7 +6,7 @@ import uuid
 import pytest
 
 from tests.conftest import make_token
-from tests.db import hacer_admin, sql, valor_config
+from tests.db import hacer_admin, sql
 
 
 def _nombre() -> str:
@@ -30,34 +30,6 @@ def _crear(client, headers, nombre=None, punto=None, **extra):
 def _limpiar():
     yield
     sql("delete from locales where nombre like 'test-%'")
-
-
-@pytest.fixture
-def config_temporal():
-    """Cambia una clave de `config` durante el test y la restaura."""
-    previos: dict[str, str | None] = {}
-
-    def poner(clave: str, valor: str):
-        previos.setdefault(clave, valor_config(clave))
-        sql(
-            """
-            insert into config (clave, valor) values ($1, $2::jsonb)
-            on conflict (clave, coalesce(rubro, '')) do update set valor = excluded.valor
-            """,
-            clave,
-            valor,
-        )
-
-    yield poner
-    for clave, previo in previos.items():
-        if previo is None:
-            sql("delete from config where clave = $1 and rubro is null", clave)
-        else:
-            sql(
-                "update config set valor = $2::jsonb where clave = $1 and rubro is null",
-                clave,
-                previo,
-            )
 
 
 @pytest.fixture

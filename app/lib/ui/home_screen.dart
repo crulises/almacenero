@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../app_deps.dart';
+import '../data/api_client.dart';
+import '../data/auth_repository.dart';
 import '../data/user_repository.dart';
 import '../domain/ean.dart';
 import 'product_screen.dart';
@@ -20,11 +22,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late Future<Me> _me = widget.deps.loadMe();
   final _eanController = TextEditingController();
+  final _invitacionController = TextEditingController();
   String? _eanError;
 
   @override
   void dispose() {
     _eanController.dispose();
+    _invitacionController.dispose();
     super.dispose();
   }
 
@@ -32,6 +36,13 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _me = widget.deps.loadMe();
     });
+  }
+
+  Future<void> _enviarInvitacion() async {
+    final codigo = _invitacionController.text.trim();
+    if (codigo.isEmpty) return;
+    await widget.deps.guardarInvitacion(codigo);
+    if (mounted) _retry();
   }
 
   Future<void> _escanear() async {
@@ -106,6 +117,19 @@ class _HomeScreenState extends State<HomeScreen> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
+        final error = snapshot.error;
+        if (error is InvitacionRequerida) return _pedirInvitacion(error);
+        if (error is ApiException && error.isRateLimited) {
+          return Column(
+            children: [
+              const Text(
+                'Demasiados intentos. Esperá un rato y probá de nuevo.',
+              ),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: _retry, child: const Text('Reintentar')),
+            ],
+          );
+        }
         if (snapshot.hasError) {
           return Column(
             children: [
@@ -124,6 +148,29 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _pedirInvitacion(InvitacionRequerida error) {
+    return Column(
+      children: [
+        const Text('Para entrar necesitás un código de invitación'),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _invitacionController,
+          textInputAction: TextInputAction.done,
+          autocorrect: false,
+          onSubmitted: (_) => _enviarInvitacion(),
+          decoration: InputDecoration(
+            labelText: 'Código de invitación',
+            errorText: error.rechazada
+                ? 'Ese código no sirve: revisalo o pedí uno nuevo'
+                : null,
+          ),
+        ),
+        const SizedBox(height: 12),
+        FilledButton(onPressed: _enviarInvitacion, child: const Text('Entrar')),
+      ],
     );
   }
 }

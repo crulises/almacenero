@@ -351,6 +351,49 @@ Lo que sí entra en v0.0.2: 1 a 4. Lo de 5 va con el primer deploy público.
 Mientras el backend corra en local y no se comparta, el riesgo real es cero; el
 corte 9 existe para que el deploy no nazca vulnerable.
 
+### Lo implementado en el corte 9
+
+- **`modo_acceso`** (`config`, default en código `solo_invitacion`):
+  - `abierto`: `/auth/anonymous` crea el usuario sin más.
+  - `solo_invitacion`: exige `{"codigo_invitacion": "..."}` en el body. Sin código,
+    403 `invitacion_requerida`; código inexistente, vencido o agotado, 403
+    `invitacion_invalida` (no se distingue el motivo, para no ayudar a adivinar).
+  - `alta_manual` (o cualquier valor desconocido): 403 `alta_cerrada`, no se crean
+    usuarios por la API.
+- **Invitaciones:** tabla `invitaciones` (`codigo` normalizado en minúsculas y sin
+  espacios por un `check`, `usos_max` opcional, `usos`, `vence` opcional). El uso se
+  gasta con un único `UPDATE` condicional (no pasa del tope aunque lleguen pedidos a
+  la vez; el `check usos <= usos_max` lo garantiza la base). Si el proveedor de auth
+  falla después de gastarlo, se devuelve el uso. Se crean con
+  `make invitacion CODIGO=grupo [USOS=50] [DIAS=30]`; el seed de desarrollo trae
+  `almacenero-dev`. **Fuera de este corte:** emitirlas desde la API/panel web (el
+  panel de admin es otro corte); hasta entonces, el Makefile.
+- **Rate limit por IP** (ventana deslizante de 1 hora, **en memoria del proceso**,
+  `services/ratelimit.py`): `/auth/anonymous` `auth_altas_por_hora_ip` (10) y
+  `/auth/refresh` `auth_refresh_por_hora_ip` (120). En `anonymous` cuentan **todos**
+  los intentos, también los de código malo (frena el adivinar códigos). 429 con
+  `Retry-After` y `detail.codigo = demasiados_intentos`. Con varias instancias cada
+  una cuenta aparte; si el deploy escala, se mueve el contador a Postgres/Redis o a
+  Cloudflare sin cambiar la interfaz. La IP: la del socket, o con `PROXY_HOPS=N` la
+  N-ésima desde la derecha de `X-Forwarded-For`. El límite de altas anónimas del
+  propio Supabase auth no se tocó (el nuestro es más estricto y va primero).
+- **Límites por usuario:** `max_precios_por_hora` (60) y `max_precios_por_dia`
+  (300), 429 con `detail.codigo = limite_cargas`; las cargas de un mismo usuario se
+  serializan con un `select … for update` del usuario para que no se cuelen por
+  concurrencia. Los locales nuevos ya tenían `max_locales_por_dia` (corte 5): no se
+  agregó límite por hora.
+- **Karma por duplicados:** el mismo usuario, producto, local y precio dentro de
+  `ventana_frescura_dias` guarda el precio (confirma que sigue vigente) pero **no suma
+  karma**. La respuesta de `POST /v1/precios` trae `karma_sumado` (0 o lo que sume la
+  carga). Otro usuario que carga el mismo precio sí suma.
+- **Decisiones donde el plan era ambiguo:** un solo código compartido, sin código por
+  persona (la tabla ya lo permite); el contador de rate limit en memoria; `modo_acceso`
+  desconocido = cerrado.
+- **App:** si el backend pide código, el home muestra un campo «Código de invitación»;
+  se guarda en el almacenamiento seguro y se manda en cada alta (solo el primer
+  arranque). Si lo rechaza, se borra y se vuelve a pedir. Un 429 al cargar un precio
+  o al crear el usuario se explica en pantalla.
+
 ## 7. Release firmado y deploy con HTTPS (corte 10: preparación)
 
 ### Firmar un build release de Android

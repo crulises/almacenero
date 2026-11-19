@@ -27,6 +27,7 @@ class PrecioIn(BaseModel):
 class PrecioCreado(BaseModel):
     precio_id: UUID
     karma: int  # karma del usuario ya actualizado
+    karma_sumado: int  # 0 si repetía un precio ya cargado por el mismo usuario
 
 
 async def _exigir_cerca(
@@ -61,6 +62,29 @@ async def _exigir_cerca(
         )
 
 
+async def _exigir_bajo_limite(conn: asyncpg.Connection, user_id: UUID) -> None:
+    """Tope de cargas por usuario por hora y por día (`config`). Frena a quien
+    automatiza; el uso normal (cargar en el súper) queda muy lejos."""
+    for clave, ventana, texto in (
+        ("max_precios_por_hora", "1 hour", "esta hora"),
+        ("max_precios_por_dia", "1 day", "hoy"),
+    ):
+        maximo = int(await config.leer(conn, clave))
+        cargados = await conn.fetchval(
+            f"select count(*) from precios where user_id = $1 "
+            f"and created_at > now() - interval '{ventana}'",
+            user_id,
+        )
+        if cargados >= maximo:
+            raise HTTPException(
+                429,
+                detail={
+                    "codigo": "limite_cargas",
+                    "mensaje": f"llegaste al máximo de precios cargados {texto}",
+                },
+            )
+
+
 @router.post("/precios", response_model=PrecioCreado, status_code=201)
 async def cargar_precio(
     body: PrecioIn,
@@ -71,6 +95,10 @@ async def cargar_precio(
         raise HTTPException(422, "EAN de balanza: productos genéricos no habilitados")
 
     async with pool.acquire() as conn, conn.transaction():
+        # Serializa las cargas del mismo usuario: dos requests a la vez no se cuelan
+        # por debajo del tope.
+        await conn.execute("select 1 from usuarios where id = $1 for update", user.id)
+        await _exigir_bajo_limite(conn, user.id)
         producto_id = await conn.fetchval(
             "select id from productos_canonicos where ean = $1", body.ean
         )
@@ -89,6 +117,24 @@ async def cargar_precio(
             raise HTTPException(404, "local no encontrado")
         await _exigir_cerca(conn, distancia, body.precision_m)
 
+        # Repetir el mismo precio en el mismo local dentro de la ventana de frescura
+        # no suma karma (corta el farmeo). El precio se guarda igual: confirma que
+        # sigue vigente.
+        repetido = await conn.fetchval(
+            """
+            select exists (
+                select 1 from precios
+                where user_id = $1 and producto_canonico_id = $2 and local_id = $3
+                  and precio = $4 and created_at > now() - make_interval(days => $5)
+            )
+            """,
+            user.id,
+            producto_id,
+            body.local_id,
+            body.precio,
+            int(await config.leer(conn, "ventana_frescura_dias")),
+        )
+
         precio_id = await conn.fetchval(
             """
             insert into precios (producto_canonico_id, local_id, precio, user_id)
@@ -99,5 +145,6 @@ async def cargar_precio(
             body.precio,
             user.id,
         )
-        karma = await sumar_karma(conn, user.id, karma_por_carga())
-    return PrecioCreado(precio_id=precio_id, karma=karma)
+        sumado = 0 if repetido else karma_por_carga()
+        karma = await sumar_karma(conn, user.id, sumado)
+    return PrecioCreado(precio_id=precio_id, karma=karma, karma_sumado=sumado)

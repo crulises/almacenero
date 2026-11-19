@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed demo demo-borrar admin test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
+.PHONY: up down migrate seed demo demo-borrar admin invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -52,6 +52,12 @@ admin: ## Promueve a un usuario a admin: make admin ALIAS=anon-1ff221
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -v alias="$(ALIAS)" <<< \
 	"begin; select set_config('app.rol_write', 'on', true); update usuarios set rol = 'admin' where alias = :'alias'; commit;"
+
+invitacion: ## Crea un código de invitación: make invitacion CODIGO=grupo [USOS=50] [DIAS=30]
+	@test -n "$(CODIGO)" || { echo "Uso: make invitacion CODIGO=<código> [USOS=<máx>] [DIAS=<vigencia>]"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -v codigo="$(CODIGO)" -v usos="$(USOS)" -v dias="$(DIAS)" -c \
+	"insert into invitaciones (codigo, usos_max, vence) values (lower(btrim(:'codigo')), nullif(:'usos','')::int, now() + (nullif(:'dias','') || ' days')::interval) returning codigo, usos_max, vence"
 
 # --- calidad ---------------------------------------------------------------
 $(PY):

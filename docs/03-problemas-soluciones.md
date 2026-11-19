@@ -507,3 +507,27 @@ instalá esos.
   como «local inexistente».
 - **Límite conocido:** la ubicación la informa el celular; una ubicación simulada la
   falsifica (se mitiga con reputación, corte 9).
+
+## Anti-spam (corte 9)
+
+- **Síntoma:** tras activar `modo_acceso`, los tests viejos de `/v1/auth/anonymous`
+  devuelven 403. **Causa:** el default (código y seed) es `solo_invitacion`.
+  **Solución:** los tests del proxy fijan `modo_acceso = "abierto"` con la fixture
+  `config_temporal` (ahora en `conftest.py`); los de acceso viven en
+  `tests/test_anti_spam.py`.
+- **Síntoma:** un test pasa solo y falla en la suite con 429. **Causa:** el rate limit
+  por IP vive en memoria del proceso y el `TestClient` siempre es la misma IP.
+  **Solución:** fixture `autouse` en `conftest.py` que reinicia el limitador en cada
+  test.
+- **Síntoma:** `make migrate` falla con `MigrationMissingLocalError … Remote migration
+  versions not found in local migrations directory`. **Causa:** el Supabase local es
+  uno solo y lo comparten todos los worktrees: otra rama ya aplicó una migración que
+  esta rama no tiene. **Solución:** aplicar a mano la migración propia
+  (`psql "$DATABASE_URL" -f supabase/migrations/<archivo>.sql` y un `insert` en
+  `supabase_migrations.schema_migrations (version, name)`), o traer la otra rama. En
+  CI (base vacía) no pasa.
+- **Detrás de un proxy, el rate limit frena a todos o no frena a nadie.** **Causa:**
+  sin `PROXY_HOPS` se usa la IP del socket, que detrás de un proxy es la del proxy.
+  **Solución:** `PROXY_HOPS=<cantidad de proxies confiables>` (1 con un solo proxy); se
+  toma la IP desde la derecha de `X-Forwarded-For`. Con un valor de más, el cliente
+  puede falsificar su IP.

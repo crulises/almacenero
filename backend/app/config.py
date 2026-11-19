@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     jwt_secret: str = "super-secret-jwt-token-with-at-least-32-characters-long"
     jwt_audience: str = "authenticated"
 
+    # Cantidad de proxies confiables delante del backend (0 = ninguno: se usa la IP
+    # del socket). Con N > 0, la IP del cliente es la N-ésima desde la derecha de
+    # X-Forwarded-For. Mal puesto, el rate limit por IP se puede esquivar o frena a todos.
+    proxy_hops: int = 0
+
     log_level: str = "INFO"
 
 
