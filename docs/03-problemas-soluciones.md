@@ -372,6 +372,19 @@ instalá esos.
 - **Tests de locales con coordenadas al azar en el Atlántico Sur** y nombres
   `test-…`, que se borran al terminar: no ensucian los locales reales ni
   «locales cerca».
+- **Mapa con `flutter_map` + OpenStreetMap:** sin clave de API ni cuenta. Las
+  teselas públicas de OSM no son para uso masivo (`flutter_map` lo avisa en la
+  consola en debug); sirve para el grupo cerrado y habrá que cambiar de proveedor
+  antes de abrir la app. El `userAgentPackageName` identifica a la app ante OSM.
+- **El mapa va fuera del scroll de la ficha** (arriba), y debajo una lista que sí se
+  desplaza: un mapa dentro de un `ListView` se pelea con el gesto de scroll.
+- **Precio vigente = el último de cada local** (`distinct on (local_id)`); la
+  frescura (verde/amarillo/rojo) y `vencido` los calcula el backend con los
+  umbrales de `config`, no la app.
+- **Tests con `flutter_map`:** los carteles se buscan por `ValueKey`, y al elegir un
+  local el mapa se centra en él, así que los demás carteles pueden quedar fuera de
+  cuadro (el mapa no los construye). La lista es perezosa: en el test hay que
+  agrandar la pantalla para que construya todas las filas.
 - **Se mergean PRs apilados:** al mergear el primero, GitHub reapunta el siguiente a
   `main` solo.
 
@@ -390,3 +403,20 @@ instalá esos.
   automáticos de la cámara.
 - Para distribuir a testers falta: backend desplegado con HTTPS y un build release
   firmado.
+
+
+## Precios vigentes cerca del usuario (corte 8, ajustes tras la prueba en el celular)
+
+- **Decisión:** el filtro por radio vive en el backend (`config.radio_precios_m`,
+  5000 m), porque mezclar precios de lugares a miles de km confunde. El orden
+  (precio, cercanía, frescura) y el «Mostrar más» son de la app: no cambian qué
+  datos se devuelven.
+- **Síntoma:** «No puedo conectar con el servidor» en el celular, con el backend
+  sano y alcanzable desde el navegador del celular. **Causa:** se había instalado
+  un APK viejo con otra URL de API. **Solución:** desinstalar e instalar el APK
+  recién generado; ver `strings` de `assets/flutter_assets/kernel_blob.bin` para
+  confirmar la URL compilada.
+- **Síntoma:** nada responde y `docker ps` está vacío. **Causa:** Docker o el stack
+  estaban apagados. **Solución:** `make up` y `docker compose up -d --build backend`.
+- **Nota de Flutter:** en `mapa_precios.dart`, `Path` es de `flutter_map`
+  (`Path<LatLng>`): para dibujar con `Canvas` usar `ui.Path` (`import 'dart:ui' as ui`).
