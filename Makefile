@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed admin test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar conflictos
+.PHONY: up down migrate seed admin test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -39,7 +39,7 @@ admin: ## Promueve a un usuario a admin: make admin ALIAS=anon-1ff221
 # --- calidad ---------------------------------------------------------------
 $(PY):
 	python3 -m venv $(VENV)
-	$(PY) -m pip install -q -e "backend[dev]"
+	$(PY) -m pip install -q -e "backend[dev,etl]"
 
 venv: $(PY)
 
@@ -96,6 +96,23 @@ etl-sepa: $(PY) ## Carga SEPA al catálogo: make etl-sepa SEPA_ARCHIVOS="etl/dat
 	@test -n "$(SEPA_ARCHIVOS)" || { echo "Uso: make etl-sepa SEPA_ARCHIVOS=\"ruta1.zip ruta2.zip\""; exit 1; }
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m etl.sepa $(SEPA_ARCHIVOS)
+
+etl-sepa-locales: $(PY) ## Carga las sucursales de SEPA como locales: make etl-sepa-locales [SEPA_ARCHIVOS=...] [PROVINCIA=misiones]
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.sepa.locales $(or $(SEPA_ARCHIVOS),$(SEPA_DIR)/sepa_domingo.zip) $(if $(PROVINCIA),--provincia $(PROVINCIA))
+
+OSM_URL ?= https://download.geofabrik.de/south-america/argentina-latest.osm.pbf
+OSM_ARCHIVO ?= etl/data/osm/argentina-latest.osm.pbf
+
+etl-osm-descargar: ## Baja el extracto de Argentina de Geofabrik (~440 MB; Geofabrik no parte por provincia)
+	@mkdir -p etl/data/osm
+	curl -fL --retry 5 -C - -o $(OSM_ARCHIVO) $(OSM_URL)
+
+etl-osm: $(PY) ## Carga supermercados/almacenes de OSM como locales: make etl-osm PROVINCIA=misiones
+	@test -n "$(PROVINCIA)" || { echo "Uso: make etl-osm PROVINCIA=misiones (slug o código AR-N)"; exit 1; }
+	@test -f $(OSM_ARCHIVO) || { echo "Falta $(OSM_ARCHIVO): make etl-osm-descargar"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.osm $(OSM_ARCHIVO) --provincia $(PROVINCIA)
 
 conflictos: $(PY) ## Lista los conflictos de catálogo pendientes de revisión
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \

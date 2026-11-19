@@ -452,3 +452,15 @@ instalá esos.
   local; **los datos de prueba empiezan con `79999`** y se limpian solos.
 - Medido con el volcado completo: 4,08 M productos, 2,4 GB en la base, 14 min de carga,
   14 k productos argentinos (ver `docs/05-fuentes-catalogo.md`).
+
+### ETL de locales (OSM / sucursales de SEPA)
+- **Síntoma:** `ModuleNotFoundError: osmium` al correr `make etl-osm` o los tests.
+- **Causa:** `pyosmium` es dependencia solo del ETL y el venv se creó antes.
+- **Solución:** `backend/.venv/bin/pip install -e "backend[dev,etl]"` (`make venv` en un
+  venv nuevo ya lo instala).
+- **Síntoma:** `AttributeError: 'NoneType' ... strip` al leer `sucursales.csv` de SEPA.
+- **Causa:** filas con menos columnas que la cabecera: `csv.DictReader` rellena con None.
+- **Solución:** leer cada campo con `(fila.get(k) or "")`.
+- **Dato útil:** Geofabrik no parte Argentina por provincia; se baja el país (~436 MB,
+  unos 10 min) y se recorta con el límite administrativo `ISO3166-2=AR-N` del mismo archivo.
+  El mismo comercio mapeado como `node` y como `way` se vincula a un solo local (anti-duplicados).

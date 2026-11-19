@@ -313,31 +313,66 @@ No hace falta pedir permiso. El único tema de fondo es el *share-alike* de la O
   agregar otras provincias o países cambiando solo el filtro geográfico.
 - En contra: 222 es poco, la mayoría de los datos tiene 5-8 años (no hay garantía de que
   sigan abiertos), y el ruido de una lista con comercios cerrados cuesta confianza.
-- **Recomendación:** hacer el ETL de locales con el criterio «nombre + calle + número»
+- **Recomendación (decisión final: se pide nombre + calle, sin número; ver §4.2):** hacer el ETL de locales con el criterio «nombre + calle + número»
   y por provincia (parámetro), arrancando por Misiones, y tratar esos locales como
   candidatos hasta que alguien cargue un precio. Si después de probarlo en Posadas
   resultan pocos útiles, se apaga sin costo (se borran por `osm_id`).
 
-### 4.2 ETL de locales propuesto (`etl/osm/`, no implementado)
+### 4.2 ETL de locales (`etl/osm/`, `etl/sepa/locales.py`): implementado
 
-1. Fuente: **extracto de Geofabrik** (`argentina-latest.osm.pbf`, actualización
-   diaria; tamaño no medido) filtrado con `osmium tags-filter` por `shop=supermarket`,
-   `shop=convenience` y, si se quiere, `shop=greengrocer|butcher|bakery|kiosk`. Evita
-   golpear Overpass; Overpass queda para consultas puntuales chicas.
-2. Transformación: **solo registros completos** (`name`, `addr:street` y
-   `addr:housenumber` presentes; descartar el resto), `direccion` =
-   `addr:street` + `addr:housenumber` + `addr:city` si existe, `ubicacion` = punto
-   (centroide para áreas), más `osm_id` y marca para trazabilidad.
-3. Destino: `locales` con **`verificado = false`**, `creado_por = null`.
-   Requiere migración: columnas `osm_tipo`, `osm_id` (únicas) para que la carga sea
-   idempotente y se pueda refrescar sin duplicar.
-4. **Anti-duplicados**: la misma lógica del alta de locales del corte 5: `pg_trgm`
-   sobre el nombre + distancia `ST_DWithin` (config `local_duplicado_metros`). Un local
-   OSM que coincide con uno existente no se crea: se le agrega el vínculo OSM.
-5. **Riesgo de ruido**: 16 k locales «sin verificar» en un mapa de pocos usuarios
-   llenan la pantalla de cosas sin precios. Propuesta: cargarlos, pero la app solo
-   muestra locales OSM con al menos un precio o cuando se busca/alta uno cerca.
-6. **Licencia ODbL — a decidir con cuidado:**
+Migración `20261119000001_locales_fuentes.sql`: `locales.fuente` (`manual`|`osm`|`sepa`:
+cómo nació el local) y la tabla `local_fuentes (local_id, fuente, ref, datos jsonb,
+cargado_en)` con `unique (fuente, ref)`. `ref` es `node/123` o `way/456` en OSM, y
+`id_comercio-id_bandera-id_sucursal` en SEPA. Un local puede tener varios vínculos (el
+mismo comercio en OSM y en SEPA); borrar los locales de una fuente es
+`delete from locales where fuente = 'osm'` (cascada a `local_fuentes`).
+
+1. **Fuente OSM:** extracto de Geofabrik `argentina-latest.osm.pbf` (**~436 MB**; Geofabrik
+   no parte Argentina por provincia), `make etl-osm-descargar`. Se lee con `pyosmium`
+   (extra `etl` de `backend/pyproject.toml`; no lo usa el backend) y se queda con
+   `shop=supermarket|convenience`. La **provincia es un parámetro** (`PROVINCIA=misiones`,
+   slug o código `AR-N`): se recorta con el límite administrativo de OSM de ese código
+   (`ISO3166-2`), que viene en el mismo extracto, y el recorte lo hace PostGIS
+   (`st_covers`). Las coordenadas de un edificio mapeado como camino son el centro de su
+   caja.
+2. **Criterio de «completo»:** `name`, `addr:street` y coordenadas. El número de puerta
+   no hace falta (se pule después). `direccion` = calle + número (si hay) + ciudad (si hay).
+3. **Fuente SEPA:** `sucursales.csv` de cada comercio del zip diario. Nombre = bandera
+   (`comercio_bandera_nombre`) + nombre de la sucursal si dice algo («Coto Acassuso»);
+   si es genérico («Sucursal 3», «Local 12») queda solo la bandera. Mismo criterio:
+   nombre + calle + coordenadas válidas (dentro de Argentina; descarta 0,0 y vacías).
+   `--provincia` filtra por `sucursales_provincia` (`AR-N`); sin parámetro, todo el país.
+4. **Destino y trazabilidad:** `locales` con `verificado = false`, `creado_por = null`,
+   `fuente = 'osm'|'sepa'`, más la fila en `local_fuentes` con el dato crudo (etiquetas
+   de OSM, campos de SEPA). **Idempotente:** si el `(fuente, ref)` ya está vinculado solo
+   se refresca el crudo (el local no se toca: lo puede haber corregido el admin).
+5. **Anti-duplicados:** la misma lógica del alta de locales del corte 5: nombre parecido
+   (`pg_trgm`, config `local_duplicado_similitud`, 0,8) a menos de
+   `local_duplicado_metros` (50 m). Si ya existe, no se crea otro: se le agrega el
+   vínculo a esta fuente (por eso cargar SEPA y OSM en cualquier orden no duplica).
+   Diferencia con el backend: acá se compara sin acentos (`unaccent`).
+6. **Escala:** se procesa local por local (miles por provincia, segundos). Para todo el
+   país o el mundo conviene pasar a staging + SQL por conjuntos como en el catálogo.
+7. **Resultado en Misiones** (extracto de Geofabrik del 2026-11-18, corrida del
+   2026-11-19, 23 s):
+
+   | | OSM (`make etl-osm PROVINCIA=misiones`) | SEPA (`make etl-sepa-locales PROVINCIA=misiones`) |
+   |---|---|---|
+   | Registros en la provincia | 1 021 (16 364 en el país) | 3 060 sucursales leídas (todo el país); 17 en AR-N |
+   | Descartados sin nombre | 140 | 0 |
+   | Descartados sin calle | 288 | 0 |
+   | **Locales nuevos** | **592** | **17** |
+   | Vinculados a uno existente | 1 (el mismo comercio como `node` y como `way`) | 0 |
+   | Con número de puerta | 280 | 17 |
+
+   Entre OSM y SEPA no hubo ningún duplicado en Misiones (las 17 sucursales de SEPA son
+   grandes cadenas de Posadas que OSM no tiene con ese nombre a menos de 50 m). Recargar
+   da 0 nuevos y refresca los 593 + 17 vínculos. Total en la base local: 611 locales sin
+   verificar (592 OSM, 17 SEPA y 2 manuales de prueba).
+8. **Riesgo de ruido:** locales «sin verificar» llenan el mapa con comercios que quizá
+   cerraron. Propuesta (a decidir en la app, no acá): mostrar los de OSM/SEPA con una
+   marca de «sin confirmar» y que el primer precio cargado ahí los confirme.
+9. **Licencia ODbL — a decidir con cuidado:**
    - Atribución obligatoria («© colaboradores de OpenStreetMap») visible en la app y
      en la documentación.
    - **Share-alike:** una base derivada que se *redistribuya* debe quedar bajo ODbL.
@@ -346,7 +381,59 @@ No hace falta pedir permiso. El único tema de fondo es el *share-alike* de la O
      tabla crea una *base derivada*: no pasa nada mientras la base no se publique ni
      se entregue, pero cierra la puerta a regalar/vender un dump de `locales`. Si eso
      importa, mantener los locales OSM identificables (`osm_id`) para poder separarlos.
-7. **Google Maps/Places: no.** Sus términos prohíben extraer y guardar sus datos.
+10. **Google Maps/Places: no.** Sus términos prohíben extraer y guardar sus datos.
+
+### 4.3 Atribuciones: texto literal para la pantalla «Atribuciones» de la app
+
+Texto listo para copiar (español) y los enlaces que lo acompañan. Cada bloque es un
+ítem de la pantalla; los enlaces van como enlaces tocables y, si hay una versión
+impresa/exportada, con la URL completa escrita. Las licencias y versiones se
+verificaron en las páginas de cada proyecto el 2026-11-19; las fuentes no fijan una
+redacción exacta, solo qué nombrar y a quién enlazar (la de SEPA es la del propio
+dataset): **si un texto cambia, que sea para nombrar más, nunca menos.**
+
+**Encabezado de la pantalla:** «Almacenero usa datos abiertos de estas fuentes. Gracias
+a quienes los mantienen.»
+
+1. **OpenStreetMap** (locales; se muestra en la pantalla de locales/mapa, además de
+   en «Atribuciones»; en el mapa alcanza con «© OpenStreetMap»):
+   - Texto: «Datos de locales: © colaboradores de OpenStreetMap. Disponibles bajo la
+     Open Database License (ODbL) 1.0.»
+   - Enlaces: «© colaboradores de OpenStreetMap» → https://www.openstreetmap.org/copyright
+     · «ODbL 1.0» → https://opendatacommons.org/licenses/odbl/1-0/
+   - Si algún día se publica un mapa con teselas de OSM, se suma el mismo «©
+     OpenStreetMap contributors» sobre el mapa (guía:
+     https://osmfoundation.org/wiki/Licence/Attribution_Guidelines).
+2. **Open Food Facts** (productos: nombre, marca, tamaño; e imágenes si se muestran):
+   - Texto: «Datos de productos: Open Food Facts (openfoodfacts.org), una base colaborativa
+     disponible bajo la Open Database License (ODbL) 1.0; sus contenidos individuales,
+     bajo la Database Contents License (DbCL) 1.0. Las imágenes de productos se
+     publican bajo Creative Commons Atribución-CompartirIgual (CC BY-SA) 3.0 y son de
+     sus autores; Almacenero solo las enlaza.»
+   - Enlaces: «Open Food Facts» → https://openfoodfacts.org · «ODbL 1.0» →
+     https://opendatacommons.org/licenses/odbl/1-0/ · «DbCL 1.0» →
+     https://opendatacommons.org/licenses/dbcl/1-0/ · «CC BY-SA 3.0» →
+     https://creativecommons.org/licenses/by-sa/3.0/ · términos →
+     https://world.openfoodfacts.org/terms-of-use
+   - Si una pantalla muestra un producto y su imagen, junto a la imagen va «Imagen:
+     Open Food Facts, CC BY-SA 3.0» enlazada a la ficha del producto
+     (`https://world.openfoodfacts.org/product/<ean>`).
+3. **SEPA / Precios Claros** (catálogo de Argentina y sucursales de cadenas):
+   - Texto: «Datos de productos y sucursales de Argentina: Secretaría de Comercio de la
+     Nación, Sistema Electrónico de Publicidad de Precios Argentinos (SEPA, «Precios
+     Claros»), licencia Creative Commons Atribución 4.0 Internacional (CC BY 4.0). Los
+     datos fueron normalizados y combinados por Almacenero.»
+   - Enlaces: «SEPA» → https://datos.produccion.gob.ar/dataset/sepa-precios ·
+     «CC BY 4.0» → https://creativecommons.org/licenses/by/4.0/deed.es
+   - El «fueron normalizados» cumple el requisito de CC BY de indicar que se
+     modificó el material.
+4. **Pie de la pantalla:** «Los precios que ves los cargan personas como vos; no
+   provienen de estas fuentes.» (los precios de SEPA no se cargan, ver §3.1).
+
+Qué datos cae bajo cada texto (para saber cuándo mostrarlo): `locales.fuente = 'osm'` o
+vínculo `local_fuentes.fuente = 'osm'` → bloque 1; `productos_canonicos.origen` o
+`producto_fuentes.fuente = 'off'` → bloque 2; `'sepa'` (productos o locales) → bloque 3.
+La pantalla puede mostrar los tres siempre (más simple y siempre correcto).
 
 ## 5. Resumen de decisiones y qué falta
 
@@ -354,15 +441,15 @@ Hecho: ETL de OFF (filtrable por país) y de SEPA, idempotentes y con tests; tab
 fuentes y conflictos; trazabilidad por `origen` + `producto_fuentes`; índice por EAN;
 `make etl-off`, `make etl-sepa`, `make conflictos`; investigación de fuentes y de locales.
 
+Hecho además: ETL de locales de OSM (Misiones) y de sucursales de SEPA, con
+trazabilidad en `local_fuentes`, anti-duplicados y atribuciones literales (§4.2, §4.3).
+
 Pendiente:
 
-1. **ETL de locales de OSM** (`etl/osm/`): criterio «nombre + calle + número», por
-   provincia, Misiones primero, `verificado = false`, con `osm_tipo`/`osm_id` (migración
-   en `locales`) y anti-duplicados con pg_trgm + distancia. Falta tu OK final tras
-   leer §4.1.c.
-2. Pantalla «Datos y licencias» en la app con las tres atribuciones (§4.1.c).
+1. Pantalla «Atribuciones» en la app con los textos de §4.3.
+2. Decidir en la app cómo se muestran los locales sin verificar (§4.2, punto 8).
 3. `backend/`: normalizar el EAN leído (UPC-A → EAN-13) antes de buscar; endpoint de admin
    para conflictos; carga bajo demanda desde la API de OFF.
-4. Sucursales de SEPA (3 060, con coordenadas) como fuente futura de locales de cadenas
-   (no sirve para Misiones: 17).
-5. Medir en el celular qué entrega `mobile_scanner` para UPC-A.
+4. Medir en el celular qué entrega `mobile_scanner` para UPC-A.
+5. Más provincias: `make etl-osm PROVINCIA=<otra>` y `make etl-sepa-locales`; para todo
+   el país o el mundo, pasar la fusión de locales a SQL por conjuntos.
