@@ -804,6 +804,30 @@ que lo decide (`permisos.exigir_carga`), así que una validación colaborativa f
 - Baja a mitad de uso: `ApiClient.onCuentaBaja` avisa ante CUALQUIER 403 `cuenta_baja` y
   `AlmaceneroApp` reemplaza toda la app por la pantalla de baja, en el momento.
 
+### Dispositivo (ANDROID_ID, corte 12)
+
+Para frenar a quien se da de baja y vuelve a entrar con otro PIN. La MAC no sirve (desde
+Android 10 las apps no pueden leerla); se usa `ANDROID_ID` (por dispositivo y firma de la
+app). Decisiones:
+
+- **Qué se guarda:** solo un hash (`sha256`), nunca el ID en claro, en la tabla
+  `dispositivos (hash, auth_id, primera_vez, ultima_vez)`. Una fila por par
+  dispositivo-cuenta. No hay FK a `usuarios`: en el alta el usuario todavía no existe.
+- **Cómo llega:** header `X-Device-Id` en `POST /v1/auth/anonymous` y `/v1/auth/refresh`.
+  El refresh sirve para asociar a las cuentas que ya existían. Un valor ausente o
+  inválido (largo fuera de 8–128) se ignora: no rompe la app, solo no deja rastro.
+- **Qué hace:** si el dispositivo está asociado a una cuenta **de baja**, el alta de una
+  cuenta nueva se rechaza con 403 `cuenta_baja` **antes** de gastar el PIN, y la app
+  muestra la pantalla de baja. Al reactivar la cuenta deja de bloquear (decide el estado
+  actual). No se bloquea por restricción, solo por baja.
+- **Panel:** la ficha muestra «Otras cuentas en el mismo dispositivo» (alias, estado) para
+  que el admin vea el vínculo, por ejemplo cuentas nuevas de la misma persona.
+- **Límites aceptados:** un borrado de fábrica cambia el ID; un celular vendido o regalado
+  no debería heredar una baja y se resuelve con el formulario de rehabilitación (punto 1).
+  Un cliente modificado puede mandar otro ID: es una valla, no una garantía.
+- **Privacidad:** es un dato de identificación del dispositivo; se guarda hasheado y se
+  debe mencionar cuando se redacte la política de privacidad del release.
+
 ### Pendiente para un próximo corte (anotado para que no se pierda)
 
 1. **Formulario de rehabilitación** en la pantalla de baja (y de restricción): la persona
@@ -811,20 +835,13 @@ que lo decide (`permisos.exigir_carga`), así que una validación colaborativa f
    Reemplaza el «contactá a los administradores» provisorio de la pantalla de baja
    (decir «hablá con quien te invitó» puede no ser cierto si los PINs se reparten o esa
    persona ya no es admin).
-2. **Identificador de dispositivo** para frenar a quien se da de baja y entra con otro PIN.
-   La MAC **no sirve**: desde Android 10 las apps no pueden leerla (devuelve un valor
-   fijo/aleatorio). Opciones reales: `ANDROID_ID` (por dispositivo y firma de la app; se
-   reinicia con un borrado de fábrica), un ID de instalación propio (se pierde al
-   reinstalar) o Play Integrity para validar que es un dispositivo real. Nada es
-   infalible: sirve para marcar «mismo dispositivo que una cuenta de baja» y que el admin
-   decida, no para bloquear solo. Requiere decidir qué dato se guarda y avisarlo
-   (privacidad).
+2. ~~Identificador de dispositivo~~ → **hecho en el corte 12, ver «Dispositivo» abajo.**
 3. **Aviso de rehabilitación**: cuando se levanta una restricción o se reactiva una
    cuenta, mostrar en la app «tu cuenta volvió a estar habilitada» **y por qué** (el motivo
    que cargó el admin). Hoy el aviso simplemente desaparece. Necesita guardar el
    motivo/evento para mostrarlo una vez. A futuro, notificación push.
-4. Mensaje propio para quien de baja prueba otro PIN, y contacto fijo en la app si se abre
-   al público.
+4. Contacto fijo en la app si se abre al público: **no por ahora**; lo resuelve el
+   formulario del punto 1.
 
 ## Decisiones
 

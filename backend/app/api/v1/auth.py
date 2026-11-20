@@ -9,13 +9,13 @@ from uuid import UUID
 import asyncpg
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.auth import CUENTA_BAJA
 from app.config import get_settings
 from app.db import get_pool
-from app.services import config, invitaciones
+from app.services import config, dispositivos, invitaciones
 from app.services.ratelimit import ip_cliente, limitar
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -75,10 +75,21 @@ def _auth_id_de(access_token: str) -> UUID | None:
         return None
 
 
+async def _anotar_dispositivo(
+    pool: asyncpg.Pool, sesion: Sesion, dispositivo: str | None
+) -> Sesion:
+    """Asocia el dispositivo a la cuenta de la sesión (si hay ID y se pudo leer el token)."""
+    auth_id = _auth_id_de(sesion.access_token)
+    if dispositivo is not None and auth_id is not None:
+        await dispositivos.registrar(pool, dispositivo, auth_id)
+    return sesion
+
+
 @router.post("/anonymous", response_model=Sesion)
 async def sesion_anonima(
     request: Request,
     body: AnonimaIn | None = None,
+    x_device_id: str | None = Header(default=None),
     http: httpx.AsyncClient = Depends(get_http),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> Sesion:
@@ -94,9 +105,17 @@ async def sesion_anonima(
         "demasiados intentos desde esta conexión: probá más tarde",
     )
 
+    # Un dispositivo que ya tuvo una cuenta de baja no crea otra (docs/04 §9). Va antes
+    # que el PIN: no se gasta una invitación en vano.
+    dispositivo = dispositivos.hashear(x_device_id)
+    if dispositivo is not None and await dispositivos.tiene_baja(pool, dispositivo):
+        raise HTTPException(403, detail=CUENTA_BAJA)
+
     modo = await config.leer(pool, "modo_acceso")
     if modo == "abierto":
-        return await _pedir_sesion(http, "/signup", {})
+        return await _anotar_dispositivo(
+            pool, await _pedir_sesion(http, "/signup", {}), dispositivo
+        )
     if modo != "solo_invitacion":  # alta_manual, o un valor que no entendemos
         raise HTTPException(
             403,
@@ -126,13 +145,14 @@ async def sesion_anonima(
     auth_id = _auth_id_de(sesion.access_token)
     if auth_id is not None:  # para que el panel muestre quién usó el código
         await invitaciones.anotar_usuario(pool, invitacion_id, auth_id)
-    return sesion
+    return await _anotar_dispositivo(pool, sesion, dispositivo)
 
 
 @router.post("/refresh", response_model=Sesion)
 async def renovar_sesion(
     request: Request,
     body: RefreshIn,
+    x_device_id: str | None = Header(default=None),
     http: httpx.AsyncClient = Depends(get_http),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> Sesion:
@@ -153,4 +173,5 @@ async def renovar_sesion(
         "select estado = 'baja' from usuarios where auth_id = $1", auth_id
     ):
         raise HTTPException(403, detail=CUENTA_BAJA)
-    return sesion
+    # Cuentas que ya existían: el refresh las asocia a su dispositivo.
+    return await _anotar_dispositivo(pool, sesion, dispositivos.hashear(x_device_id))

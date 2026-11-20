@@ -1,3 +1,4 @@
+import 'package:android_id/android_id.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_deps.dart';
@@ -26,6 +27,7 @@ void main() {
   final api = ApiClient(
     baseUrl: apiUrl,
     onCuentaBaja: () => cuentaBaja.value = true,
+    idDispositivo: () => const AndroidId().getId(),
   );
   final auth = AuthRepository(
     api: api,

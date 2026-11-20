@@ -11,7 +11,7 @@ from app.api.v1.admin.consulta import Consulta, escapar_like
 from app.api.v1.admin.paginas import Pagina
 from app.auth import Usuario
 from app.db import get_pool
-from app.services import auditoria, moderacion
+from app.services import auditoria, dispositivos, moderacion
 from app.services.permisos import exigir
 
 router = APIRouter(tags=["admin"])
@@ -61,12 +61,20 @@ class LocalCreadoOut(BaseModel):
     fuente: str
 
 
+class CuentaHermanaOut(BaseModel):
+    id: UUID
+    alias: str
+    estado: str
+
+
 class UsuarioDetalle(UsuarioAdminOut):
     """La ficha del usuario: identidad, actividad y cambios anteriores."""
 
     cargas_recientes: list[CargaOut]
     locales_creados_lista: list[LocalCreadoOut]
     historial: list[AuditoriaOut]
+    # Otras cuentas que usaron el mismo dispositivo (ANDROID_ID, docs/04 §9).
+    mismo_dispositivo: list[CuentaHermanaOut] = []
 
 
 class RolIn(BaseModel):
@@ -214,6 +222,10 @@ async def ficha_usuario(
         cargas_recientes=[CargaOut(**dict(c)) for c in cargas],
         locales_creados_lista=[LocalCreadoOut(**dict(x)) for x in locales],
         historial=await historial(pool, "usuario", usuario_id),
+        mismo_dispositivo=[
+            CuentaHermanaOut(**dict(c))
+            for c in await dispositivos.cuentas_del_dispositivo(pool, usuario_id)
+        ],
     )
 
 

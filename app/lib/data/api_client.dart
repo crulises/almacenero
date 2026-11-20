@@ -38,14 +38,22 @@ class ApiException implements Exception {
 
 /// Cliente HTTP del backend (`/v1`). El cliente habla SOLO con el backend.
 class ApiClient {
-  ApiClient({required this.baseUrl, http.Client? httpClient, this.onCuentaBaja})
-    : _http = httpClient ?? http.Client();
+  ApiClient({
+    required this.baseUrl,
+    http.Client? httpClient,
+    this.onCuentaBaja,
+    this.idDispositivo,
+  }) : _http = httpClient ?? http.Client();
 
   final String baseUrl;
 
   /// Se llama cuando CUALQUIER pedido recibe 403 `cuenta_baja`, para que la app
   /// pase a la pantalla de baja en el momento, sin esperar a volver al inicio.
   final void Function()? onCuentaBaja;
+
+  /// ANDROID_ID del celular (docs/04 §9, «Dispositivo»). Se manda SOLO en `/auth/*`
+  /// (alta y renovación de sesión), no en cada pedido. Si no se puede leer, no se manda.
+  final Future<String?> Function()? idDispositivo;
   final http.Client _http;
 
   Future<Map<String, dynamic>> get(String path, {String? token}) async =>
@@ -72,6 +80,10 @@ class ApiClient {
     final request = http.Request(method, Uri.parse('$baseUrl/v1$path'));
     request.headers['Accept'] = 'application/json';
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    if (path.startsWith('/auth/')) {
+      final id = await _idDispositivo();
+      if (id != null) request.headers['X-Device-Id'] = id;
+    }
     if (body != null) {
       request.headers['Content-Type'] = 'application/json';
       request.body = jsonEncode(body);
@@ -96,6 +108,15 @@ class ApiClient {
     );
     if (error.isCuentaBaja) onCuentaBaja?.call();
     throw error;
+  }
+
+  Future<String?> _idDispositivo() async {
+    try {
+      final id = await idDispositivo?.call();
+      return (id == null || id.isEmpty) ? null : id;
+    } on Object {
+      return null; // sin ID la app anda igual: solo no deja rastro
+    }
   }
 
   static Object? _detalle(http.Response response) {

@@ -694,3 +694,10 @@ Decisiones en `docs/04` §9.
 - **«Entró con el PIN: sin registro» en la ficha.** El PIN de un solo uso queda atado a
   quien lo usó; el código **compartido** (`almacenero-dev`) solo guarda al último. Para
   rastrear a quien vuelve después de una baja, repartir PINs individuales.
+- **Dispositivo (ANDROID_ID).** Un dispositivo asociado a una cuenta de baja no puede
+  crear otra (403 `cuenta_baja` antes de gastar el PIN). **Síntoma típico:** probás con el
+  mismo celular un alta nueva después de dar de baja a tu cuenta de prueba y la app
+  muestra «cuenta dada de baja». **Causa:** es lo esperado. **Solución:** reactivar la
+  cuenta vieja desde el panel (deja de bloquear) o probar desde otro celular. Las cuentas
+  anteriores a esta versión se asocian al dispositivo la próxima vez que renuevan sesión
+  (`/auth/refresh`), no antes. Solo se guarda el hash (`tabla dispositivos`).

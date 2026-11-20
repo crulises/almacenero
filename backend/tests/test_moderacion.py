@@ -260,6 +260,88 @@ def test_baja_no_puede_refrescar_la_sesion(client, admin, proveedor):
     assert client.post("/v1/auth/refresh", json={"refresh_token": "ref"}).status_code == 200
 
 
+# ------------------------------------------------------------------ dispositivo
+
+
+def _anonima(client, device=None):
+    h = {"X-Device-Id": device} if device else {}
+    return client.post("/v1/auth/anonymous", headers=h)
+
+
+def test_hash_del_dispositivo():
+    from app.services.dispositivos import hashear
+
+    assert hashear(None) is None
+    assert hashear("corto") is None  # no parece un ID
+    assert hashear("x" * 200) is None
+    a = hashear("9774D56D682E549C")
+    assert a == hashear("9774d56d682e549c ")  # normaliza
+    assert len(a) == 64 and "9774" not in a  # nunca el valor en claro
+
+
+def test_dispositivo_de_una_cuenta_de_baja_no_crea_otra(client, admin, proveedor, config_temporal):
+    config_temporal("modo_acceso", '"abierto"')
+    ha, _ = admin
+    device = f"dev-{uuid.uuid4().hex}"
+    _, uid, auth_id = _nuevo(client)
+    proveedor["sub"] = auth_id
+
+    # El refresh asocia la cuenta (que ya existía) a su dispositivo.
+    h = {"X-Device-Id": device}
+    assert (
+        client.post("/v1/auth/refresh", json={"refresh_token": "ref"}, headers=h).status_code == 200
+    )
+    assert _anonima(client, device).status_code == 200  # activa: puede haber otra cuenta
+
+    _baja(client, ha, uid)
+    r = _anonima(client, device)
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "cuenta_baja"
+    assert _anonima(client, f"dev-{uuid.uuid4().hex}").status_code == 200  # otro celular, bien
+    assert _anonima(client).status_code == 200  # sin ID no hay vínculo: no rompe
+
+    client.post(f"/v1/admin/usuarios/{uid}/reactivar", headers=ha, json={"motivo": "prueba"})
+    assert _anonima(client, device).status_code == 200  # reactivada: ya no bloquea
+
+
+def test_el_bloqueo_por_dispositivo_no_gasta_el_pin(client, admin, proveedor, config_temporal):
+    ha, _ = admin
+    device = f"dev-{uuid.uuid4().hex}"
+    _, uid, auth_id = _nuevo(client)
+    proveedor["sub"] = auth_id
+    client.post("/v1/auth/refresh", json={"refresh_token": "ref"}, headers={"X-Device-Id": device})
+    _baja(client, ha, uid)
+
+    config_temporal("modo_acceso", '"solo_invitacion"')
+    pin = client.post(
+        "/v1/admin/invitaciones", headers=ha, json={"cantidad": 1, "nota": "dispositivo"}
+    ).json()[0]["codigo"]
+    r = client.post(
+        "/v1/auth/anonymous", json={"codigo_invitacion": pin}, headers={"X-Device-Id": device}
+    )
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "cuenta_baja"
+    # el PIN sigue sirviendo desde otro dispositivo
+    r = client.post("/v1/auth/anonymous", json={"codigo_invitacion": pin})
+    assert r.status_code == 200
+
+
+def test_la_ficha_muestra_otras_cuentas_del_mismo_dispositivo(client, admin, proveedor):
+    ha, _ = admin
+    device = f"dev-{uuid.uuid4().hex}"
+    _, uid1, auth1 = _nuevo(client)
+    _, uid2, auth2 = _nuevo(client)
+    for a in (auth1, auth2):
+        proveedor["sub"] = a
+        client.post(
+            "/v1/auth/refresh", json={"refresh_token": "ref"}, headers={"X-Device-Id": device}
+        )
+    d = client.get(f"/v1/admin/usuarios/{uid1}", headers=ha).json()
+    assert [c["id"] for c in d["mismo_dispositivo"]] == [uid2]
+    assert d["mismo_dispositivo"][0]["estado"] == "activo"
+    # una cuenta sola no tiene hermanas
+    _, uid3, _ = _nuevo(client)
+    assert client.get(f"/v1/admin/usuarios/{uid3}", headers=ha).json()["mismo_dispositivo"] == []
+
+
 # ------------------------------------------------------------- panel / listado
 
 

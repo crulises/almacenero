@@ -541,6 +541,12 @@
               <b class="mono" x-show="ficha.d.invitacion_codigo" x-text="ficha.d.invitacion_codigo"></b>
               <span x-show="ficha.d.invitacion_nota" class="suave" x-text="'(' + ficha.d.invitacion_nota + ')'"></span>
               <span x-show="!ficha.d.invitacion_codigo" class="suave">sin registro (entró con el código compartido —solo guarda al último—, antes de los PINs, o en modo abierto)</span></p>
+            <p>Otras cuentas en el mismo dispositivo:
+              <template x-for="c in ficha.d.mismo_dispositivo" :key="c.id">
+                <span><a href="#" @click.prevent="irFicha('usuario', c.id)" x-text="c.alias"></a>
+                  <span class="badge" :class="c.estado === 'baja' ? 'baja' : 'ok'" x-text="c.estado"></span>&nbsp;</span>
+              </template>
+              <span x-show="!ficha.d.mismo_dispositivo || !ficha.d.mismo_dispositivo.length" class="suave">ninguna (o el celular no mandó su identificador)</span></p>
             <div class="form"><label>Alias <input type="text" x-model="ficha.b.alias"></label></div>
             <div class="filas"><button class="primario" :disabled="!hayCambios()" @click="guardarFicha()">Guardar alias</button></div>
           </section>
