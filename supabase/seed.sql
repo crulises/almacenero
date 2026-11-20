@@ -32,7 +32,9 @@ insert into config (clave, valor, rubro) values
     ('local_duplicado_metros', '50', null),
     ('local_duplicado_similitud', '0.8', null),
     -- Anti-spam (docs/04 §6)
-    ('auth_altas_por_hora_ip',   '10',  null),
+    -- Solo desarrollo: Docker Desktop le pone la MISMA IP (192.168.65.1) a todo lo que entra,
+    -- así que el cupo por IP lo comparten el celular, el curl y los tests. En producción, 10.
+    ('auth_altas_por_hora_ip',   '100', null),
     ('auth_refresh_por_hora_ip', '120', null),
     ('max_precios_por_hora',     '60',  null),
     ('max_precios_por_dia',      '300', null)

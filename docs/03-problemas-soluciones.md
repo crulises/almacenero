@@ -632,3 +632,15 @@ instalá esos.
   `make up` (desde cualquier worktree) reemplaza al backend. `docker inspect
   almacenero-backend-1` y la etiqueta `com.docker.compose.project.working_dir` dicen de
   qué carpeta salió el código.
+
+## Rate limit por IP detrás de Docker Desktop (corte 9)
+
+- **Síntoma:** el celular recibe 429 («Demasiados intentos») aunque casi no lo usaste, y
+  en el log del backend todos los pedidos vienen de `192.168.65.1`. **Causa:** Docker
+  Desktop (Mac) enmascara el origen: toda conexión desde afuera del contenedor, la del
+  celular, la de un `curl` y la de los tests, llega con esa misma IP. El cupo por IP
+  (`auth_altas_por_hora_ip`) pasa a ser UNO para todos, y los intentos fallidos de un
+  código también cuentan. **Solución en desarrollo:** el seed lo sube a 100; para vaciar
+  el contador al instante, `docker restart almacenero-backend-1` (vive en memoria).
+  **En producción:** con la IP real (`PROXY_HOPS`, ver arriba) el cupo vuelve a ser por
+  persona y el valor es 10.
