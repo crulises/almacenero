@@ -20,17 +20,39 @@ class MemoryStore implements SessionStore {
   Future<void> clear() async => session = null;
 }
 
+class MemoryInvitations implements InvitationStore {
+  String? code;
+
+  @override
+  Future<String?> read() async => code;
+
+  @override
+  Future<void> write(String c) async => code = c;
+
+  @override
+  Future<void> clear() async => code = null;
+}
+
 void main() {
   late DateTime now;
   late MemoryStore store;
   late List<String> llamadas;
   late Map<String, int> estados;
+  late MemoryInvitations invitaciones;
+  late List<Object?> cuerpos;
+  late Map<String, Object> detalles;
 
   AuthRepository build() {
     final client = MockClient((request) async {
       llamadas.add(request.url.path);
+      cuerpos.add(request.body.isEmpty ? null : jsonDecode(request.body));
       final status = estados[request.url.path] ?? 200;
-      if (status != 200) return http.Response('{}', status);
+      if (status != 200) {
+        return http.Response(
+          jsonEncode({'detail': detalles[request.url.path] ?? 'x'}),
+          status,
+        );
+      }
       final n = llamadas.length;
       return http.Response(
         jsonEncode({
@@ -44,6 +66,7 @@ void main() {
     return AuthRepository(
       api: ApiClient(baseUrl: 'http://x', httpClient: client),
       store: store,
+      invitations: invitaciones,
       now: () => now,
     );
   }
@@ -53,6 +76,9 @@ void main() {
     store = MemoryStore();
     llamadas = [];
     estados = {};
+    invitaciones = MemoryInvitations();
+    cuerpos = [];
+    detalles = {};
   });
 
   test('primer arranque: crea sesión anónima y la guarda', () async {
@@ -101,5 +127,60 @@ void main() {
     estados['/v1/auth/refresh'] = 500;
     await expectLater(auth.accessToken(), throwsA(isA<ApiException>()));
     expect(store.session, isNotNull);
+  });
+
+  group('invitación', () {
+    test('manda el código guardado al crear el usuario', () async {
+      invitaciones.code = 'grupo';
+      await build().accessToken();
+      expect(cuerpos.single, {'codigo_invitacion': 'grupo'});
+    });
+
+    test('guardarInvitacion recorta y persiste el código', () async {
+      await build().guardarInvitacion('  grupo ');
+      expect(invitaciones.code, 'grupo');
+    });
+
+    test('si el backend la pide, avisa con InvitacionRequerida', () async {
+      estados['/v1/auth/anonymous'] = 403;
+      detalles['/v1/auth/anonymous'] = {'codigo': 'invitacion_requerida'};
+      await expectLater(
+        build().accessToken(),
+        throwsA(
+          isA<InvitacionRequerida>().having(
+            (e) => e.rechazada,
+            'rechazada',
+            false,
+          ),
+        ),
+      );
+    });
+
+    test('código rechazado: se descarta y se pide de nuevo', () async {
+      invitaciones.code = 'malo';
+      estados['/v1/auth/anonymous'] = 403;
+      detalles['/v1/auth/anonymous'] = {'codigo': 'invitacion_invalida'};
+      await expectLater(
+        build().accessToken(),
+        throwsA(
+          isA<InvitacionRequerida>().having(
+            (e) => e.rechazada,
+            'rechazada',
+            true,
+          ),
+        ),
+      );
+      expect(invitaciones.code, isNull);
+    });
+
+    test('429 al crear el usuario llega como ApiException', () async {
+      estados['/v1/auth/anonymous'] = 429;
+      await expectLater(
+        build().accessToken(),
+        throwsA(
+          isA<ApiException>().having((e) => e.isRateLimited, '429', true),
+        ),
+      );
+    });
   });
 }

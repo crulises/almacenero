@@ -1,5 +1,7 @@
 import 'package:almacenero/app_deps.dart';
 import 'package:almacenero/data/api_client.dart';
+import 'package:almacenero/data/app_info.dart';
+import 'package:almacenero/data/auth_repository.dart';
 import 'package:almacenero/data/local_repository.dart';
 import 'package:almacenero/data/location_service.dart';
 import 'package:almacenero/data/price_repository.dart';
@@ -178,6 +180,168 @@ void main() {
       expect(find.text('Almacenero'), findsOneWidget);
       expect(find.text('anon-abc123'), findsOneWidget);
       expect(find.text('Karma: 3'), findsOneWidget);
+    });
+
+    testWidgets('pide el código de invitación y reintenta con él', (
+      tester,
+    ) async {
+      String? guardado;
+      var rechazar = false;
+      await abrir(
+        tester,
+        deps: AppDeps(
+          guardarInvitacion: (c) async => guardado = c,
+          loadMe: () async {
+            if (guardado == null) throw const InvitacionRequerida();
+            if (rechazar) {
+              rechazar = false;
+              throw const InvitacionRequerida(rechazada: true);
+            }
+            return const Me(id: 'u1', alias: 'anon-abc123', karma: 0);
+          },
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      // Es la ÚNICA opción: no hay nada más de la app a la vista.
+      expect(find.text('Código de invitación'), findsOneWidget);
+      expect(find.text('Escanear código'), findsNothing);
+      expect(find.byType(TextField), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), ' grupo ');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle();
+      expect(guardado, 'grupo');
+      expect(find.text('anon-abc123'), findsOneWidget);
+      expect(find.text('Escanear código'), findsOneWidget);
+    });
+
+    testWidgets('muestra versión, servidor e IP del celular', (tester) async {
+      await abrir(
+        tester,
+        deps: AppDeps(
+          loadInfoApp: () async => const InfoApp(
+            build: BuildInfo(
+              version: '0.0.7',
+              commit: 'abc1234',
+              compilado: '2026-11-20T17:00',
+            ),
+            apiUrl: 'http://192.168.1.5:8000',
+            ips: [IpLocal(interfaz: 'wlan0', ip: '192.168.1.42')],
+            servidor: 'responde (35 ms)',
+          ),
+          loadMe: () async =>
+              const Me(id: 'u1', alias: 'anon-abc123', karma: 0),
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      expect(find.text('Versión: 0.0.7 (abc1234)'), findsOneWidget);
+      expect(find.text('Servidor: http://192.168.1.5:8000'), findsOneWidget);
+      expect(find.text('Estado: responde (35 ms)'), findsOneWidget);
+      expect(find.text('IP del celular: 192.168.1.42 (wlan0)'), findsOneWidget);
+    });
+
+    testWidgets('si el servidor rechaza el alta, dice la causa real', (
+      tester,
+    ) async {
+      await abrir(
+        tester,
+        deps: AppDeps(
+          loadMe: () async => throw ApiException(
+            'Error 403',
+            statusCode: 403,
+            detail: {'codigo': 'alta_cerrada'},
+          ),
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      expect(find.text('No pudimos conectar con el servidor'), findsOneWidget);
+      expect(
+        find.text('El servidor respondió 403 (alta_cerrada)'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('si el código no sirve, lo dice y deja probar otro', (
+      tester,
+    ) async {
+      var intentos = 0;
+      await abrir(
+        tester,
+        deps: AppDeps(
+          guardarInvitacion: (_) async => intentos++,
+          loadMe: () async {
+            if (intentos < 2) {
+              throw InvitacionRequerida(rechazada: intentos > 0);
+            }
+            return const Me(id: 'u1', alias: 'anon-abc123', karma: 0);
+          },
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      expect(find.textContaining('Ese código no sirve'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), '111111');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Ese código no sirve'), findsOneWidget);
+      expect(find.text('Escanear código'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), '222222');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle();
+      expect(find.text('anon-abc123'), findsOneWidget);
     });
 
     testWidgets('si falla, ofrece reintentar y se recupera', (tester) async {
@@ -810,6 +974,24 @@ void main() {
       }
       expect(backend.cargas, isEmpty);
       expect(backend.karma, 0);
+    });
+
+    testWidgets('si llegó al tope de cargas, lo explica', (tester) async {
+      backend.errorAlCargar = ApiException(
+        'Error 429',
+        statusCode: 429,
+        detail: {'codigo': 'limite_cargas'},
+      );
+      await abrir(tester);
+      await _irAlFormulario(tester);
+
+      await _enviarPrecio(tester, '500');
+      expect(
+        find.text(
+          'Cargaste muchos precios seguidos. Esperá un rato y probá de nuevo.',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('si falla la red, avisa y deja reintentar', (tester) async {

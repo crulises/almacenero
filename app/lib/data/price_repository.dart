@@ -102,6 +102,9 @@ enum CargaError {
 
   /// El GPS no es lo bastante preciso: esperar y reintentar.
   precisionBaja,
+
+  /// Llegaste al tope de cargas por hora o por día (anti-spam).
+  limite,
   otro,
 }
 
@@ -109,6 +112,7 @@ CargaError clasificarErrorCarga(Object error) {
   if (error is ApiException) {
     if (error.statusCode == 404) return CargaError.noEncontrado;
     if (error.statusCode == 422) return CargaError.precioInvalido;
+    if (error.isRateLimited) return CargaError.limite;
     if (error.statusCode == 403) {
       return switch (_codigo(error)) {
         'fuera_de_rango' => CargaError.fueraDeRango,

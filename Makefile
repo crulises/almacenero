@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed demo demo-borrar admin admin-crear admin-web test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
+.PHONY: up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -53,6 +53,12 @@ admin: ## Promueve a un usuario a admin: make admin ALIAS=anon-1ff221
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -v alias="$(ALIAS)" <<< \
 	"begin; select set_config('app.rol_write', 'on', true); update usuarios set rol = 'admin' where alias = :'alias'; commit;"
+
+invitacion: ## Crea un código de invitación: make invitacion CODIGO=grupo [USOS=50] [DIAS=30]
+	@test -n "$(CODIGO)" || { echo "Uso: make invitacion CODIGO=<código> [USOS=<máx>] [DIAS=<vigencia>]"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -v codigo="$(CODIGO)" -v usos="$(USOS)" -v dias="$(DIAS)" -c \
+	"insert into invitaciones (codigo, usos_max, vence) values (lower(btrim(:'codigo')), nullif(:'usos','')::int, now() + (nullif(:'dias','') || ' days')::interval) returning codigo, usos_max, vence"
 
 admin-crear: $(PY) ## Crea/promueve un admin con email y contraseña para el panel web: make admin-crear EMAIL=vos@mail.com [PASSWORD=...]
 	@test -n "$(EMAIL)" || { echo "Uso: make admin-crear EMAIL=<email> [PASSWORD=<contraseña>] (sin PASSWORD la pide)"; exit 1; }
@@ -146,12 +152,17 @@ conflictos: $(PY) ## Lista los conflictos de catálogo pendientes de revisión
 	$(PY) -m etl.conflictos
 
 # --- app en un celular -----------------------------------------------------
-apk: ## APK debug (arm64) para probar en un celular de la misma red Wi-Fi
+apk: ## APK debug (arm64) para el celular: sube la versión sola (0.0.1, 0.0.2, ...) y la muestra en la app
 	@# El celular no puede usar 10.0.2.2 (solo existe en el emulador): la app apunta
 	@# a la IP de esta máquina. Se puede forzar con `make apk LAN_IP=192.168.1.50`.
+	@# La versión (serie del pubspec + contador local) la calcula app/tool/version.sh.
 	@ip="$(LAN_IP)"; \
 	[ -n "$$ip" ] || ip=$$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | cut -d' ' -f1); \
 	[ -n "$$ip" ] || { echo "No pude detectar la IP local: usá make apk LAN_IP=<ip>"; exit 1; }; \
-	echo "La app apuntará a http://$$ip:8000"; \
-	cd app && flutter build apk --debug --target-platform android-arm64 --dart-define=API_URL=http://$$ip:8000 \
-	&& echo "APK: app/build/app/outputs/flutter-apk/app-debug.apk"
+	read -r ver commit code <<< "$$(app/tool/version.sh)" || exit 1; \
+	echo "La app apuntará a http://$$ip:8000 — versión $$ver ($$commit)"; \
+	cd app && flutter build apk --debug --target-platform android-arm64 \
+		--build-name=$$ver --build-number=$$code \
+		--dart-define=API_URL=http://$$ip:8000 --dart-define=APP_VERSION=$$ver \
+		--dart-define=APP_COMMIT=$$commit --dart-define=APP_BUILT_AT=$$(date +%Y-%m-%dT%H:%M) \
+	&& echo "APK v$$ver: app/build/app/outputs/flutter-apk/app-debug.apk"

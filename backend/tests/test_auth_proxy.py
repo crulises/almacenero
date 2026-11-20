@@ -11,8 +11,9 @@ SESION = {"access_token": "acc", "refresh_token": "ref", "expires_in": 3600}
 
 
 @pytest.fixture
-def proveedor(client, monkeypatch):
+def proveedor(client, monkeypatch, config_temporal):
     """Reemplaza el cliente HTTP del backend por uno simulado; devuelve los requests vistos."""
+    config_temporal("modo_acceso", '"abierto"')  # estos tests son del proxy, no del acceso
     s = get_settings()
     monkeypatch.setattr(s, "auth_url", "http://auth.test/auth/v1")
     monkeypatch.setattr(s, "auth_api_key", "clave-publica")
@@ -57,6 +58,7 @@ def test_proveedor_caido_502(client, proveedor):
     assert client.post("/v1/auth/anonymous").status_code == 502
 
 
-def test_sin_api_key_503(client, monkeypatch):
+def test_sin_api_key_503(client, monkeypatch, config_temporal):
+    config_temporal("modo_acceso", '"abierto"')
     monkeypatch.setattr(get_settings(), "auth_api_key", None)
     assert client.post("/v1/auth/anonymous").status_code == 503

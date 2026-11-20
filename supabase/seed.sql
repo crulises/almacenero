@@ -30,8 +30,20 @@ insert into config (clave, valor, rubro) values
     ('alta_locales_abierta',  'true', null),
     ('max_locales_por_dia',   '50',  null),
     ('local_duplicado_metros', '50', null),
-    ('local_duplicado_similitud', '0.8', null)
+    ('local_duplicado_similitud', '0.8', null),
+    -- Anti-spam (docs/04 §6)
+    -- Solo desarrollo: Docker Desktop le pone la MISMA IP (192.168.65.1) a todo lo que entra,
+    -- así que el cupo por IP lo comparten el celular, el curl y los tests. En producción, 10.
+    ('auth_altas_por_hora_ip',   '100', null),
+    ('auth_refresh_por_hora_ip', '120', null),
+    ('max_precios_por_hora',     '60',  null),
+    ('max_precios_por_dia',      '300', null)
 on conflict do nothing;
+
+-- Invitación de desarrollo (en producción se crea otra: `make invitacion`).
+insert into invitaciones (codigo, nota)
+values ('almacenero-dev', 'código de desarrollo')
+on conflict (codigo) do nothing;
 
 -- Un par de productos canónicos de ejemplo para probar el flujo de escaneo.
 insert into productos_canonicos (ean, nombre, marca, tamano_valor, tamano_unidad, origen)

@@ -1,3 +1,4 @@
+import 'data/app_info.dart';
 import 'data/local_repository.dart';
 import 'data/location_service.dart';
 import 'data/price_repository.dart';
@@ -6,8 +7,15 @@ import 'data/user_repository.dart';
 
 /// Lo que las pantallas necesitan del backend, como funciones. Así los tests
 /// reemplazan solo lo que les importa, sin armar una red falsa.
+Future<void> _sinInvitacion(String codigo) async {}
+
+Future<InfoApp> _infoDePrueba() async =>
+    const InfoApp(build: BuildInfo.actual, apiUrl: '-', ips: [], servidor: '-');
+
 class AppDeps {
   const AppDeps({
+    this.guardarInvitacion = _sinInvitacion,
+    this.loadInfoApp = _infoDePrueba,
     required this.loadMe,
     required this.loadProducto,
     required this.obtenerUbicacion,
@@ -19,6 +27,11 @@ class AppDeps {
     required this.loadVigentes,
   });
 
+  /// Guarda el código de invitación que el usuario escribió (primer arranque).
+  final Future<void> Function(String codigo) guardarInvitacion;
+
+  /// Versión, servidor e IP del celular, para mostrar en la pantalla principal.
+  final Future<InfoApp> Function() loadInfoApp;
   final Future<Me> Function() loadMe;
   final Future<Producto> Function(String ean) loadProducto;
   final Future<Ubicacion> Function() obtenerUbicacion;

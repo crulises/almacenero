@@ -508,6 +508,30 @@ instalá esos.
 - **Límite conocido:** la ubicación la informa el celular; una ubicación simulada la
   falsifica (se mitiga con reputación, corte 9).
 
+## Anti-spam (corte 9)
+
+- **Síntoma:** tras activar `modo_acceso`, los tests viejos de `/v1/auth/anonymous`
+  devuelven 403. **Causa:** el default (código y seed) es `solo_invitacion`.
+  **Solución:** los tests del proxy fijan `modo_acceso = "abierto"` con la fixture
+  `config_temporal` (ahora en `conftest.py`); los de acceso viven en
+  `tests/test_anti_spam.py`.
+- **Síntoma:** un test pasa solo y falla en la suite con 429. **Causa:** el rate limit
+  por IP vive en memoria del proceso y el `TestClient` siempre es la misma IP.
+  **Solución:** fixture `autouse` en `conftest.py` que reinicia el limitador en cada
+  test.
+- **Síntoma:** `make migrate` falla con `MigrationMissingLocalError … Remote migration
+  versions not found in local migrations directory`. **Causa:** el Supabase local es
+  uno solo y lo comparten todos los worktrees: otra rama ya aplicó una migración que
+  esta rama no tiene. **Solución:** aplicar a mano la migración propia
+  (`psql "$DATABASE_URL" -f supabase/migrations/<archivo>.sql` y un `insert` en
+  `supabase_migrations.schema_migrations (version, name)`), o traer la otra rama. En
+  CI (base vacía) no pasa.
+- **Detrás de un proxy, el rate limit frena a todos o no frena a nadie.** **Causa:**
+  sin `PROXY_HOPS` se usa la IP del socket, que detrás de un proxy es la del proxy.
+  **Solución:** `PROXY_HOPS=<cantidad de proxies confiables>` (1 con un solo proxy); se
+  toma la IP desde la derecha de `X-Forwarded-For`. Con un valor de más, el cliente
+  puede falsificar su IP.
+
 ---
 
 ## Panel web de admin (corte 11)
@@ -584,3 +608,51 @@ instalá esos.
   hizo `make up` (el del checkout principal no tiene el panel hasta que se mergee).
 - **Probar una rama sin tocar el stack levantado:** `uvicorn` en otro puerto + servir
   `admin-web/public` con un `config.js` apuntando ahí (y `CORS_ORIGINS` con ese origen).
+
+## «No pudimos conectar con el servidor» en el celular (corte 9)
+
+- **Síntoma:** el celular y el servidor están en la misma red y la app dice «No pudimos
+  conectar con el servidor». **Causa (la que nos pasó):** se instaló un APK viejo. Los
+  APK se llaman todos `app-debug.apk`, así que no hay forma de distinguirlos, y un APK
+  anterior al corte 9 no manda código de invitación: el backend contesta 403 y la app
+  mostraba el mismo cartel que para «sin red». **Solución:** la pantalla principal ahora
+  muestra versión, commit, servidor, estado de `/v1/health` e IP del celular, y el error
+  dice «El servidor respondió 403 (…)» cuando hay respuesta. Leer eso antes de adivinar.
+- **Cómo separar las causas, de lo más barato a lo más caro:**
+  1. ¿La versión de la pantalla es la que acabás de compilar? Si no, es otro APK.
+  2. «Estado: sin conexión» → es la red: IP del celular en otra subred que la del
+     servidor, Wi-Fi con «aislamiento de clientes» (típico en redes de invitados), IP del
+     servidor cambiada desde la compilación (comparar «Servidor» con `ipconfig getifaddr
+     en0`), firewall de macOS (`socketfilterfw --getglobalstate`).
+  3. «Estado: respondió error N» o «responde» con el cartel de error → la red anda; es
+     el backend (ver `docker compose logs backend`).
+- **Probar la red sin el celular:** `curl http://<IP-del-servidor>:8000/v1/health` desde
+  otra máquina de la misma red.
+- **Quién está sirviendo el puerto 8000:** el compose tiene nombre fijo, así que el último
+  `make up` (desde cualquier worktree) reemplaza al backend. `docker inspect
+  almacenero-backend-1` y la etiqueta `com.docker.compose.project.working_dir` dicen de
+  qué carpeta salió el código.
+
+## Rate limit por IP detrás de Docker Desktop (corte 9)
+
+- **Síntoma:** el celular recibe 429 («Demasiados intentos») aunque casi no lo usaste, y
+  en el log del backend todos los pedidos vienen de `192.168.65.1`. **Causa:** Docker
+  Desktop (Mac) enmascara el origen: toda conexión desde afuera del contenedor, la del
+  celular, la de un `curl` y la de los tests, llega con esa misma IP. El cupo por IP
+  (`auth_altas_por_hora_ip`) pasa a ser UNO para todos, y los intentos fallidos de un
+  código también cuentan. **Solución en desarrollo:** el seed lo sube a 100; para vaciar
+  el contador al instante, `docker restart almacenero-backend-1` (vive en memoria).
+  **En producción:** con la IP real (`PROXY_HOPS`, ver arriba) el cupo vuelve a ser por
+  persona y el valor es 10.
+
+## «No me pide el código de invitación» (corte 9)
+
+- **Síntoma:** instalás el APK nuevo y la app abre directo en «Escanear código», sin
+  pedir invitación. **Causa:** la app ya tenía una sesión guardada (de antes de activar
+  las invitaciones). El código se pide solo cuando hay que CREAR un usuario; con sesión
+  vigente, o renovable con el refresh token, no hace falta. **Solución:** borrar los
+  datos de la app (Ajustes → Apps → Almacenero → Almacenamiento → Borrar datos) o
+  desinstalarla. Un usuario nuevo siempre cae en la pantalla del código.
+- **Un PIN «usado» que nadie usó:** si el alta falló después de gastarlo (proveedor de
+  auth caído) el uso se devuelve solo; si el PIN figura usado en el panel, alguien creó
+  un usuario con él (ver «Usado por»).

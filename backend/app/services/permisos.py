@@ -41,6 +41,9 @@ CAPACIDADES: dict[str, frozenset[str]] = {
             "catalogo.editar",
             "catalogo.resolver",
             "auditoria.ver",
+            # Invitaciones / PINs (corte 9)
+            "invitacion.ver",
+            "invitacion.emitir",
         }
     ),
 }

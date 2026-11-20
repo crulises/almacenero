@@ -71,3 +71,27 @@ class SecureSessionStore implements SessionStore {
   @override
   Future<void> clear() => _storage.delete(key: _key);
 }
+
+/// Código de invitación del grupo: se pide una sola vez, en el primer arranque.
+abstract class InvitationStore {
+  Future<String?> read();
+  Future<void> write(String code);
+  Future<void> clear();
+}
+
+class SecureInvitationStore implements InvitationStore {
+  SecureInvitationStore([FlutterSecureStorage? storage])
+    : _storage = storage ?? const FlutterSecureStorage();
+
+  static const _key = 'invitation';
+  final FlutterSecureStorage _storage;
+
+  @override
+  Future<String?> read() => _storage.read(key: _key);
+
+  @override
+  Future<void> write(String code) => _storage.write(key: _key, value: code);
+
+  @override
+  Future<void> clear() => _storage.delete(key: _key);
+}

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'app_deps.dart';
 import 'data/api_client.dart';
+import 'data/app_info.dart';
 import 'data/auth_repository.dart';
 import 'data/authed_api.dart';
 import 'data/local_repository.dart';
@@ -21,12 +22,23 @@ const apiUrl = String.fromEnvironment(
 
 void main() {
   final api = ApiClient(baseUrl: apiUrl);
-  final auth = AuthRepository(api: api, store: SecureSessionStore());
+  final auth = AuthRepository(
+    api: api,
+    store: SecureSessionStore(),
+    invitations: SecureInvitationStore(),
+  );
   final authed = AuthedApi(api: api, auth: auth);
   final location = LocationService();
   runApp(
     AlmaceneroApp(
       deps: AppDeps(
+        guardarInvitacion: auth.guardarInvitacion,
+        loadInfoApp: () async => InfoApp(
+          build: BuildInfo.actual,
+          apiUrl: apiUrl,
+          ips: await ipsLocales(),
+          servidor: await probarServidor(api),
+        ),
         loadMe: UserRepository(api: authed).me,
         loadProducto: ProductRepository(api: authed).porEan,
         obtenerUbicacion: location.actual,

@@ -20,6 +20,12 @@ DEFAULTS: dict[str, Any] = {
     "max_locales_por_dia": 50,
     "local_duplicado_metros": 50,
     "local_duplicado_similitud": 0.8,
+    # Anti-spam (docs/04 §6). Seguro por defecto: sin la fila, se exige invitación.
+    "modo_acceso": "solo_invitacion",  # abierto | solo_invitacion | alta_manual
+    "auth_altas_por_hora_ip": 10,  # /auth/anonymous, cuenta todos los intentos
+    "auth_refresh_por_hora_ip": 120,
+    "max_precios_por_hora": 60,
+    "max_precios_por_dia": 300,
 }
 
 

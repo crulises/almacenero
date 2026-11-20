@@ -563,7 +563,8 @@ def test_ficha_de_precio_compara_con_el_resto_del_local(client, admin, auth):
     assert len(f["otros_en_el_local"]) == 2
     assert f["promedio_otros_local"] == "100.00"
     assert f["diferencia_pct"] == 50.0
-    assert f["local_verificado"] is False and f["user_karma"] >= 3
+    # 3 cargas, pero el 2º «100» repite precio y no suma karma (anti-spam, corte 9)
+    assert f["local_verificado"] is False and f["user_karma"] == 2
     r = client.patch(
         f"/v1/admin/precios/{pid}", headers=admin, json={"precio": "101", "motivo": "tipeo"}
     )

@@ -1,8 +1,12 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../app_deps.dart';
+import '../data/api_client.dart';
+import '../data/app_info.dart';
+import '../data/auth_repository.dart';
 import '../data/user_repository.dart';
 import '../domain/ean.dart';
+import 'invitacion_screen.dart';
 import 'product_screen.dart';
 import 'scan_screen.dart';
 
@@ -18,8 +22,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<Me> _me = widget.deps.loadMe();
+  late Future<Me> _me = _cargarMe();
+  late Future<InfoApp> _info = widget.deps.loadInfoApp();
   final _eanController = TextEditingController();
+  bool _yaEntro =
+      false; // hubo una sesión: los recargos no vuelven a la pantalla de carga
   String? _eanError;
 
   @override
@@ -28,10 +35,20 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// El error lo muestra el FutureBuilder; `ignore()` evita que, si falla antes del
+  /// próximo frame (sin red, por ejemplo), Dart lo cuente como error sin manejar.
+  Future<Me> _cargarMe() => widget.deps.loadMe()..ignore();
+
   void _retry() {
     setState(() {
-      _me = widget.deps.loadMe();
+      _me = _cargarMe();
+      _info = widget.deps.loadInfoApp(); // la red pudo cambiar
     });
+  }
+
+  Future<void> _enviarInvitacion(String codigo) async {
+    await widget.deps.guardarInvitacion(codigo);
+    if (mounted) _retry();
   }
 
   Future<void> _escanear() async {
@@ -66,6 +83,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Sin sesión y con el backend pidiendo invitación: es lo ÚNICO que se muestra.
+    return FutureBuilder<Me>(
+      future: _me,
+      builder: (context, snapshot) {
+        final error = snapshot.error;
+        if (error is InvitacionRequerida) {
+          return InvitacionScreen(
+            rechazada: error.rechazada,
+            onEnviar: _enviarInvitacion,
+          );
+        }
+        if (snapshot.hasData) _yaEntro = true;
+        if (snapshot.connectionState != ConnectionState.done && !_yaEntro) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return _principal(context);
+      },
+    );
+  }
+
+  Widget _principal(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Almacenero')),
       body: ListView(
@@ -94,8 +134,52 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 32),
+          _infoApp(context),
         ],
       ),
+    );
+  }
+
+  /// Qué app es esta y a dónde habla: para confirmar que se instaló el APK correcto
+  /// y diagnosticar la conexión sin adivinar.
+  Widget _infoApp(BuildContext context) {
+    final estilo = Theme.of(context).textTheme.bodySmall;
+    return FutureBuilder<InfoApp>(
+      future: _info,
+      builder: (context, snapshot) {
+        final info = snapshot.data;
+        final filas = <(String, String)>[
+          (
+            'Versión',
+            info == null
+                ? BuildInfo.actual.version
+                : '${info.build.version} (${info.build.commit})',
+          ),
+          if (info != null) ('Compilada', info.build.compilado),
+          if (info != null) ('Servidor', info.apiUrl),
+          if (info != null) ('Estado', info.servidor),
+          if (info != null)
+            (
+              'IP del celular',
+              info.ips.isEmpty
+                  ? 'sin red'
+                  : info.ips.map((i) => '${i.ip} (${i.interfaz})').join(', '),
+            ),
+        ];
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final (nombre, valor) in filas)
+                  Text('$nombre: $valor', style: estilo),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -106,10 +190,31 @@ class _HomeScreenState extends State<HomeScreen> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
+        final error = snapshot.error;
+        if (error is ApiException && error.isRateLimited) {
+          return Column(
+            children: [
+              const Text(
+                'Demasiados intentos. Esperá un rato y probá de nuevo.',
+              ),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: _retry, child: const Text('Reintentar')),
+            ],
+          );
+        }
         if (snapshot.hasError) {
           return Column(
             children: [
               const Text('No pudimos conectar con el servidor'),
+              // La causa real: «no hay red» y «el servidor dijo 403» se arreglan distinto.
+              if (error is ApiException)
+                Text(
+                  error.statusCode == null
+                      ? error.message
+                      : 'El servidor respondió ${error.statusCode}'
+                            '${error.codigo == null ? '' : ' (${error.codigo})'}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               const SizedBox(height: 12),
               FilledButton(onPressed: _retry, child: const Text('Reintentar')),
             ],

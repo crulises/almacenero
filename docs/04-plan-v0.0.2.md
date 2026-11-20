@@ -351,6 +351,78 @@ Lo que sí entra en v0.0.2: 1 a 4. Lo de 5 va con el primer deploy público.
 Mientras el backend corra en local y no se comparta, el riesgo real es cero; el
 corte 9 existe para que el deploy no nazca vulnerable.
 
+### Lo implementado en el corte 9
+
+- **`modo_acceso`** (`config`, default en código `solo_invitacion`):
+  - `abierto`: `/auth/anonymous` crea el usuario sin más.
+  - `solo_invitacion`: exige `{"codigo_invitacion": "..."}` en el body. Sin código,
+    403 `invitacion_requerida`; código inexistente, vencido o agotado, 403
+    `invitacion_invalida` (no se distingue el motivo, para no ayudar a adivinar).
+  - `alta_manual` (o cualquier valor desconocido): 403 `alta_cerrada`, no se crean
+    usuarios por la API.
+- **Invitaciones:** tabla `invitaciones` (`codigo` normalizado en minúsculas y sin
+  espacios por un `check`, `usos_max` opcional, `usos`, `vence` opcional). El uso se
+  gasta con un único `UPDATE` condicional (no pasa del tope aunque lleguen pedidos a
+  la vez; el `check usos <= usos_max` lo garantiza la base). Si el proveedor de auth
+  falla después de gastarlo, se devuelve el uso. Dos clases de código conviven:
+  el **compartido** (sin tope de usos; `make invitacion CODIGO=grupo [USOS=50]
+  [DIAS=30]`; el seed de desarrollo trae `almacenero-dev`) y los **PINs** de abajo.
+
+### PINs de un solo uso, desde el panel
+
+Un PIN es una invitación con `usos_max = 1`; la descripción va en `nota`.
+
+- **Estado calculado, no guardado:** `usada` si `usos >= usos_max`, `vencida` si sin
+  usar y `vence` pasó, `disponible` el resto. Guardar además un booleano permitiría
+  que se contradigan.
+- **Quién y cuándo:** al usarse se anota `usada_at` y `usada_por_auth` (el `sub` del
+  token que devuelve el proveedor); el panel lo cruza con `usuarios.auth_id` y muestra
+  el alias con link a su ficha. Si el alta falla después de gastar el PIN, se devuelve
+  (y se borra ese registro). Un `check` impide fecha o usuario sin uso.
+- **Panel → Invitaciones** (`/v1/admin/invitaciones`, capacidades `invitacion.ver` y
+  `invitacion.emitir`): generar N PINs (1 a 100) con una descripción y una vigencia
+  arbitraria en horas o días (o «no vence»); listar con filtro por estado y búsqueda;
+  anular uno **disponible**. Uno usado no se borra (queda de registro: 409). Cada
+  alta y baja deja una fila de auditoría por PIN.
+- **Generación:** 6 dígitos con `secrets` (no `random`). Si el PIN ya existió (usado o
+  no) se sortea otro: lo decide el `UNIQUE`, no una lectura previa.
+- **Seguridad de 6 dígitos:** son 10^6 combinaciones, pero cada intento cuenta en el
+  rate limit por IP (10 por hora en producción) y hay pocos PINs vivos a la vez; cada
+  PIN además vence. No es un secreto de larga vida.
+- **Decisión pendiente:** hoy el panel muestra los PINs siempre (el admin los tiene
+  que poder pasar). Si algún día importara que no se puedan leer después, se
+  guardaría un hash y se mostraría solo al crearlos.
+
+- **Rate limit por IP** (ventana deslizante de 1 hora, **en memoria del proceso**,
+  `services/ratelimit.py`): `/auth/anonymous` `auth_altas_por_hora_ip` (10) y
+  `/auth/refresh` `auth_refresh_por_hora_ip` (120). En `anonymous` cuentan **todos**
+  los intentos, también los de código malo (frena el adivinar códigos). 429 con
+  `Retry-After` y `detail.codigo = demasiados_intentos`. Con varias instancias cada
+  una cuenta aparte; si el deploy escala, se mueve el contador a Postgres/Redis o a
+  Cloudflare sin cambiar la interfaz. La IP: la del socket, o con `PROXY_HOPS=N` la
+  N-ésima desde la derecha de `X-Forwarded-For`. El límite de altas anónimas del
+  propio Supabase auth no se tocó (el nuestro es más estricto y va primero).
+- **Límites por usuario:** `max_precios_por_hora` (60) y `max_precios_por_dia`
+  (300), 429 con `detail.codigo = limite_cargas`; las cargas de un mismo usuario se
+  serializan con un `select … for update` del usuario para que no se cuelen por
+  concurrencia. Los locales nuevos ya tenían `max_locales_por_dia` (corte 5): no se
+  agregó límite por hora.
+- **Karma por duplicados:** el mismo usuario, producto, local y precio dentro de
+  `ventana_frescura_dias` guarda el precio (confirma que sigue vigente) pero **no suma
+  karma**. La respuesta de `POST /v1/precios` trae `karma_sumado` (0 o lo que sume la
+  carga). Otro usuario que carga el mismo precio sí suma.
+- **Decisiones donde el plan era ambiguo:** un solo código compartido, sin código por
+  persona (la tabla ya lo permite); el contador de rate limit en memoria; `modo_acceso`
+  desconocido = cerrado.
+- **App:** si el backend pide código, se muestra una pantalla propia
+  (`invitacion_screen.dart`) que **reemplaza** al home: es la única opción, sin
+  botón de escanear ni nada más. El código se guarda en el almacenamiento seguro y
+  se manda en el alta (solo el primer arranque). Si lo rechaza (inválido, vencido o
+  ya usado) se borra y se vuelve a pedir con un aviso. El campo acepta texto (no solo
+  números) porque el código compartido de grupo puede tener letras. Un 429 al cargar
+  un precio o al crear el usuario se explica en pantalla. Quien ya tenía una sesión
+  guardada NO ve esta pantalla (no necesita código): ver docs/03.
+
 ## 7. Release firmado y deploy con HTTPS (corte 10: preparación)
 
 ### Firmar un build release de Android
@@ -705,3 +777,19 @@ Hacerlo **antes de cargar datos reales** y repasarlo cada tanto.
 - `CLAUDE.md`: alcance de v0.0.2 (hoy solo describe v0.0.1).
 - `docs/03-problemas-soluciones.md`: lo que vaya apareciendo en cada corte
   (como hasta ahora).
+
+## Versión del APK y pantalla de información (corte 9, ajuste)
+
+**Versionado.** La serie (`0.0`, `0.1`, …) es el `version:` de `app/pubspec.yaml`: se
+cambia a mano cuando se cierra un ciclo de pruebas. El último número sube solo en cada
+`make apk` (`0.0.1`, `0.0.2`, …) y vuelve a 0 al cambiar de serie (`0.1.0`, `0.1.1`, …).
+`app/tool/version.sh` lleva la cuenta en el `.git` compartido (no en el árbol de
+trabajo) para no generar cambios ni conflictos entre worktrees. El APK lleva además el
+commit (con `+local` si había cambios sin commitear) y la hora de compilación, y el
+`versionCode` de Android sale de la fecha para que siempre se pueda instalar encima.
+
+**Pantalla principal.** Una tarjeta al pie muestra, por ahora: versión y commit, hora de
+compilación, URL del servidor, estado de `/v1/health` (con la demora, o el motivo) e IP
+del celular por interfaz. Es la lista que se va puliendo según haga falta saber qué
+esperar de un APK; candidatos: modo de acceso del servidor, versión del backend, última
+sincronización.

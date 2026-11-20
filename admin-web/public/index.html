@@ -269,6 +269,66 @@
         </div>
       </section>
 
+      <!-- ==================================================== INVITACIONES -->
+      <section x-show="vista === 'invitaciones'">
+        <form class="filtros" @submit.prevent="generarPines()">
+          <label>Cantidad <input type="number" min="1" max="100" class="num" x-model="pines.cantidad"></label>
+          <label>Descripción <input type="text" maxlength="200" placeholder="p. ej. Juan" x-model="pines.nota"></label>
+          <label>Dura
+            <input type="number" min="1" class="num" x-model="pines.n" :disabled="pines.sinVencimiento">
+            <select x-model="pines.unidad" :disabled="pines.sinVencimiento">
+              <option value="h">horas</option><option value="d">días</option>
+            </select>
+          </label>
+          <label><input type="checkbox" x-model="pines.sinVencimiento"> no vence</label>
+          <button class="primario" :disabled="pines.enviando">Generar PIN</button>
+        </form>
+        <div class="tabla" x-show="pines.nuevos.length" style="padding:10px; margin-bottom:10px">
+          <div class="filtros">
+            <strong>Recién creados</strong>
+            <button type="button" @click="copiarNuevos()">Copiar todos</button>
+            <button type="button" @click="pines.nuevos = []">Ocultar</button>
+          </div>
+          <template x-for="n in pines.nuevos" :key="n.id">
+            <div><span class="mono" style="font-size:20px; letter-spacing:3px" x-text="n.codigo"></span> <span class="suave" x-text="n.nota"></span></div>
+          </template>
+        </div>
+        <div class="filtros">
+          <select x-model="sec.invitaciones.f.estado" @change="cargar('invitaciones', true)">
+            <option value="">Todos los estados</option>
+            <option value="disponible">Disponibles</option>
+            <option value="usada">Usados</option>
+            <option value="vencida">Vencidos</option>
+          </select>
+          <input type="search" placeholder="Buscar PIN o descripción" x-model.debounce.400ms="sec.invitaciones.f.q" @input="cargar('invitaciones', true)">
+          <span class="suave" x-text="rango('invitaciones')"></span>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr><th>PIN</th><th>Descripción</th><th>Estado</th><th>Vence</th><th>Usado</th><th>Usado por</th><th>Creado</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="i in sec.invitaciones.items" :key="i.id">
+              <tr>
+                <td class="mono" style="font-size:15px; letter-spacing:2px" x-text="i.codigo"></td>
+                <td x-text="i.nota"></td>
+                <td><span class="badge" :class="{ok: i.estado === 'disponible', mal: i.estado === 'vencida'}" x-text="i.estado === 'usada' ? 'usado' : i.estado === 'vencida' ? 'vencido' : 'disponible'"></span></td>
+                <td class="suave" x-text="i.vence ? fecha(i.vence) : 'no vence'"></td>
+                <td class="suave" x-text="fecha(i.usada_at)"></td>
+                <td>
+                  <a href="#" x-show="i.usada_por_id" @click.prevent="irFicha('usuario', i.usada_por_id)" x-text="i.usada_por_alias"></a>
+                  <span class="suave" x-show="i.estado === 'usada' && !i.usada_por_id">—</span>
+                </td>
+                <td class="suave" x-text="fecha(i.created_at) + (i.creada_por_alias ? ' · ' + i.creada_por_alias : '')"></td>
+                <td><button x-show="i.usos === 0" @click="revocarPin(i)">Anular</button></td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('invitaciones', -1)" :disabled="sec.invitaciones.offset === 0">←</button>
+          <button @click="pagina('invitaciones', 1)" :disabled="sec.invitaciones.offset + sec.invitaciones.limit >= sec.invitaciones.total">→</button>
+        </div>
+      </section>
+
       <!-- ========================================================== CONFIG -->
       <section x-show="vista === 'config'">
         <div class="tabla"><table>
@@ -308,7 +368,7 @@
         <div class="filtros">
           <select x-model="sec.auditoria.f.entidad" @change="cargar('auditoria', true)">
             <option value="">Todo</option>
-            <template x-for="e in ['local','precio','config','producto','conflicto','usuario']"><option :value="e" x-text="e"></option></template>
+            <template x-for="e in ['local','precio','config','producto','conflicto','usuario','invitacion']"><option :value="e" x-text="e"></option></template>
           </select>
           <span class="suave" x-text="rango('auditoria')"></span>
         </div>
