@@ -59,7 +59,11 @@ void idDispositivoTests() {
       return vistos;
     }
 
-    test('se manda en /auth/* y no en el resto', () async {
+    test('se manda en /auth/* y en /me, y no en el resto', () async {
+      expect(
+        (await headersDe('/me', () async => 'abc12345'))['X-Device-Id'],
+        'abc12345',
+      );
       expect(
         (await headersDe(
           '/auth/refresh',
@@ -69,7 +73,7 @@ void idDispositivoTests() {
       );
       expect(
         (await headersDe(
-          '/me',
+          '/precios',
           () async => 'abc12345',
         )).containsKey('X-Device-Id'),
         isFalse,

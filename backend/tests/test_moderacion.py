@@ -324,6 +324,18 @@ def test_el_bloqueo_por_dispositivo_no_gasta_el_pin(client, admin, proveedor, co
     assert r.status_code == 200
 
 
+def test_me_asocia_al_dispositivo_cuentas_con_sesion_vigente(client, admin, config_temporal):
+    """Una cuenta que nunca pasó por alta ni refresh queda atada al abrir la app."""
+    config_temporal("modo_acceso", '"abierto"')
+    ha, _ = admin
+    device = f"dev-{uuid.uuid4().hex}"
+    h, uid, _ = _nuevo(client)
+    assert client.get("/v1/me", headers={**h, "X-Device-Id": device}).status_code == 200
+    _baja(client, ha, uid)
+    r = _anonima(client, device)
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "cuenta_baja"
+
+
 def test_la_ficha_muestra_otras_cuentas_del_mismo_dispositivo(client, admin, proveedor):
     ha, _ = admin
     device = f"dev-{uuid.uuid4().hex}"

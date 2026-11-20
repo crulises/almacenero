@@ -42,6 +42,7 @@ async def registrar(pool: asyncpg.Pool, hash_: str, auth_id: UUID) -> None:
         """
         insert into dispositivos (hash, auth_id) values ($1, $2)
         on conflict (hash, auth_id) do update set ultima_vez = now()
+        where dispositivos.ultima_vez < now() - interval '1 hour'
         """,
         hash_,
         auth_id,

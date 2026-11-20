@@ -52,7 +52,7 @@ class ApiClient {
   final void Function()? onCuentaBaja;
 
   /// ANDROID_ID del celular (docs/04 §9, «Dispositivo»). Se manda SOLO en `/auth/*`
-  /// (alta y renovación de sesión), no en cada pedido. Si no se puede leer, no se manda.
+  /// (alta y renovación de sesión) y en `/me` (cada arranque), no en cada pedido. Si no se puede leer, no se manda.
   final Future<String?> Function()? idDispositivo;
   final http.Client _http;
 
@@ -80,7 +80,7 @@ class ApiClient {
     final request = http.Request(method, Uri.parse('$baseUrl/v1$path'));
     request.headers['Accept'] = 'application/json';
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
-    if (path.startsWith('/auth/')) {
+    if (path.startsWith('/auth/') || path == '/me') {
       final id = await _idDispositivo();
       if (id != null) request.headers['X-Device-Id'] = id;
     }

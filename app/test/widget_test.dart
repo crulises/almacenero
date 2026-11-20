@@ -432,6 +432,57 @@ void main() {
       expect(boton.onPressed, isNotNull);
     });
 
+    testWidgets('sin tocar nada: la app consulta sola y se entera de la baja', (
+      tester,
+    ) async {
+      final baja = ValueNotifier<bool>(false);
+      var consultas = 0;
+      await abrir(
+        tester,
+        deps: AppDeps(
+          cuentaBaja: baja,
+          verificarCada: const Duration(seconds: 30),
+          loadMe: () async {
+            consultas++;
+            // A partir de la 3.ª consulta el admin ya dio de baja la cuenta.
+            if (consultas >= 3) {
+              baja.value = true; // lo que hace el cliente HTTP ante el 403
+              throw ApiException(
+                'Error 403',
+                statusCode: 403,
+                detail: {'codigo': 'cuenta_baja'},
+              );
+            }
+            return const Me(
+              id: 'u1',
+              alias: 'anon-abc123',
+              karma: 0,
+              escalon: Escalon.normal,
+            );
+          },
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      expect(find.byKey(const Key('cuenta-baja')), findsNothing);
+      await tester.pump(const Duration(seconds: 30));
+      await tester.pump(const Duration(seconds: 30));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('cuenta-baja')), findsOneWidget);
+    });
+
     testWidgets('la baja a mitad de uso lleva a la pantalla de baja', (
       tester,
     ) async {

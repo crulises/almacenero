@@ -701,3 +701,11 @@ Decisiones en `docs/04` §9.
   cuenta vieja desde el panel (deja de bloquear) o probar desde otro celular. Las cuentas
   anteriores a esta versión se asocian al dispositivo la próxima vez que renuevan sesión
   (`/auth/refresh`), no antes. Solo se guarda el hash (`tabla dispositivos`).
+- **Síntoma:** probás una feature nueva del backend desde el celular y no hace nada.
+  **Causa:** el contenedor del backend sigue con la imagen vieja (el APK es nuevo, el
+  servidor no). Comprobación: `docker exec almacenero-backend-1 ls app/services`.
+  **Solución:** `docker compose up -d --build backend admin-web` (migraciones:
+  `make migrate`). Cada corte con backend nuevo necesita esto antes de probar.
+- **Síntoma:** dar de baja a alguien que está quieto en una pantalla no muestra nada.
+  **Causa:** el backend no puede avisarle; la app se entera solo cuando hace un pedido.
+  **Solución:** `VigilanteDeCuenta` consulta `/me` cada 30 s y al volver a la app.

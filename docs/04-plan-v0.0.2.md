@@ -801,7 +801,9 @@ que lo decide (`permisos.exigir_carga`), así que una validación colaborativa f
   motivo (el backend sigue rechazando con 403 por si el escalón cambió a mitad de uso).
   El texto **no promete que el karma suba solo**: hoy solo sube cargando (que está
   pausado) o con validación de otros (que no existe), así que la salida es el admin.
-- Baja a mitad de uso: `ApiClient.onCuentaBaja` avisa ante CUALQUIER 403 `cuenta_baja` y
+- Baja a mitad de uso: la app consulta `/me` cada 30 s y al volver al primer plano
+  (`VigilanteDeCuenta`), porque el backend no puede «empujar» el aviso: sin esa consulta,
+  quien está quieto en una pantalla se entera recién al tocar algo. `ApiClient.onCuentaBaja` avisa ante CUALQUIER 403 `cuenta_baja` y
   `AlmaceneroApp` reemplaza toda la app por la pantalla de baja, en el momento.
 
 ### Dispositivo (ANDROID_ID, corte 12)
@@ -813,8 +815,9 @@ app). Decisiones:
 - **Qué se guarda:** solo un hash (`sha256`), nunca el ID en claro, en la tabla
   `dispositivos (hash, auth_id, primera_vez, ultima_vez)`. Una fila por par
   dispositivo-cuenta. No hay FK a `usuarios`: en el alta el usuario todavía no existe.
-- **Cómo llega:** header `X-Device-Id` en `POST /v1/auth/anonymous` y `/v1/auth/refresh`.
-  El refresh sirve para asociar a las cuentas que ya existían. Un valor ausente o
+- **Cómo llega:** header `X-Device-Id` en `POST /v1/auth/anonymous`, `/v1/auth/refresh` y
+  `GET /v1/me`. `/me` (cada arranque) asocia a las cuentas que ya tenían sesión vigente y
+  nunca pasan por el alta ni el refresh; solo reescribe `ultima_vez` si pasó más de 1 h. Un valor ausente o
   inválido (largo fuera de 8–128) se ignora: no rompe la app, solo no deja rastro.
 - **Qué hace:** si el dispositivo está asociado a una cuenta **de baja**, el alta de una
   cuenta nueva se rechaza con 403 `cuenta_baja` **antes** de gastar el PIN, y la app

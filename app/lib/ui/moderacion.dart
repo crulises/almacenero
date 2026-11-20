@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
+
+import '../app_deps.dart';
 
 import '../data/user_repository.dart';
 
@@ -104,4 +108,51 @@ class CuentaBajaScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Mientras la app está abierta, consulta `/me` cada tanto y al volver al primer plano.
+/// Si el backend contesta `cuenta_baja`, el cliente HTTP avisa y la app pasa a la pantalla
+/// de baja sin que la persona toque nada (el backend no puede «empujar» el aviso).
+class VigilanteDeCuenta extends StatefulWidget {
+  const VigilanteDeCuenta({super.key, required this.deps, required this.child});
+
+  final AppDeps deps;
+  final Widget child;
+
+  @override
+  State<VigilanteDeCuenta> createState() => _VigilanteDeCuentaState();
+}
+
+class _VigilanteDeCuentaState extends State<VigilanteDeCuenta>
+    with WidgetsBindingObserver {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final cada = widget.deps.verificarCada;
+    if (cada != null) _timer = Timer.periodic(cada, (_) => _verificar());
+  }
+
+  /// El error se ignora: si es una baja, ya lo avisó el cliente HTTP.
+  void _verificar() => widget.deps.loadMe().ignore();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState estado) {
+    if (estado == AppLifecycleState.resumed &&
+        widget.deps.verificarCada != null) {
+      _verificar();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

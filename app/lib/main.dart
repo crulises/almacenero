@@ -40,6 +40,7 @@ void main() {
     AlmaceneroApp(
       deps: AppDeps(
         cuentaBaja: cuentaBaja,
+        verificarCada: const Duration(seconds: 30),
         guardarInvitacion: auth.guardarInvitacion,
         loadInfoApp: () async => InfoApp(
           build: BuildInfo.actual,
@@ -73,12 +74,13 @@ class AlmaceneroApp extends StatelessWidget {
       theme: ThemeData(colorSchemeSeed: Colors.green, useMaterial3: true),
       // La baja se avisa desde cualquier pantalla: reemplaza a toda la app.
       builder: (context, child) {
+        final vigilado = VigilanteDeCuenta(deps: deps, child: child!);
         final baja = deps.cuentaBaja;
-        if (baja == null) return child!;
+        if (baja == null) return vigilado;
         return ValueListenableBuilder<bool>(
           valueListenable: baja,
           builder: (_, estaDeBaja, _) =>
-              estaDeBaja ? const CuentaBajaScreen() : child!,
+              estaDeBaja ? const CuentaBajaScreen() : vigilado,
         );
       },
       home: HomeScreen(deps: deps),
