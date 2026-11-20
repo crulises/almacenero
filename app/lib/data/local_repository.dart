@@ -35,6 +35,7 @@ enum AltaLocalError {
   duplicado,
   sinPermiso,
   limiteDiario,
+  cuentaRestringida,
   datosInvalidos,
   otro,
 }
@@ -43,6 +44,7 @@ AltaLocalError clasificarErrorAltaLocal(Object error) {
   if (error is ApiException) {
     return switch (error.statusCode) {
       409 => AltaLocalError.duplicado,
+      403 when error.isCuentaRestringida => AltaLocalError.cuentaRestringida,
       403 => AltaLocalError.sinPermiso,
       429 => AltaLocalError.limiteDiario,
       422 => AltaLocalError.datosInvalidos,

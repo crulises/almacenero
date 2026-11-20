@@ -105,6 +105,12 @@ enum CargaError {
 
   /// Llegaste al tope de cargas por hora o por día (anti-spam).
   limite,
+
+  /// Karma muy bajo: puede consultar, no cargar.
+  cuentaRestringida,
+
+  /// La cuenta fue dada de baja.
+  cuentaBaja,
   otro,
 }
 
@@ -117,6 +123,8 @@ CargaError clasificarErrorCarga(Object error) {
       return switch (_codigo(error)) {
         'fuera_de_rango' => CargaError.fueraDeRango,
         'precision_baja' => CargaError.precisionBaja,
+        'cuenta_restringida' => CargaError.cuentaRestringida,
+        'cuenta_baja' => CargaError.cuentaBaja,
         _ => CargaError.otro,
       };
     }

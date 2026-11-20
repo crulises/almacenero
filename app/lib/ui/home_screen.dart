@@ -7,6 +7,7 @@ import '../data/auth_repository.dart';
 import '../data/user_repository.dart';
 import '../domain/ean.dart';
 import 'invitacion_screen.dart';
+import 'moderacion.dart';
 import 'product_screen.dart';
 import 'scan_screen.dart';
 
@@ -93,6 +94,10 @@ class _HomeScreenState extends State<HomeScreen> {
             rechazada: error.rechazada,
             onEnviar: _enviarInvitacion,
           );
+        }
+        // Cuenta de baja: pantalla final, sin reintentos ni cuenta nueva.
+        if (error is ApiException && error.isCuentaBaja) {
+          return const CuentaBajaScreen();
         }
         if (snapshot.hasData) _yaEntro = true;
         if (snapshot.connectionState != ConnectionState.done && !_yaEntro) {
@@ -226,6 +231,10 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(me.alias, style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text('Karma: ${me.karma}'),
+            if (me.escalon != Escalon.normal) ...[
+              const SizedBox(height: 16),
+              AvisoModeracion(me: me),
+            ],
           ],
         );
       },

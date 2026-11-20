@@ -18,6 +18,14 @@ class ApiException implements Exception {
   /// Demasiados pedidos o cargas: hay que esperar.
   bool get isRateLimited => statusCode == 429;
 
+  /// La cuenta fue dada de baja (403 `cuenta_baja`): ya no puede usar la app.
+  /// No se reintenta ni se crea otra cuenta sola.
+  bool get isCuentaBaja => statusCode == 403 && codigo == 'cuenta_baja';
+
+  /// Karma muy bajo (403 `cuenta_restringida`): puede consultar pero no cargar.
+  bool get isCuentaRestringida =>
+      statusCode == 403 && codigo == 'cuenta_restringida';
+
   /// El `codigo` del backend dentro del `detail` (p. ej. `invitacion_invalida`).
   String? get codigo {
     final d = detail;

@@ -7,6 +7,7 @@ import '../data/price_repository.dart';
 import '../data/product_repository.dart';
 import '../domain/precio.dart';
 import 'create_local_dialog.dart';
+import 'moderacion.dart';
 
 /// Carga el precio de un producto en el local. Al terminar muestra el karma resultante.
 class PriceScreen extends StatefulWidget {
@@ -146,6 +147,8 @@ class _PriceScreenState extends State<PriceScreen> {
             'Tu ubicación es muy imprecisa. Esperá unos segundos a que '
                 'mejore el GPS y probá de nuevo.',
           CargaError.limite => 'Cargaste muchos precios seguidos. Esperá un rato y probá de nuevo.',
+          CargaError.cuentaRestringida => mensajeRestringido,
+          CargaError.cuentaBaja => mensajeBaja,
           CargaError.otro => 'No pudimos cargar el precio. Probá de nuevo.',
         };
       });

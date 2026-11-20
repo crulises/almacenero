@@ -27,6 +27,7 @@ const _aca = Ubicacion(lat: -34.6, lng: -58.4, precisionM: 12);
 /// Backend de mentira: el karma sube con cada precio cargado, como en el real.
 class _Backend {
   int karma = 0;
+  Escalon escalon = Escalon.normal;
   final cargas =
       <({String ean, String localId, String precio, Ubicacion ubicacion})>[];
   Object? errorAlCargar;
@@ -46,7 +47,8 @@ class _Backend {
   final precios = <PrecioHistorial>[];
 
   AppDeps deps({Future<Producto> Function(String)? loadProducto}) => AppDeps(
-    loadMe: () async => Me(id: 'u1', alias: 'anon-abc123', karma: karma),
+    loadMe: () async =>
+        Me(id: 'u1', alias: 'anon-abc123', karma: karma, escalon: escalon),
     loadProducto: loadProducto ?? (_) async => _aceite,
     obtenerUbicacion: () async {
       final error = errorUbicacion;
@@ -375,6 +377,108 @@ void main() {
       await tester.tap(find.text('Reintentar'));
       await tester.pumpAndSettle();
       expect(find.text('anon-abc123'), findsOneWidget);
+    });
+  });
+
+  group('moderación', () {
+    testWidgets('karma normal: sin avisos', (tester) async {
+      await abrir(tester);
+      expect(find.byKey(const Key('aviso-moderacion')), findsNothing);
+    });
+
+    testWidgets('con aviso: lo explica sin castigar y sigue usando todo', (
+      tester,
+    ) async {
+      backend.karma = -6;
+      backend.escalon = Escalon.aviso;
+      await abrir(tester);
+      expect(find.byKey(const Key('aviso-moderacion')), findsOneWidget);
+      expect(find.textContaining('Tu karma está bajo (-6)'), findsOneWidget);
+      expect(find.textContaining('de -15'), findsOneWidget);
+      expect(find.text('Escanear código'), findsOneWidget); // sigue todo
+    });
+
+    testWidgets('restringido: dice que solo puede consultar', (tester) async {
+      backend.karma = -20;
+      backend.escalon = Escalon.restringido;
+      await abrir(tester);
+      expect(find.textContaining('solo podés consultar'), findsOneWidget);
+      expect(find.text('Escanear código'), findsOneWidget); // consultar sí
+    });
+
+    testWidgets('restringido: al cargar un precio, el error se explica', (
+      tester,
+    ) async {
+      backend.errorAlCargar = ApiException(
+        'Error 403',
+        statusCode: 403,
+        detail: {'codigo': 'cuenta_restringida'},
+      );
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      await _enviarPrecio(tester, '500');
+      expect(find.textContaining('solo podés consultar'), findsOneWidget);
+      expect(backend.cargas, isEmpty);
+    });
+
+    testWidgets('restringido: al crear un local, el error se explica', (
+      tester,
+    ) async {
+      backend.cerca.clear();
+      backend.errorAlCrear = ApiException(
+        'Error 403',
+        statusCode: 403,
+        detail: {'codigo': 'cuenta_restringida'},
+      );
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      await tester.tap(find.text('Crear local aquí'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextField),
+            )
+            .first,
+        'Kiosco',
+      );
+      await tester.tap(find.text('Crear local'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('solo podés consultar'), findsOneWidget);
+    });
+
+    testWidgets('cuenta de baja: pantalla final, sin escanear ni reintentar', (
+      tester,
+    ) async {
+      await abrir(
+        tester,
+        deps: AppDeps(
+          loadMe: () async => throw ApiException(
+            'Error 403',
+            statusCode: 403,
+            detail: {'codigo': 'cuenta_baja'},
+          ),
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      expect(find.byKey(const Key('cuenta-baja')), findsOneWidget);
+      expect(find.textContaining('dada de baja'), findsWidgets);
+      expect(find.text('Escanear código'), findsNothing);
+      expect(find.text('Reintentar'), findsNothing);
     });
   });
 
