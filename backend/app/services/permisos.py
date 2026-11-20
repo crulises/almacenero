@@ -26,6 +26,21 @@ CAPACIDADES: dict[str, frozenset[str]] = {
             "local.proponer",
             "local.crear",
             "local.verificar",
+            # Panel web de admin (/v1/admin, corte 11)
+            "admin.acceder",
+            "usuario.ver",
+            "usuario.editar",
+            "usuario.cambiar_rol",
+            "usuario.ajustar_karma",
+            "local.editar",
+            "local.fusionar",
+            "local.borrar",
+            "precio.corregir",
+            "precio.borrar",
+            "config.editar",
+            "catalogo.editar",
+            "catalogo.resolver",
+            "auditoria.ver",
         }
     ),
 }

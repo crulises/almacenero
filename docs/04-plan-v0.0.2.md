@@ -568,6 +568,122 @@ ajustan a medida que se usa.
 - **Seguridad:** solo rol `admin`; CORS y HTTPS al desplegar; el panel no se publica
   junto con la app sin proteger.
 
+### Implementado (corte 11)
+
+**Cómo se levanta:** `make up` ya construye y levanta el panel (servicio `admin-web` del
+`docker-compose`, nginx + HTML/JS con Alpine por CDN, sin build) en http://localhost:8080;
+`make admin-web` lo reconstruye solo. Se crea el admin con
+`make admin-crear EMAIL=vos@mail.com` (pide la contraseña, o `PASSWORD=...`).
+
+**Decisión de login (prerrequisito).** Email y contraseña de GoTrue, **vía el backend**:
+`POST /v1/admin/login` pide la sesión a GoTrue (`/token?grant_type=password`) y solo la
+entrega si `usuarios.rol = 'admin'` (si no, 403 y no sale ningún token). El panel renueva
+con el `/v1/auth/refresh` de siempre y cada `/v1/admin/*` exige la capacidad
+`admin.acceder` además de la propia de cada acción (`permisos.py`). Por qué así y no otra
+cosa:
+- *No* se «mejora» el login anónimo: un anónimo no tiene credenciales, no se puede
+  reingresar desde una pantalla grande. El admin necesita una cuenta de verdad.
+- *No* se agrega un rol por API: el rol sigue protegido por trigger. `make admin-crear`
+  registra el email en GoTrue (o verifica la contraseña si ya existe) y habilita
+  `rol = 'admin'` dentro de su propia transacción, igual que `make admin ALIAS=...`
+  (ese sigue sirviendo para la app, pero un anónimo promovido **no** puede entrar al panel).
+- El rol vive en Postgres, no en un claim del JWT: revocar un admin es un `update` y vale
+  en el siguiente request.
+- Sin rate limit propio en el login: lo cubre el de GoTrue y el corte 9 (anti-spam).
+
+**Usuarios anónimos y registrados.** `usuarios` suma `email`, `es_anonimo` y
+`anonimo_auth_id`; `app/auth.py` los sincroniza desde los claims del JWT (`email`,
+`is_anonymous`) en cada request. Con GoTrue, ligar un anónimo a un email conserva su id,
+así que `anonimo_auth_id` (el id anónimo con el que empezó) coincide con `auth_id`; queda
+null para quien nació registrado (el admin). El panel muestra la asociación, alias, rol,
+karma, cargas, locales creados y alta. Desde el panel solo se edita el **alias**: rol y
+karma siguen protegidos en la base.
+
+**API `/v1/admin`** (capacidad entre paréntesis; todo con tests contra Postgres real):
+
+| Recurso | Qué hay |
+|---------|---------|
+| `usuarios` (`usuario.ver/editar`) | listar con filtros (tipo, rol, texto) y orden; editar alias |
+| `locales` (`local.*`) | listar (verificado, fuente, texto, sin precios); corregir nombre/dirección/ubicación/verificado; **validar en masa**; **fusionar** duplicados (mueve precios, ítems y vínculos ETL); **borrar en masa** (omite los que tienen precios) |
+| `precios` (`precio.*`) | listar por local/EAN/usuario/fechas; corregir el monto (no la fecha: la frescura es la de la carga); borrar uno o en masa |
+| `config` (`config.editar`) | ver todo (con el default del código) y cambiar el valor global; valida clave conocida, mismo tipo y no negativo |
+| `productos`, `conflictos` (`catalogo.*`) | listar/corregir productos (lo corregido queda **bloqueado** contra el ETL) y resolver conflictos A/B, como `make conflictos` |
+| `auditoria` (`auditoria.ver`) | listado filtrable |
+
+**Auditoría.** Tabla `auditoria_admin` (quién, qué, cuándo, antes, después, nota),
+**solo-agregar por trigger** (ni el backend la modifica ni la borra). Cada corrección la
+escribe en la misma transacción. Al borrar un precio, el rastro guarda la fila entera
+(es la única copia); el karma que ganó el autor **no** se revierte.
+
+**CORS.** `CORS_ORIGINS` (por defecto `http://localhost:8080,http://127.0.0.1:8080`). El
+panel toma la URL del backend de `config.js` (mismo host, puerto 8000). Para abrirlo desde
+otra máquina de la red, agregar ese origen en `.env`. Con HTTPS, poner el origen real.
+
+**Fichas por entidad (segunda iteración, tras probarlo).** La tabla cruda se queda (sirve
+para cambios y acciones masivas); cada fila tiene un botón **Ficha** que abre un panel
+lateral con *todo* lo que se puede hacer con esa entidad, pasando por la lógica de negocio
+del backend en vez de tocar celdas sueltas. Las fichas se enlazan entre sí (de un precio a
+su local o a su autor, de un local a sus duplicados). Entidades y qué junta cada una:
+
+| Ficha | Contexto que muestra (`GET /admin/<recurso>/{id}`) | Acciones de negocio |
+|-------|------|------|
+| Local | datos, estado, fuente, quién lo creó, vínculos crudos del ETL, **posibles duplicados** (hasta el doble del radio del alta y similitud ≥ 0,3), precios recientes, cambios anteriores | guardar datos (nombre/dirección/ubicación) con **chequeo de duplicado**; validar / quitar verificación; **fusionar este en aquel** o **absorber aquel**; borrar (solo sin precios) |
+| Precio | producto, local (y si está verificado), autor con su karma, validaciones, **comparación con los otros precios del mismo producto en el local** (promedio y % de diferencia, rojo desde ±30 %) | corregir monto con motivo; borrar con motivo y opción de **revertir el karma** que ganó el autor |
+| Usuario | identidad (anónimo/registrado, email, asociación al id anónimo), alta, karma, cargas, cargas recientes, locales que creó, cambios anteriores | alias; **cambiar rol**; **ajustar karma** (motivo obligatorio) |
+| Producto | datos, origen, uso (precios y locales), campos bloqueados, conflictos, **qué dijo cada fuente** (crudo), cambios anteriores | corregir (bloquea el campo contra el ETL); **desbloquear** un campo; resolver conflictos A/B |
+
+Reglas de negocio nuevas (todas en el backend, auditadas, con tests contra Postgres):
+- **Corregir un local no puede crear un duplicado casi seguro.** Mismo criterio que el alta
+  (`local_duplicado_metros` y `local_duplicado_similitud`): si el nombre/ubicación nuevos
+  coinciden con otro local, responde 409 `local_duplicado` y la ficha pregunta; con
+  `forzar: true` el admin confirma que es otro. `forzar` no es una columna ni va a la
+  auditoría.
+- **Cambiar rol desde la API, solo del panel** (`POST /v1/admin/usuarios/{id}/rol`,
+  capacidad `usuario.cambiar_rol`). Esto **ajusta §1**: «el rol no se cambia por la API»
+  sigue valiendo para la API pública y la app; el panel es la excepción, porque pasa por
+  la capacidad, queda auditado y el trigger sigue exigiendo habilitar la escritura dentro
+  de la transacción. Salvaguardas: **no se puede cambiar el rol propio** (nadie se escala
+  ni se deja afuera) y **un admin tiene que estar registrado** (un anónimo no puede
+  iniciar sesión en el panel). `make admin ALIAS=...` sigue existiendo para el arranque.
+- **Ajustar karma a mano** (`usuario.ajustar_karma`): motivo obligatorio, entre -1000 y
+  1000, sin cero. Premio o sanción; el trigger de karma se habilita solo en la transacción.
+- **Borrar precio con `revertir_karma`**: resta `karma_por_carga` al autor (nunca por debajo
+  de 0) y lo anota. Sin la opción el karma queda (como antes). El `motivo` va a la nota
+  de la auditoría en correcciones y borrados (también en masa).
+- **Desbloquear campos** del catálogo (`catalogo.editar`): solo los que estaban bloqueados;
+  devuelve el control al ETL.
+
+Qué quedó para la tabla (masivo, sin ficha): validar y borrar locales, fusionar varios en
+uno, borrar precios, edición rápida de celdas. Se priorizaron local, precio, usuario y
+producto; config y conflictos ya eran un formulario por fila y siguen igual.
+
+**Sección Catálogo.** Todo lo que cambia productos se agrupó en una sola entrada del menú,
+**Catálogo**, con dos solapas: *Productos* (tabla + ficha) y *Conflictos del ETL* (con el
+globito de pendientes, también visible en el menú). Es solo reorganización del front: la API
+no cambió.
+
+**Siguiente (después de mergear el corte 9 / PR #14, no antes).** El corte 9 trae la tabla
+`invitaciones` y el rate limit; construir encima de una rama sin mergear obligaría a
+resolver conflictos de migraciones, `permisos.py` y docs dos veces, así que se hace en un
+PR aparte cuando esté en `main`. Alcance previsto:
+- **Sección «Acceso»** (invitaciones): lista (código, usos/máximo, vencimiento, estado),
+  **generar código** (aleatorio y legible, con usos máximos y vencimiento opcionales),
+  copiar, pausar/revocar, y el interruptor de `modo_acceso`. Capacidad nueva
+  `invitacion.gestionar`; todo auditado.
+- **Sección «Actividad sospechosa»**: bandeja para **identificar y catalogar peticiones
+  spam** (cola de lo que el rate limit cortó, usuarios con muchas altas/cargas en poco
+  tiempo, mismas cargas repetidas), con etiquetas (spam / legítimo / en observación) y
+  acciones: bloquear usuario, borrar sus cargas en masa revirtiendo karma (ya existe en las
+  fichas) y bajar sus límites. Para poder catalogar hace falta que el corte 9 **registre** los
+  eventos (hoy solo corta): se define con él qué se guarda (IP, usuario, ruta, motivo,
+  fecha) y cuánto se retiene.
+- **Refuerzo de seguridad** que salga de ahí (p. ej. bloqueo temporal por IP, umbrales
+  editables desde Configuración).
+
+**Pendiente del corte** (no entró): patrocinios (§5: falta fijar la regla en el Doc 1
+antes de implementarlos), atribuciones y alta de productos nuevos. Sin HTTPS ni
+protección extra el panel **no se publica junto con la app** (ver Seguridad).
+
 ## Decisiones
 
 **Tomadas**

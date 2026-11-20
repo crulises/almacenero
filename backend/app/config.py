@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # X-Forwarded-For. Mal puesto, el rate limit por IP se puede esquivar o frena a todos.
     proxy_hops: int = 0
 
+    # Orígenes web que pueden llamar a la API (panel de admin), separados por coma.
+    # La app móvil no usa CORS. Con HTTPS en producción: poner el origen real del panel.
+    cors_origins: str = "http://localhost:8080,http://127.0.0.1:8080"
+
     log_level: str = "INFO"
 
 

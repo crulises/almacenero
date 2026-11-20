@@ -49,7 +49,7 @@ Fuera (NO implementar todavía, aunque se modele o se deje el cableado):
 ## Alcance de v0.0.2 (en curso)
 
 Plan en `docs/04-plan-v0.0.2.md`: roles y alta de local (corte 5), geofence,
-ETL por fuente, frescura visible, anti-spam y preparación del release. El Doc 1
+panel web de admin (corte 11), ETL por fuente, frescura visible, anti-spam y preparación del release. El Doc 1
 sigue mandando: el alta de locales por cualquier usuario es solo un interruptor de
 prueba (`config.alta_locales_abierta`).
 
@@ -78,6 +78,7 @@ app/          Flutter (Android)
 backend/      FastAPI
 supabase/     config.toml, migrations/, seed.sql
 etl/          pipeline de Open Food Facts
+admin-web/    panel web de admin (nginx + HTML/JS estático, habla solo con /v1/admin)
 docs/         01-producto-vision.md, 02-spec-tecnico.md, 03-problemas-soluciones.md
 CLAUDE.md
 README.md
@@ -98,6 +99,8 @@ Toda la lógica operativa va en el Makefile. CI solo llama a estos targets.
 - `make test` — corre tests.
 - `make lint` — linter.
 - `make build` — build de imágenes.
+- `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel
+  web (http://localhost:8080; `make admin-web` lo reconstruye).
 - `make apk` — APK debug para probar en un celular de la misma red (apunta a la
   IP local de esta máquina; `LAN_IP=...` para forzarla).
 

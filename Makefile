@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed demo demo-borrar admin invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
+.PHONY: up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -15,7 +15,8 @@ up: ## Levanta Supabase (Postgres/Auth/Storage) y el backend
 		{ grep -v '^AUTH_API_KEY=' .env; echo "AUTH_API_KEY=$$key"; } > .env.tmp && mv .env.tmp .env; \
 		echo "AUTH_API_KEY completada en .env"; \
 	fi
-	docker compose up -d --build backend
+	docker compose up -d --build backend admin-web
+	@echo "Panel de admin: http://localhost:8080  (crear el admin: make admin-crear EMAIL=vos@mail.com)"
 
 down: ## Baja todo
 	docker compose down
@@ -58,6 +59,15 @@ invitacion: ## Crea un código de invitación: make invitacion CODIGO=grupo [USO
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -v codigo="$(CODIGO)" -v usos="$(USOS)" -v dias="$(DIAS)" -c \
 	"insert into invitaciones (codigo, usos_max, vence) values (lower(btrim(:'codigo')), nullif(:'usos','')::int, now() + (nullif(:'dias','') || ' days')::interval) returning codigo, usos_max, vence"
+
+admin-crear: $(PY) ## Crea/promueve un admin con email y contraseña para el panel web: make admin-crear EMAIL=vos@mail.com [PASSWORD=...]
+	@test -n "$(EMAIL)" || { echo "Uso: make admin-crear EMAIL=<email> [PASSWORD=<contraseña>] (sin PASSWORD la pide)"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m app.admin_cli "$(EMAIL)" $(if $(PASSWORD),"$(PASSWORD)")
+
+admin-web: ## Reconstruye y levanta solo el panel web (http://localhost:8080)
+	docker compose up -d --build admin-web
+	@echo "Panel de admin: http://localhost:8080"
 
 # --- calidad ---------------------------------------------------------------
 $(PY):
