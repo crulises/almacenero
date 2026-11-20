@@ -10,11 +10,12 @@ const SECCIONES = {
   precios: { ruta: "/admin/precios", filtros: { local_id: "", ean: "", user_id: "", desde: "", hasta: "" } },
   productos: { ruta: "/admin/productos", filtros: { q: "", origen: "", con_conflictos: false } },
   conflictos: { ruta: "/admin/conflictos", filtros: { estado: "pendiente" } },
+  invitaciones: { ruta: "/admin/invitaciones", filtros: { estado: "", q: "" } },
   auditoria: { ruta: "/admin/auditoria", filtros: { entidad: "" } },
 };
 
 const TITULOS = {
-  locales: "Locales", usuarios: "Usuarios", precios: "Precios", catalogo: "Catálogo",
+  locales: "Locales", usuarios: "Usuarios", invitaciones: "Invitaciones", precios: "Precios", catalogo: "Catálogo",
   config: "Configuración", auditoria: "Auditoría",
 };
 
@@ -36,6 +37,8 @@ function panel() {
     config: [],
     pendientes: 0,  // conflictos del catálogo sin resolver (globito de Catálogo)
     destino: "",
+    // Generador de PINs de invitación (un solo uso). `nuevos` = los recién creados.
+    pines: { cantidad: 1, nota: "", n: 24, unidad: "h", sinVencimiento: false, nuevos: [], enviando: false },
     ficha: null,
     toast: null,
     _t: null,
@@ -232,6 +235,38 @@ function panel() {
         this.quitar("conflictos", [c.id]);
         this.contarPendientes();
       });
+    },
+
+    // ----------------------------------------------------- invitaciones
+    async generarPines() {
+      const p = this.pines;
+      const horas = p.sinVencimiento ? null : Math.round(Number(p.n) * (p.unidad === "d" ? 24 : 1));
+      p.enviando = true;
+      await this.intentar(async () => {
+        const r = await this.api("/admin/invitaciones", {
+          method: "POST",
+          body: { cantidad: Number(p.cantidad), nota: p.nota.trim() || null, vigencia_horas: horas },
+        });
+        p.nuevos = r;
+        this.avisar(r.length === 1 ? "PIN creado" : `${r.length} PINs creados`);
+        await this.cargar("invitaciones", true);
+      });
+      p.enviando = false;
+    },
+    async revocarPin(i) {
+      if (!confirm(`¿Anular el PIN ${i.codigo}? Deja de servir.`)) return;
+      await this.intentar(async () => {
+        await this.api(`/admin/invitaciones/${i.id}`, { method: "DELETE" });
+        this.pines.nuevos = this.pines.nuevos.filter((n) => n.id !== i.id);
+        this.avisar("PIN anulado");
+        await this.cargar("invitaciones");
+      });
+    },
+    // Los recién creados, uno por línea («482913  Juan»), para pegar en un chat.
+    async copiarNuevos() {
+      const t = this.pines.nuevos.map((n) => (n.nota ? `${n.codigo}  ${n.nota}` : n.codigo)).join("\n");
+      try { await navigator.clipboard.writeText(t); this.avisar("Copiado"); }
+      catch { this.avisar("No pude copiar: seleccioná el texto a mano", true); }
     },
 
     // ----------------------------------------------------------- config

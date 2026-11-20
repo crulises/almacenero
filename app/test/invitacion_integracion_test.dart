@@ -96,6 +96,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Código de invitación'), findsOneWidget);
+    expect(find.text('Escanear código'), findsNothing);
     await tester.enterText(find.byType(TextField).first, 'bueno');
     await tester.tap(find.text('Entrar'));
     await tester.pumpAndSettle();

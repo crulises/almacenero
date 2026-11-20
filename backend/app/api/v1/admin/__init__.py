@@ -13,7 +13,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-from app.api.v1.admin import auditoria, catalogo, config, locales, precios, usuarios
+from app.api.v1.admin import (
+    auditoria,
+    catalogo,
+    config,
+    invitaciones,
+    locales,
+    precios,
+    usuarios,
+)
 from app.api.v1.auth import Sesion, _pedir_sesion, get_http
 from app.auth import Usuario, current_user
 from app.db import get_pool
@@ -79,4 +87,5 @@ router.include_router(locales.router, dependencies=_acceso)
 router.include_router(precios.router, dependencies=_acceso)
 router.include_router(config.router, dependencies=_acceso)
 router.include_router(catalogo.router, dependencies=_acceso)
+router.include_router(invitaciones.router, dependencies=_acceso)
 router.include_router(auditoria.router, dependencies=_acceso)

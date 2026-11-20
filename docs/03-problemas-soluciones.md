@@ -644,3 +644,15 @@ instalá esos.
   el contador al instante, `docker restart almacenero-backend-1` (vive en memoria).
   **En producción:** con la IP real (`PROXY_HOPS`, ver arriba) el cupo vuelve a ser por
   persona y el valor es 10.
+
+## «No me pide el código de invitación» (corte 9)
+
+- **Síntoma:** instalás el APK nuevo y la app abre directo en «Escanear código», sin
+  pedir invitación. **Causa:** la app ya tenía una sesión guardada (de antes de activar
+  las invitaciones). El código se pide solo cuando hay que CREAR un usuario; con sesión
+  vigente, o renovable con el refresh token, no hace falta. **Solución:** borrar los
+  datos de la app (Ajustes → Apps → Almacenero → Almacenamiento → Borrar datos) o
+  desinstalarla. Un usuario nuevo siempre cae en la pantalla del código.
+- **Un PIN «usado» que nadie usó:** si el alta falló después de gastarlo (proveedor de
+  auth caído) el uso se devuelve solo; si el PIN figura usado en el panel, alguien creó
+  un usuario con él (ver «Usado por»).

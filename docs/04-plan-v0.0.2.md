@@ -364,10 +364,35 @@ corte 9 existe para que el deploy no nazca vulnerable.
   espacios por un `check`, `usos_max` opcional, `usos`, `vence` opcional). El uso se
   gasta con un único `UPDATE` condicional (no pasa del tope aunque lleguen pedidos a
   la vez; el `check usos <= usos_max` lo garantiza la base). Si el proveedor de auth
-  falla después de gastarlo, se devuelve el uso. Se crean con
-  `make invitacion CODIGO=grupo [USOS=50] [DIAS=30]`; el seed de desarrollo trae
-  `almacenero-dev`. **Fuera de este corte:** emitirlas desde la API/panel web (el
-  panel de admin es otro corte); hasta entonces, el Makefile.
+  falla después de gastarlo, se devuelve el uso. Dos clases de código conviven:
+  el **compartido** (sin tope de usos; `make invitacion CODIGO=grupo [USOS=50]
+  [DIAS=30]`; el seed de desarrollo trae `almacenero-dev`) y los **PINs** de abajo.
+
+### PINs de un solo uso, desde el panel
+
+Un PIN es una invitación con `usos_max = 1`; la descripción va en `nota`.
+
+- **Estado calculado, no guardado:** `usada` si `usos >= usos_max`, `vencida` si sin
+  usar y `vence` pasó, `disponible` el resto. Guardar además un booleano permitiría
+  que se contradigan.
+- **Quién y cuándo:** al usarse se anota `usada_at` y `usada_por_auth` (el `sub` del
+  token que devuelve el proveedor); el panel lo cruza con `usuarios.auth_id` y muestra
+  el alias con link a su ficha. Si el alta falla después de gastar el PIN, se devuelve
+  (y se borra ese registro). Un `check` impide fecha o usuario sin uso.
+- **Panel → Invitaciones** (`/v1/admin/invitaciones`, capacidades `invitacion.ver` y
+  `invitacion.emitir`): generar N PINs (1 a 100) con una descripción y una vigencia
+  arbitraria en horas o días (o «no vence»); listar con filtro por estado y búsqueda;
+  anular uno **disponible**. Uno usado no se borra (queda de registro: 409). Cada
+  alta y baja deja una fila de auditoría por PIN.
+- **Generación:** 6 dígitos con `secrets` (no `random`). Si el PIN ya existió (usado o
+  no) se sortea otro: lo decide el `UNIQUE`, no una lectura previa.
+- **Seguridad de 6 dígitos:** son 10^6 combinaciones, pero cada intento cuenta en el
+  rate limit por IP (10 por hora en producción) y hay pocos PINs vivos a la vez; cada
+  PIN además vence. No es un secreto de larga vida.
+- **Decisión pendiente:** hoy el panel muestra los PINs siempre (el admin los tiene
+  que poder pasar). Si algún día importara que no se puedan leer después, se
+  guardaría un hash y se mostraría solo al crearlos.
+
 - **Rate limit por IP** (ventana deslizante de 1 hora, **en memoria del proceso**,
   `services/ratelimit.py`): `/auth/anonymous` `auth_altas_por_hora_ip` (10) y
   `/auth/refresh` `auth_refresh_por_hora_ip` (120). En `anonymous` cuentan **todos**
@@ -389,10 +414,14 @@ corte 9 existe para que el deploy no nazca vulnerable.
 - **Decisiones donde el plan era ambiguo:** un solo código compartido, sin código por
   persona (la tabla ya lo permite); el contador de rate limit en memoria; `modo_acceso`
   desconocido = cerrado.
-- **App:** si el backend pide código, el home muestra un campo «Código de invitación»;
-  se guarda en el almacenamiento seguro y se manda en cada alta (solo el primer
-  arranque). Si lo rechaza, se borra y se vuelve a pedir. Un 429 al cargar un precio
-  o al crear el usuario se explica en pantalla.
+- **App:** si el backend pide código, se muestra una pantalla propia
+  (`invitacion_screen.dart`) que **reemplaza** al home: es la única opción, sin
+  botón de escanear ni nada más. El código se guarda en el almacenamiento seguro y
+  se manda en el alta (solo el primer arranque). Si lo rechaza (inválido, vencido o
+  ya usado) se borra y se vuelve a pedir con un aviso. El campo acepta texto (no solo
+  números) porque el código compartido de grupo puede tener letras. Un 429 al cargar
+  un precio o al crear el usuario se explica en pantalla. Quien ya tenía una sesión
+  guardada NO ve esta pantalla (no necesita código): ver docs/03.
 
 ## 7. Release firmado y deploy con HTTPS (corte 10: preparación)
 

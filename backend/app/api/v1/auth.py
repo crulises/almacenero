@@ -4,8 +4,11 @@ El backend pide la sesión al proveedor (GoTrue) y la devuelve tal cual. La vali
 los tokens en cada request sigue en `app/auth.py`.
 """
 
+from uuid import UUID
+
 import asyncpg
 import httpx
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -61,6 +64,16 @@ async def _pedir_sesion(http: httpx.AsyncClient, path: str, body: dict) -> Sesio
     )
 
 
+def _auth_id_de(access_token: str) -> UUID | None:
+    """`sub` del token que nos acaba de dar el proveedor. Sin verificar la firma a
+    propósito: no es una credencial que recibimos, es la respuesta directa de nuestro
+    proveedor y solo se usa para anotar un dato en el panel."""
+    try:
+        return UUID(jwt.decode(access_token, options={"verify_signature": False})["sub"])
+    except (jwt.PyJWTError, KeyError, ValueError):
+        return None
+
+
 @router.post("/anonymous", response_model=Sesion)
 async def sesion_anonima(
     request: Request,
@@ -105,10 +118,14 @@ async def sesion_anonima(
             detail={"codigo": "invitacion_invalida", "mensaje": "código de invitación inválido"},
         )
     try:
-        return await _pedir_sesion(http, "/signup", {})
+        sesion = await _pedir_sesion(http, "/signup", {})
     except HTTPException:
         await invitaciones.devolver(pool, invitacion_id)  # no se gastó una invitación en vano
         raise
+    auth_id = _auth_id_de(sesion.access_token)
+    if auth_id is not None:  # para que el panel muestre quién usó el código
+        await invitaciones.anotar_usuario(pool, invitacion_id, auth_id)
+    return sesion
 
 
 @router.post("/refresh", response_model=Sesion)

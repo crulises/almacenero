@@ -6,6 +6,7 @@ import '../data/app_info.dart';
 import '../data/auth_repository.dart';
 import '../data/user_repository.dart';
 import '../domain/ean.dart';
+import 'invitacion_screen.dart';
 import 'product_screen.dart';
 import 'scan_screen.dart';
 
@@ -21,29 +22,31 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<Me> _me = widget.deps.loadMe();
+  late Future<Me> _me = _cargarMe();
   late Future<InfoApp> _info = widget.deps.loadInfoApp();
   final _eanController = TextEditingController();
-  final _invitacionController = TextEditingController();
+  bool _yaEntro =
+      false; // hubo una sesión: los recargos no vuelven a la pantalla de carga
   String? _eanError;
 
   @override
   void dispose() {
     _eanController.dispose();
-    _invitacionController.dispose();
     super.dispose();
   }
 
+  /// El error lo muestra el FutureBuilder; `ignore()` evita que, si falla antes del
+  /// próximo frame (sin red, por ejemplo), Dart lo cuente como error sin manejar.
+  Future<Me> _cargarMe() => widget.deps.loadMe()..ignore();
+
   void _retry() {
     setState(() {
-      _me = widget.deps.loadMe();
+      _me = _cargarMe();
       _info = widget.deps.loadInfoApp(); // la red pudo cambiar
     });
   }
 
-  Future<void> _enviarInvitacion() async {
-    final codigo = _invitacionController.text.trim();
-    if (codigo.isEmpty) return;
+  Future<void> _enviarInvitacion(String codigo) async {
     await widget.deps.guardarInvitacion(codigo);
     if (mounted) _retry();
   }
@@ -80,6 +83,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Sin sesión y con el backend pidiendo invitación: es lo ÚNICO que se muestra.
+    return FutureBuilder<Me>(
+      future: _me,
+      builder: (context, snapshot) {
+        final error = snapshot.error;
+        if (error is InvitacionRequerida) {
+          return InvitacionScreen(
+            rechazada: error.rechazada,
+            onEnviar: _enviarInvitacion,
+          );
+        }
+        if (snapshot.hasData) _yaEntro = true;
+        if (snapshot.connectionState != ConnectionState.done && !_yaEntro) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return _principal(context);
+      },
+    );
+  }
+
+  Widget _principal(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Almacenero')),
       body: ListView(
@@ -165,7 +191,6 @@ class _HomeScreenState extends State<HomeScreen> {
           return const Center(child: CircularProgressIndicator());
         }
         final error = snapshot.error;
-        if (error is InvitacionRequerida) return _pedirInvitacion(error);
         if (error is ApiException && error.isRateLimited) {
           return Column(
             children: [
@@ -204,29 +229,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         );
       },
-    );
-  }
-
-  Widget _pedirInvitacion(InvitacionRequerida error) {
-    return Column(
-      children: [
-        const Text('Para entrar necesitás un código de invitación'),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _invitacionController,
-          textInputAction: TextInputAction.done,
-          autocorrect: false,
-          onSubmitted: (_) => _enviarInvitacion(),
-          decoration: InputDecoration(
-            labelText: 'Código de invitación',
-            errorText: error.rechazada
-                ? 'Ese código no sirve: revisalo o pedí uno nuevo'
-                : null,
-          ),
-        ),
-        const SizedBox(height: 12),
-        FilledButton(onPressed: _enviarInvitacion, child: const Text('Entrar')),
-      ],
     );
   }
 }

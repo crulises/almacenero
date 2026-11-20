@@ -215,13 +215,17 @@ void main() {
           }) => throw UnimplementedError(),
         ),
       );
+      // Es la ÚNICA opción: no hay nada más de la app a la vista.
       expect(find.text('Código de invitación'), findsOneWidget);
+      expect(find.text('Escanear código'), findsNothing);
+      expect(find.byType(TextField), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField).first, ' grupo ');
+      await tester.enterText(find.byType(TextField), ' grupo ');
       await tester.tap(find.text('Entrar'));
       await tester.pumpAndSettle();
       expect(guardado, 'grupo');
       expect(find.text('anon-abc123'), findsOneWidget);
+      expect(find.text('Escanear código'), findsOneWidget);
     });
 
     testWidgets('muestra versión, servidor e IP del celular', (tester) async {
@@ -294,6 +298,50 @@ void main() {
         find.text('El servidor respondió 403 (alta_cerrada)'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('si el código no sirve, lo dice y deja probar otro', (
+      tester,
+    ) async {
+      var intentos = 0;
+      await abrir(
+        tester,
+        deps: AppDeps(
+          guardarInvitacion: (_) async => intentos++,
+          loadMe: () async {
+            if (intentos < 2) {
+              throw InvitacionRequerida(rechazada: intentos > 0);
+            }
+            return const Me(id: 'u1', alias: 'anon-abc123', karma: 0);
+          },
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      expect(find.textContaining('Ese código no sirve'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), '111111');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Ese código no sirve'), findsOneWidget);
+      expect(find.text('Escanear código'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), '222222');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle();
+      expect(find.text('anon-abc123'), findsOneWidget);
     });
 
     testWidgets('si falla, ofrece reintentar y se recupera', (tester) async {
