@@ -26,7 +26,7 @@
     <nav>
       <h2>Almacenero</h2>
       <template x-for="v in Object.keys(TITULOS)" :key="v">
-        <button :class="{activo: vista === v}" @click="cambiarVista(v)" x-text="TITULOS[v]"></button>
+        <button :class="{activo: vista === v}" @click="cambiarVista(v)"><span x-text="TITULOS[v]"></span> <span class="badge mal" x-show="v === 'catalogo' && pendientes > 0" x-text="pendientes"></span></button>
       </template>
       <div class="pie">
         <span x-text="sesion?.usuario?.email"></span>
@@ -36,6 +36,12 @@
 
     <main>
       <h1 x-text="TITULOS[vista]"></h1>
+      <div class="filtros" x-show="vista === 'catalogo'">
+        <button :class="{primario: subcatalogo === 'productos'}" @click="irCatalogo('productos')">Productos</button>
+        <button :class="{primario: subcatalogo === 'conflictos'}" @click="irCatalogo('conflictos')">
+          Conflictos del ETL <span class="badge mal" x-show="pendientes > 0" x-text="pendientes + ' pendientes'"></span>
+        </button>
+      </div>
 
       <!-- ========================================================= LOCALES -->
       <section x-show="vista === 'locales'">
@@ -191,7 +197,7 @@
       </section>
 
       <!-- ======================================================= PRODUCTOS -->
-      <section x-show="vista === 'productos'">
+      <section x-show="vista === 'catalogo' && subcatalogo === 'productos'">
         <div class="filtros">
           <input type="search" placeholder="Nombre, marca o EAN" x-model="sec.productos.f.q" @input.debounce.400ms="cargar('productos', true)">
           <select x-model="sec.productos.f.origen" @change="cargar('productos', true)">
@@ -215,7 +221,7 @@
                 </td>
                 <td x-text="p.origen"></td>
                 <td class="suave" x-text="p.campos_bloqueados.join(', ')"></td>
-                <td><a href="#" x-show="p.conflictos_pendientes" @click.prevent="cambiarVista('conflictos')" x-text="p.conflictos_pendientes"></a></td>
+                <td><a href="#" x-show="p.conflictos_pendientes" @click.prevent="irCatalogo('conflictos')" x-text="p.conflictos_pendientes"></a></td>
                 <td><button class="primario" @click="abrir('producto', p.id)">Ficha</button></td>
               </tr>
             </template>
@@ -230,7 +236,7 @@
       </section>
 
       <!-- ====================================================== CONFLICTOS -->
-      <section x-show="vista === 'conflictos'">
+      <section x-show="vista === 'catalogo' && subcatalogo === 'conflictos'">
         <div class="filtros">
           <select x-model="sec.conflictos.f.estado" @change="cargar('conflictos', true)">
             <option value="pendiente">Pendientes</option><option value="resuelto">Resueltos</option>

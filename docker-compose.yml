@@ -1,4 +1,9 @@
 # Backend y panel web de admin. Postgres/Auth/Storage los levanta el Supabase CLI (`make up`).
+# Nombre fijo: sin esto Compose usa el nombre de la carpeta, y el checkout principal y cada
+# worktree serían proyectos distintos peleando por los puertos 8000/8080. Con un solo
+# proyecto, `make up` desde cualquier carpeta REEMPLAZA los contenedores en vez de chocar.
+name: almacenero
+
 services:
   backend:
     build: ./backend

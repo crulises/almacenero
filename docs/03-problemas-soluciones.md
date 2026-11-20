@@ -561,25 +561,26 @@ instalá esos.
 
 ### `make up` falla con «port is already allocated» (0.0.0.0:8000 o :8080)
 - **Síntoma:** `Bind for 0.0.0.0:8000 failed: port is already allocated`; un `make down`
-  seguido de `make up` da el mismo error.
-- **Causa:** Docker Compose nombra el proyecto por la **carpeta**. El checkout principal
-  (`almacenero`) y cada worktree de Claude (`admin-web-e8bb1c`, etc.) son proyectos
-  distintos con los mismos puertos (8000, 8080). Si el backend de uno sigue corriendo,
-  el `make up` del otro choca. Además `make down` solo baja los contenedores del
-  proyecto de la carpeta donde se corre (más `supabase stop`, que es global), así que
-  el backend del *otro* proyecto sigue ocupando el puerto, o queda «Exited» con su red.
-- **Diagnóstico:**
+  seguido de `make up` da el mismo error, y vuelve a pasar cada vez que se cambia de
+  carpeta (checkout principal ↔ worktree).
+- **Causa:** Docker Compose nombraba el proyecto por la **carpeta**. El checkout principal
+  (`almacenero`) y cada worktree (`admin-web-e8bb1c`, `anti-spam-e830d6`…) eran proyectos
+  distintos con los mismos puertos. Un stack que otra sesión (o vos) dejó corriendo en
+  *otra* carpeta seguía ocupando 8000/8080, y `make down` solo baja el proyecto de la
+  carpeta donde se corre (el `supabase stop` sí es global).
+- **Solución definitiva:** `docker-compose.yml` fija `name: almacenero`. Ahora hay **un solo
+  proyecto** sin importar la carpeta: `make up` desde cualquier checkout *reemplaza* los
+  contenedores por los de ese código, y `make down` los baja desde cualquier carpeta. Una
+  rama vieja que todavía no tiene esa línea sigue chocando hasta que se la actualice
+  (merge o rebase de `main`).
+- **Diagnóstico si pasa igual:**
   ```bash
+  docker compose ls -a          # ¿hay un proyecto con otro nombre?
   docker ps -a --format '{{.Names}}\t{{.Ports}}\t{{.Status}}' | grep -v supabase
-  docker compose ls -a          # un proyecto por carpeta desde la que se corrió make up
   lsof -nP -iTCP:8000 -sTCP:LISTEN
   ```
-- **Solución:** bajar el otro proyecto con su carpeta —
-  `docker compose -p almacenero -f <ruta al checkout>/docker-compose.yml down` (o
-  `docker compose down` dentro de esa carpeta)— y volver a correr `make up`.
-- **Regla:** un solo stack a la vez, siempre desde la misma carpeta. Para probar una
-  rama de un worktree, bajá primero el del checkout principal. Ojo: el stack que queda
-  corriendo es el del código de esa carpeta (el del checkout principal no tiene el panel
-  hasta que se mergee).
+  Bajar el proyecto viejo con su nombre: `docker compose -p <nombre> down`.
+- **Ojo:** el stack que queda corriendo es el del código de la última carpeta donde se
+  hizo `make up` (el del checkout principal no tiene el panel hasta que se mergee).
 - **Probar una rama sin tocar el stack levantado:** `uvicorn` en otro puerto + servir
   `admin-web/public` con un `config.js` apuntando ahí (y `CORS_ORIGINS` con ese origen).

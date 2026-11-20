@@ -614,6 +614,29 @@ Qué quedó para la tabla (masivo, sin ficha): validar y borrar locales, fusiona
 uno, borrar precios, edición rápida de celdas. Se priorizaron local, precio, usuario y
 producto; config y conflictos ya eran un formulario por fila y siguen igual.
 
+**Sección Catálogo.** Todo lo que cambia productos se agrupó en una sola entrada del menú,
+**Catálogo**, con dos solapas: *Productos* (tabla + ficha) y *Conflictos del ETL* (con el
+globito de pendientes, también visible en el menú). Es solo reorganización del front: la API
+no cambió.
+
+**Siguiente (después de mergear el corte 9 / PR #14, no antes).** El corte 9 trae la tabla
+`invitaciones` y el rate limit; construir encima de una rama sin mergear obligaría a
+resolver conflictos de migraciones, `permisos.py` y docs dos veces, así que se hace en un
+PR aparte cuando esté en `main`. Alcance previsto:
+- **Sección «Acceso»** (invitaciones): lista (código, usos/máximo, vencimiento, estado),
+  **generar código** (aleatorio y legible, con usos máximos y vencimiento opcionales),
+  copiar, pausar/revocar, y el interruptor de `modo_acceso`. Capacidad nueva
+  `invitacion.gestionar`; todo auditado.
+- **Sección «Actividad sospechosa»**: bandeja para **identificar y catalogar peticiones
+  spam** (cola de lo que el rate limit cortó, usuarios con muchas altas/cargas en poco
+  tiempo, mismas cargas repetidas), con etiquetas (spam / legítimo / en observación) y
+  acciones: bloquear usuario, borrar sus cargas en masa revirtiendo karma (ya existe en las
+  fichas) y bajar sus límites. Para poder catalogar hace falta que el corte 9 **registre** los
+  eventos (hoy solo corta): se define con él qué se guarda (IP, usuario, ruta, motivo,
+  fecha) y cuánto se retiene.
+- **Refuerzo de seguridad** que salga de ahí (p. ej. bloqueo temporal por IP, umbrales
+  editables desde Configuración).
+
 **Pendiente del corte** (no entró): patrocinios (§5: falta fijar la regla en el Doc 1
 antes de implementarlos), atribuciones y alta de productos nuevos. Sin HTTPS ni
 protección extra el panel **no se publica junto con la app** (ver Seguridad).

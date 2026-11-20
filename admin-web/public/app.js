@@ -14,8 +14,8 @@ const SECCIONES = {
 };
 
 const TITULOS = {
-  locales: "Locales", usuarios: "Usuarios", precios: "Precios", productos: "Productos",
-  conflictos: "Conflictos del catálogo", config: "Configuración", auditoria: "Auditoría",
+  locales: "Locales", usuarios: "Usuarios", precios: "Precios", catalogo: "Catálogo",
+  config: "Configuración", auditoria: "Auditoría",
 };
 
 function leerSesion() {
@@ -31,8 +31,10 @@ function panel() {
     API, TITULOS, sec,
     sesion: leerSesion(),
     vista: "locales",
+    subcatalogo: "productos",  // dentro de Catálogo: productos | conflictos
     login: { email: "", password: "", error: "", enviando: false },
     config: [],
+    pendientes: 0,  // conflictos del catálogo sin resolver (globito de Catálogo)
     destino: "",
     ficha: null,
     toast: null,
@@ -117,10 +119,17 @@ function panel() {
     },
 
     // ------------------------------------------------------- navegación
+    // Sección cuyos datos se están viendo (Catálogo agrupa productos y conflictos).
+    get actual() { return this.vista === "catalogo" ? this.subcatalogo : this.vista; },
     cambiarVista(v) {
       this.vista = v;
-      if (v === "config") this.cargarConfig(); else this.cargar(v);
+      if (v === "config") this.cargarConfig(); else this.cargar(v === "catalogo" ? this.subcatalogo : v);
+      if (v === "catalogo") this.contarPendientes();
     },
+    async contarPendientes() {
+      try { this.pendientes = (await this.api("/admin/conflictos?estado=pendiente&limit=1")).total; } catch {}
+    },
+    irCatalogo(sub) { this.subcatalogo = sub; this.cambiarVista("catalogo"); },
     ir(vista, filtros) {
       Object.assign(this.sec[vista].f, filtros);
       this.sec[vista].offset = 0;
@@ -169,7 +178,7 @@ function panel() {
           const nuevo = await this.api(ruta, { method: "PATCH", body: cuerpo });
           Object.assign(fila, nuevo);
           this.avisar("Guardado");
-        } catch (e) { await this.cargar(this.vista); throw e; }
+        } catch (e) { await this.cargar(this.actual); throw e; }
       });
     },
     local(l, campo, valor) { return this.parchar(`/admin/locales/${l.id}`, l, { [campo]: valor.trim() || null }); },
@@ -221,6 +230,7 @@ function panel() {
         await this.api(`/admin/conflictos/${c.id}/resolver`, { method: "POST", body: { elegido } });
         this.avisar("Resuelto");
         this.quitar("conflictos", [c.id]);
+        this.contarPendientes();
       });
     },
 
@@ -271,7 +281,7 @@ function panel() {
       return {};
     },
     verPrecios(filtros) { this.ficha = null; this.ir('precios', filtros); },
-    cerrarFicha() { this.ficha = null; this.cargar(this.vista); },
+    cerrarFicha() { this.ficha = null; this.cargar(this.actual); },
     // Cambia de ficha sin perder la lista de fondo (p. ej. del precio a su local).
     irFicha(tipo, id) { this.abrir(tipo, id); },
 
@@ -370,7 +380,7 @@ function panel() {
       return this.accion(() => this.api(`/admin/productos/${this.ficha.id}/desbloquear`, { method: "POST", body: { campos: [campo] } }), `${campo} desbloqueado`);
     },
     resolverFicha(c, elegido) {
-      return this.accion(() => this.api(`/admin/conflictos/${c.id}/resolver`, { method: "POST", body: { elegido } }), "Conflicto resuelto");
+      return this.accion(() => this.api(`/admin/conflictos/${c.id}/resolver`, { method: "POST", body: { elegido } }), "Conflicto resuelto").then(() => this.contarPendientes());
     },
 
     // ------------------------------------------------------------ varios
