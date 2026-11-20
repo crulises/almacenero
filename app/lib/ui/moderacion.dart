@@ -3,9 +3,19 @@ import 'package:material_ui/material_ui.dart';
 import '../data/user_repository.dart';
 
 /// Mensajes de moderación (docs/04 §9): claros y sin tono de castigo.
-const mensajeRestringido =
-    'Tu karma está muy bajo, así que por ahora solo podés consultar precios, '
-    'no cargarlos. Cuando suba, vas a poder cargar de nuevo.';
+///
+/// El karma se escribe siempre igual: `en -6`, sin paréntesis (misma forma que el
+/// «Karma: -6» de la pantalla principal y el «Tu karma ahora es -6» de la carga).
+const tituloRestringido = 'Por ahora solo podés consultar.';
+
+String cuerpoRestringido(int? karma) =>
+    '${karma == null ? 'Tu karma está muy bajo' : 'Tu karma está en $karma'} '
+    'y la carga de precios está pausada para tu cuenta. Un administrador '
+    'revisa estos casos y puede ajustarlo.';
+
+/// Versión de una línea, para los errores que aparecen en formularios.
+String mensajeRestringido([int? karma]) =>
+    '$tituloRestringido ${cuerpoRestringido(karma)}';
 
 const mensajeBaja = 'Tu cuenta fue dada de baja y ya no podés usar Almacenero.';
 
@@ -17,15 +27,17 @@ class AvisoModeracion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final texto = switch (me.escalon) {
-      Escalon.normal => null,
-      Escalon.aviso =>
-        'Tu karma está bajo (${me.karma}). Seguís usando todo, pero si baja '
-            'de ${me.umbralRestriccion} no vas a poder cargar precios. '
-            'Cargar precios correctos lo hace subir.',
-      Escalon.restringido => mensajeRestringido,
+    final (titulo, cuerpo) = switch (me.escalon) {
+      Escalon.normal => (null, ''),
+      Escalon.aviso => (
+        'Tu karma está en ${me.karma}.',
+        'Seguís usando todo, pero si llega a ${me.umbralRestriccion} vas a '
+            'poder consultar y no cargar. Cargar precios correctos lo hace '
+            'subir.',
+      ),
+      Escalon.restringido => (tituloRestringido, cuerpoRestringido(me.karma)),
     };
-    if (texto == null) return const SizedBox.shrink();
+    if (titulo == null) return const SizedBox.shrink();
     final colores = Theme.of(context).colorScheme;
     return Card(
       key: const Key('aviso-moderacion'),
@@ -39,7 +51,18 @@ class AvisoModeracion extends StatelessWidget {
           children: [
             const Icon(Icons.info_outline),
             const SizedBox(width: 12),
-            Expanded(child: Text(texto)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    titulo,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text(cuerpo),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -72,7 +95,7 @@ class CuentaBajaScreen extends StatelessWidget {
               Text(mensajeBaja, textAlign: TextAlign.center),
               SizedBox(height: 12),
               Text(
-                'Si creés que es un error, hablá con quien te invitó.',
+                'Si creés que es un error, contactá a los administradores de Almacenero.',
                 textAlign: TextAlign.center,
               ),
             ],

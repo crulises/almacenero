@@ -147,7 +147,7 @@ class _PriceScreenState extends State<PriceScreen> {
             'Tu ubicación es muy imprecisa. Esperá unos segundos a que '
                 'mejore el GPS y probá de nuevo.',
           CargaError.limite => 'Cargaste muchos precios seguidos. Esperá un rato y probá de nuevo.',
-          CargaError.cuentaRestringida => mensajeRestringido,
+          CargaError.cuentaRestringida => mensajeRestringido(),
           CargaError.cuentaBaja => mensajeBaja,
           CargaError.otro => 'No pudimos cargar el precio. Probá de nuevo.',
         };

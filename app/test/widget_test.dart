@@ -393,8 +393,8 @@ void main() {
       backend.escalon = Escalon.aviso;
       await abrir(tester);
       expect(find.byKey(const Key('aviso-moderacion')), findsOneWidget);
-      expect(find.textContaining('Tu karma está bajo (-6)'), findsOneWidget);
-      expect(find.textContaining('de -15'), findsOneWidget);
+      expect(find.text('Tu karma está en -6.'), findsOneWidget);
+      expect(find.textContaining('llega a -15'), findsOneWidget);
       expect(find.text('Escanear código'), findsOneWidget); // sigue todo
     });
 
@@ -402,8 +402,67 @@ void main() {
       backend.karma = -20;
       backend.escalon = Escalon.restringido;
       await abrir(tester);
-      expect(find.textContaining('solo podés consultar'), findsOneWidget);
+      expect(find.text('Por ahora solo podés consultar.'), findsOneWidget);
+      expect(find.textContaining('Tu karma está en -20'), findsOneWidget);
       expect(find.text('Escanear código'), findsOneWidget); // consultar sí
+    });
+
+    testWidgets('restringido: «Cargar precio» apagado y con el motivo', (
+      tester,
+    ) async {
+      backend.karma = -20;
+      backend.escalon = Escalon.restringido;
+      await abrir(tester);
+      await _buscar(tester, '7790070411112');
+      final boton = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Cargar precio'),
+      );
+      expect(boton.onPressed, isNull);
+      expect(find.text('Por ahora solo podés consultar.'), findsOneWidget);
+    });
+
+    testWidgets('con aviso: «Cargar precio» sigue activo', (tester) async {
+      backend.karma = -6;
+      backend.escalon = Escalon.aviso;
+      await abrir(tester);
+      await _buscar(tester, '7790070411112');
+      final boton = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Cargar precio'),
+      );
+      expect(boton.onPressed, isNotNull);
+    });
+
+    testWidgets('la baja a mitad de uso lleva a la pantalla de baja', (
+      tester,
+    ) async {
+      final baja = ValueNotifier<bool>(false);
+      await abrir(
+        tester,
+        deps: AppDeps(
+          cuentaBaja: baja,
+          loadMe: backend.deps().loadMe,
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      await _buscar(tester, '7790070411112');
+      expect(find.text('Aceite de girasol'), findsOneWidget);
+      baja.value = true; // el backend avisó en cualquier pedido
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('cuenta-baja')), findsOneWidget);
+      expect(find.text('Aceite de girasol'), findsNothing);
     });
 
     testWidgets('restringido: al cargar un precio, el error se explica', (

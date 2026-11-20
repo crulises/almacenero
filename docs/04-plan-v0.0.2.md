@@ -793,6 +793,39 @@ que lo decide (`permisos.exigir_carga`), así que una validación colaborativa f
   la ficha suma `invitacion_codigo` / `invitacion_nota`.
 - El karma se sigue ajustando con `POST /v1/admin/usuarios/{id}/karma` (motivo obligatorio).
 
+### Mensajes de moderación (ajuste del corte 12)
+
+- El karma se escribe siempre igual, sin paréntesis: «Karma: -6» en el inicio, «Tu karma
+  está en -6» en el aviso y en la restricción, «Tu karma ahora es -6» al cargar.
+- Restringido: el botón «Cargar precio» de la ficha queda apagado y la tarjeta explica el
+  motivo (el backend sigue rechazando con 403 por si el escalón cambió a mitad de uso).
+  El texto **no promete que el karma suba solo**: hoy solo sube cargando (que está
+  pausado) o con validación de otros (que no existe), así que la salida es el admin.
+- Baja a mitad de uso: `ApiClient.onCuentaBaja` avisa ante CUALQUIER 403 `cuenta_baja` y
+  `AlmaceneroApp` reemplaza toda la app por la pantalla de baja, en el momento.
+
+### Pendiente para un próximo corte (anotado para que no se pierda)
+
+1. **Formulario de rehabilitación** en la pantalla de baja (y de restricción): la persona
+   pide revisión con un texto; el admin lo ve en el panel, conversa con ella y decide.
+   Reemplaza el «contactá a los administradores» provisorio de la pantalla de baja
+   (decir «hablá con quien te invitó» puede no ser cierto si los PINs se reparten o esa
+   persona ya no es admin).
+2. **Identificador de dispositivo** para frenar a quien se da de baja y entra con otro PIN.
+   La MAC **no sirve**: desde Android 10 las apps no pueden leerla (devuelve un valor
+   fijo/aleatorio). Opciones reales: `ANDROID_ID` (por dispositivo y firma de la app; se
+   reinicia con un borrado de fábrica), un ID de instalación propio (se pierde al
+   reinstalar) o Play Integrity para validar que es un dispositivo real. Nada es
+   infalible: sirve para marcar «mismo dispositivo que una cuenta de baja» y que el admin
+   decida, no para bloquear solo. Requiere decidir qué dato se guarda y avisarlo
+   (privacidad).
+3. **Aviso de rehabilitación**: cuando se levanta una restricción o se reactiva una
+   cuenta, mostrar en la app «tu cuenta volvió a estar habilitada» **y por qué** (el motivo
+   que cargó el admin). Hoy el aviso simplemente desaparece. Necesita guardar el
+   motivo/evento para mostrarlo una vez. A futuro, notificación push.
+4. Mensaje propio para quien de baja prueba otro PIN, y contacto fijo en la app si se abre
+   al público.
+
 ## Decisiones
 
 **Tomadas**

@@ -70,7 +70,7 @@ class _CrearLocalDialogState extends State<_CrearLocalDialog> {
             'Por ahora solo un administrador puede crear locales.',
           AltaLocalError.limiteDiario =>
             'Llegaste al máximo de locales nuevos por hoy.',
-          AltaLocalError.cuentaRestringida => mensajeRestringido,
+          AltaLocalError.cuentaRestringida => mensajeRestringido(),
           AltaLocalError.datosInvalidos => 'Revisá el nombre del local.',
           AltaLocalError.otro => 'No pudimos crear el local. Probá de nuevo.',
         };

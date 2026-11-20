@@ -4,9 +4,11 @@ import '../app_deps.dart';
 import '../data/location_service.dart';
 import '../data/price_repository.dart';
 import '../data/product_repository.dart';
+import '../data/user_repository.dart';
 import '../domain/precio.dart';
 import 'frescura.dart';
 import 'mapa_precios.dart';
+import 'moderacion.dart';
 import 'price_screen.dart';
 
 /// Ficha de un producto buscado por EAN: cuánto sale en cada local (mapa + lista
@@ -24,6 +26,12 @@ class ProductScreen extends StatefulWidget {
 class _ProductScreenState extends State<ProductScreen> {
   late Future<Producto> _producto = widget.deps.loadProducto(widget.ean);
   late Future<List<PrecioVigente>> _vigentes = _cargarVigentes();
+
+  /// Para saber si puede cargar. Si falla se asume que sí: el backend decide.
+  late final Future<Me?> _me = widget.deps
+      .loadMe()
+      .then<Me?>((m) => m)
+      .catchError((_) => null);
   late Future<List<PrecioHistorial>> _historial = widget.deps.loadHistorial(
     widget.ean,
   );
@@ -154,13 +162,34 @@ class _ProductScreenState extends State<ProductScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: () => _cargarPrecio(p),
-                icon: const Icon(Icons.sell),
-                label: const Text('Cargar precio'),
+              FutureBuilder<Me?>(
+                future: _me,
+                builder: (context, snapshot) {
+                  final restringido =
+                      snapshot.data?.escalon == Escalon.restringido;
+                  return FilledButton.icon(
+                    // Restringido: se ve, pero apagado y con el motivo abajo.
+                    onPressed: restringido ? null : () => _cargarPrecio(p),
+                    icon: const Icon(Icons.sell),
+                    label: const Text('Cargar precio'),
+                  );
+                },
               ),
             ],
           ),
+        ),
+        FutureBuilder<Me?>(
+          future: _me,
+          builder: (context, snapshot) {
+            final me = snapshot.data;
+            if (me == null || me.escalon != Escalon.restringido) {
+              return const SizedBox.shrink();
+            }
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: AvisoModeracion(me: me),
+            );
+          },
         ),
         Expanded(
           child: FutureBuilder<List<PrecioVigente>>(

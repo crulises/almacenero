@@ -38,10 +38,14 @@ class ApiException implements Exception {
 
 /// Cliente HTTP del backend (`/v1`). El cliente habla SOLO con el backend.
 class ApiClient {
-  ApiClient({required this.baseUrl, http.Client? httpClient})
+  ApiClient({required this.baseUrl, http.Client? httpClient, this.onCuentaBaja})
     : _http = httpClient ?? http.Client();
 
   final String baseUrl;
+
+  /// Se llama cuando CUALQUIER pedido recibe 403 `cuenta_baja`, para que la app
+  /// pase a la pantalla de baja en el momento, sin esperar a volver al inicio.
+  final void Function()? onCuentaBaja;
   final http.Client _http;
 
   Future<Map<String, dynamic>> get(String path, {String? token}) async =>
@@ -85,11 +89,13 @@ class ApiClient {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(utf8.decode(response.bodyBytes));
     }
-    throw ApiException(
+    final error = ApiException(
       'Error ${response.statusCode}',
       statusCode: response.statusCode,
       detail: _detalle(response),
     );
+    if (error.isCuentaBaja) onCuentaBaja?.call();
+    throw error;
   }
 
   static Object? _detalle(http.Response response) {
