@@ -354,7 +354,7 @@
                     <input type="checkbox" :checked="c.valor" @change="cambiarConfig(c, $event.target.checked)">
                   </template>
                   <template x-if="!c.rubro && typeof c.valor === 'number'">
-                    <input type="number" step="any" min="0" class="num" :value="c.valor" @change="cambiarConfig(c, $event.target.value)">
+                    <input type="number" step="any" :min="c.clave.startsWith('karma_umbral') ? null : 0" class="num" :value="c.valor" @change="cambiarConfig(c, $event.target.value)">
                   </template>
                   <template x-if="!c.rubro && typeof c.valor === 'string'">
                     <input type="text" :value="c.valor" @change="cambiarConfig(c, $event.target.value)">
@@ -540,7 +540,7 @@
             <p>Entró con el PIN:
               <b class="mono" x-show="ficha.d.invitacion_codigo" x-text="ficha.d.invitacion_codigo"></b>
               <span x-show="ficha.d.invitacion_nota" class="suave" x-text="'(' + ficha.d.invitacion_nota + ')'"></span>
-              <span x-show="!ficha.d.invitacion_codigo" class="suave">sin registro (alta anterior a los PINs, o modo abierto)</span></p>
+              <span x-show="!ficha.d.invitacion_codigo" class="suave">sin registro (entró con el código compartido —solo guarda al último—, antes de los PINs, o en modo abierto)</span></p>
             <div class="form"><label>Alias <input type="text" x-model="ficha.b.alias"></label></div>
             <div class="filas"><button class="primario" :disabled="!hayCambios()" @click="guardarFicha()">Guardar alias</button></div>
           </section>
@@ -563,7 +563,7 @@
           </section>
           <section class="caja" :class="ficha.d.estado === 'baja' ? 'peligro-caja' : ''">
             <h3>Moderación <span class="badge" :class="insignia(ficha.d).clase" x-text="insignia(ficha.d).texto"></span></h3>
-            <p x-show="ficha.d.estado === 'baja'">De baja desde <b x-text="fecha(ficha.d.baja_at)"></b>. No puede entrar ni renovar la sesión. Si vuelve con otra cuenta, necesita otro PIN: este usuario entró con el de arriba.</p>
+            <p x-show="ficha.d.estado === 'baja'">De baja desde <b x-text="fecha(ficha.d.baja_at)"></b> No puede entrar ni renovar la sesión. Si vuelve con otra cuenta, necesita otro PIN: este usuario entró con el de arriba.</p>
             <p x-show="ficha.d.estado !== 'baja'">Escalón por karma: <b x-text="{normal: 'normal', aviso: 'aviso (la app le avisa; sigue usando todo)', restringido: 'restringido (solo consulta, no puede cargar)'}[ficha.d.escalon]"></b>.
               Con karma <b x-text="ficha.d.karma"></b>. Para sancionar o levantar una restricción, ajustá el karma abajo.</p>
             <div class="form"><label>Motivo (obligatorio, queda en la auditoría) <input type="text" x-model="ficha.x.motivoBaja" minlength="3" placeholder="p. ej. precios falsos reiterados"></label></div>

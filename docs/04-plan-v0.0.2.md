@@ -27,6 +27,7 @@ offline, iOS, OAuth, pesables/genéricos.
 | 8 | **Precios vigentes por local: lista con frescura + mapa** (adelantado: va antes que 6) | — | medio |
 | 9 | Anti-spam (invitaciones, rate limit, límites por usuario) | 5 | medio |
 | 10 | Preparar release: firma del APK y guía de deploy | — | chico |
+| 12 | **Moderación: escalera por karma negativo y baja de cuentas** (§9) | 9, 11 | medio |
 | 11 | **Panel web de admin** (front chico con nginx + endpoints `/v1/admin`), en paralelo, sin tocar la app | 5 | grande |
 
 El ETL (7) toca solo `etl/` y el Makefile, así que puede correr en paralelo con
