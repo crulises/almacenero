@@ -62,13 +62,22 @@ async def current_user(
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=401, detail="token sin sub válido") from e
 
+    # `is_anonymous` y `email` vienen del proveedor (GoTrue). Sin el claim, se es anónimo
+    # salvo que haya email.
+    email = claims.get("email") or None
+    es_anonimo = bool(claims.get("is_anonymous", email is None))
     row = await pool.fetchrow(
         """
-        insert into usuarios (auth_id, alias) values ($1, $2)
-        on conflict (auth_id) do update set auth_id = excluded.auth_id
+        insert into usuarios (auth_id, alias, email, es_anonimo, anonimo_auth_id)
+        values ($1, $2, $3, $4, case when $4::boolean then $1::uuid end)
+        on conflict (auth_id) do update
+            set email = coalesce(excluded.email, usuarios.email),
+                es_anonimo = excluded.es_anonimo
         returning id, auth_id, alias, karma, rol
         """,
         auth_id,
         f"anon-{str(auth_id)[:6]}",
+        email,
+        es_anonimo,
     )
     return Usuario(**dict(row))

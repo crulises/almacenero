@@ -507,3 +507,80 @@ instalá esos.
   como «local inexistente».
 - **Límite conocido:** la ubicación la informa el celular; una ubicación simulada la
   falsifica (se mitiga con reputación, corte 9).
+
+---
+
+## Panel web de admin (corte 11)
+
+- **Decisión:** login con email y contraseña de GoTrue vía `POST /v1/admin/login`; solo
+  entra `rol = 'admin'`. Crear el admin: `make admin-crear EMAIL=...`. Detalle y
+  motivos en `docs/04` §8. Un anónimo promovido con `make admin` **no** entra al panel
+  (no tiene credenciales).
+- **Síntoma:** `AmbiguousParameterError: could not determine data type of parameter $1`
+  (todos los endpoints en 500) tras ampliar el `insert into usuarios` de `app/auth.py`.
+  **Causa:** el mismo `$1` se usaba como `uuid` (columna) y dentro de un `case when $4
+  then $1 end`; asyncpg no infiere el tipo. **Solución:** castear explícito
+  (`$4::boolean`, `$1::uuid`).
+- **Síntoma:** usuarios nuevos con `anonimo_auth_id` nulo aunque sean anónimos.
+  **Causa:** había un backend viejo (otra imagen Docker) corriendo contra la misma base
+  ya migrada: su `insert` no conoce las columnas nuevas. **Solución:**
+  `docker compose up -d --build backend` para que corra el código nuevo.
+- **Síntoma:** `make admin-crear` con un email que ya existe no devuelve el id.
+  **Causa:** GoTrue responde el signup de un email existente sin sesión. **Solución:**
+  el CLI cae a iniciar sesión con la contraseña y toma el id de ahí (si la contraseña
+  no coincide, falla con el motivo).
+- **Síntoma:** el panel dice «No puedo conectar con el backend» o el navegador
+  bloquea por CORS al abrirlo desde otra máquina. **Causa:** el origen
+  (`http://192.168.x.x:8080`) no está en `CORS_ORIGINS`. **Solución:** agregarlo en `.env`
+  y reiniciar el backend. La URL del backend sale de `admin-web/public/config.js`
+  (mismo host que el panel, puerto 8000).
+- **Gotcha de Alpine:** `x-model.debounce` junto con `@input` dispara el `@input` con el
+  valor viejo. Se usa `x-model` plano y `@input.debounce.400ms`.
+- **Gotcha de tests:** `auditoria_admin` es solo-agregar, así que los tests dejan filas que
+  no se pueden limpiar (como los usuarios de prueba, que ya se acumulaban). No usar la
+  auditoría para contar filas totales en los tests: filtrar por `entidad_id`.
+
+### Fichas del panel (segunda iteración)
+- **Decisión:** el rol se puede cambiar desde `/v1/admin` (no desde la API pública); ver
+  `docs/04` §8 por qué y qué salvaguardas lleva.
+- **Síntoma:** la ficha no podía preguntar «¿es un duplicado?» al recibir el 409.
+  **Causa:** `api()` del front solo propagaba el mensaje del error, no el status ni el
+  `detail` estructurado. **Solución:** el `Error` lleva `status` y `detalle`; la ficha
+  detecta `local_duplicado` y reintenta con `forzar`.
+- **Síntoma:** el enlace «ver precios» de una ficha abría la lista sin filtrar.
+  **Causa:** se cerraba la ficha (`ficha = null`) *antes* de leer `ficha.id` en el mismo
+  handler. **Solución:** una sola función (`verPrecios`) que cierra y filtra con el id ya
+  leído. Regla: en handlers de Alpine, leer lo que haga falta de la ficha antes de cerrarla.
+- **Síntoma:** un test que corrige un local con nombre fijo dio 409 solo en algunas
+  corridas. **Causa:** una corrida anterior que falló en la limpieza dejó un local con el
+  mismo nombre y lugar, y ahora el chequeo de duplicados lo detecta. **Solución:**
+  nombres con sufijo aleatorio en los tests y limpiar los precios de los locales `adm-%`
+  antes de borrarlos (si no, el `delete` falla por la clave foránea y deja basura).
+- **Dato útil:** esta máquina no tiene `node`, así que el JS del panel no se chequea con
+  `node --check`: se prueba en el navegador (consola sin errores y la ficha abierta).
+
+### `make up` falla con «port is already allocated» (0.0.0.0:8000 o :8080)
+- **Síntoma:** `Bind for 0.0.0.0:8000 failed: port is already allocated`; un `make down`
+  seguido de `make up` da el mismo error, y vuelve a pasar cada vez que se cambia de
+  carpeta (checkout principal ↔ worktree).
+- **Causa:** Docker Compose nombraba el proyecto por la **carpeta**. El checkout principal
+  (`almacenero`) y cada worktree (`admin-web-e8bb1c`, `anti-spam-e830d6`…) eran proyectos
+  distintos con los mismos puertos. Un stack que otra sesión (o vos) dejó corriendo en
+  *otra* carpeta seguía ocupando 8000/8080, y `make down` solo baja el proyecto de la
+  carpeta donde se corre (el `supabase stop` sí es global).
+- **Solución definitiva:** `docker-compose.yml` fija `name: almacenero`. Ahora hay **un solo
+  proyecto** sin importar la carpeta: `make up` desde cualquier checkout *reemplaza* los
+  contenedores por los de ese código, y `make down` los baja desde cualquier carpeta. Una
+  rama vieja que todavía no tiene esa línea sigue chocando hasta que se la actualice
+  (merge o rebase de `main`).
+- **Diagnóstico si pasa igual:**
+  ```bash
+  docker compose ls -a          # ¿hay un proyecto con otro nombre?
+  docker ps -a --format '{{.Names}}\t{{.Ports}}\t{{.Status}}' | grep -v supabase
+  lsof -nP -iTCP:8000 -sTCP:LISTEN
+  ```
+  Bajar el proyecto viejo con su nombre: `docker compose -p <nombre> down`.
+- **Ojo:** el stack que queda corriendo es el del código de la última carpeta donde se
+  hizo `make up` (el del checkout principal no tiene el panel hasta que se mergee).
+- **Probar una rama sin tocar el stack levantado:** `uvicorn` en otro puerto + servir
+  `admin-web/public` con un `config.js` apuntando ahí (y `CORS_ORIGINS` con ese origen).
