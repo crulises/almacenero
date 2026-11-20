@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'app_deps.dart';
 import 'data/api_client.dart';
+import 'data/app_info.dart';
 import 'data/auth_repository.dart';
 import 'data/authed_api.dart';
 import 'data/local_repository.dart';
@@ -32,6 +33,12 @@ void main() {
     AlmaceneroApp(
       deps: AppDeps(
         guardarInvitacion: auth.guardarInvitacion,
+        loadInfoApp: () async => InfoApp(
+          build: BuildInfo.actual,
+          apiUrl: apiUrl,
+          ips: await ipsLocales(),
+          servidor: await probarServidor(api),
+        ),
         loadMe: UserRepository(api: authed).me,
         loadProducto: ProductRepository(api: authed).porEan,
         obtenerUbicacion: location.actual,

@@ -608,3 +608,27 @@ instalá esos.
   hizo `make up` (el del checkout principal no tiene el panel hasta que se mergee).
 - **Probar una rama sin tocar el stack levantado:** `uvicorn` en otro puerto + servir
   `admin-web/public` con un `config.js` apuntando ahí (y `CORS_ORIGINS` con ese origen).
+
+## «No pudimos conectar con el servidor» en el celular (corte 9)
+
+- **Síntoma:** el celular y el servidor están en la misma red y la app dice «No pudimos
+  conectar con el servidor». **Causa (la que nos pasó):** se instaló un APK viejo. Los
+  APK se llaman todos `app-debug.apk`, así que no hay forma de distinguirlos, y un APK
+  anterior al corte 9 no manda código de invitación: el backend contesta 403 y la app
+  mostraba el mismo cartel que para «sin red». **Solución:** la pantalla principal ahora
+  muestra versión, commit, servidor, estado de `/v1/health` e IP del celular, y el error
+  dice «El servidor respondió 403 (…)» cuando hay respuesta. Leer eso antes de adivinar.
+- **Cómo separar las causas, de lo más barato a lo más caro:**
+  1. ¿La versión de la pantalla es la que acabás de compilar? Si no, es otro APK.
+  2. «Estado: sin conexión» → es la red: IP del celular en otra subred que la del
+     servidor, Wi-Fi con «aislamiento de clientes» (típico en redes de invitados), IP del
+     servidor cambiada desde la compilación (comparar «Servidor» con `ipconfig getifaddr
+     en0`), firewall de macOS (`socketfilterfw --getglobalstate`).
+  3. «Estado: respondió error N» o «responde» con el cartel de error → la red anda; es
+     el backend (ver `docker compose logs backend`).
+- **Probar la red sin el celular:** `curl http://<IP-del-servidor>:8000/v1/health` desde
+  otra máquina de la misma red.
+- **Quién está sirviendo el puerto 8000:** el compose tiene nombre fijo, así que el último
+  `make up` (desde cualquier worktree) reemplaza al backend. `docker inspect
+  almacenero-backend-1` y la etiqueta `com.docker.compose.project.working_dir` dicen de
+  qué carpeta salió el código.

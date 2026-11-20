@@ -748,3 +748,19 @@ Hacerlo **antes de cargar datos reales** y repasarlo cada tanto.
 - `CLAUDE.md`: alcance de v0.0.2 (hoy solo describe v0.0.1).
 - `docs/03-problemas-soluciones.md`: lo que vaya apareciendo en cada corte
   (como hasta ahora).
+
+## Versión del APK y pantalla de información (corte 9, ajuste)
+
+**Versionado.** La serie (`0.0`, `0.1`, …) es el `version:` de `app/pubspec.yaml`: se
+cambia a mano cuando se cierra un ciclo de pruebas. El último número sube solo en cada
+`make apk` (`0.0.1`, `0.0.2`, …) y vuelve a 0 al cambiar de serie (`0.1.0`, `0.1.1`, …).
+`app/tool/version.sh` lleva la cuenta en el `.git` compartido (no en el árbol de
+trabajo) para no generar cambios ni conflictos entre worktrees. El APK lleva además el
+commit (con `+local` si había cambios sin commitear) y la hora de compilación, y el
+`versionCode` de Android sale de la fecha para que siempre se pueda instalar encima.
+
+**Pantalla principal.** Una tarjeta al pie muestra, por ahora: versión y commit, hora de
+compilación, URL del servidor, estado de `/v1/health` (con la demora, o el motivo) e IP
+del celular por interfaz. Es la lista que se va puliendo según haga falta saber qué
+esperar de un APK; candidatos: modo de acceso del servidor, versión del backend, última
+sincronización.

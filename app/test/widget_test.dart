@@ -1,5 +1,6 @@
 import 'package:almacenero/app_deps.dart';
 import 'package:almacenero/data/api_client.dart';
+import 'package:almacenero/data/app_info.dart';
 import 'package:almacenero/data/auth_repository.dart';
 import 'package:almacenero/data/local_repository.dart';
 import 'package:almacenero/data/location_service.dart';
@@ -221,6 +222,78 @@ void main() {
       await tester.pumpAndSettle();
       expect(guardado, 'grupo');
       expect(find.text('anon-abc123'), findsOneWidget);
+    });
+
+    testWidgets('muestra versión, servidor e IP del celular', (tester) async {
+      await abrir(
+        tester,
+        deps: AppDeps(
+          loadInfoApp: () async => const InfoApp(
+            build: BuildInfo(
+              version: '0.0.7',
+              commit: 'abc1234',
+              compilado: '2026-11-20T17:00',
+            ),
+            apiUrl: 'http://192.168.1.5:8000',
+            ips: [IpLocal(interfaz: 'wlan0', ip: '192.168.1.42')],
+            servidor: 'responde (35 ms)',
+          ),
+          loadMe: () async =>
+              const Me(id: 'u1', alias: 'anon-abc123', karma: 0),
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      expect(find.text('Versión: 0.0.7 (abc1234)'), findsOneWidget);
+      expect(find.text('Servidor: http://192.168.1.5:8000'), findsOneWidget);
+      expect(find.text('Estado: responde (35 ms)'), findsOneWidget);
+      expect(find.text('IP del celular: 192.168.1.42 (wlan0)'), findsOneWidget);
+    });
+
+    testWidgets('si el servidor rechaza el alta, dice la causa real', (
+      tester,
+    ) async {
+      await abrir(
+        tester,
+        deps: AppDeps(
+          loadMe: () async => throw ApiException(
+            'Error 403',
+            statusCode: 403,
+            detail: {'codigo': 'alta_cerrada'},
+          ),
+          loadProducto: (_) async => _aceite,
+          obtenerUbicacion: () async => _aca,
+          abrirAjustes: () async {},
+          loadLocalesCerca: (_) async => [_local],
+          crearLocal: ({required nombre, direccion, required ubicacion}) =>
+              throw UnimplementedError(),
+          loadHistorial: (_) async => [],
+          loadVigentes: (_, {ubicacion}) async => [],
+          cargarPrecio: ({
+            required ean,
+            required localId,
+            required precio,
+            required ubicacion,
+          }) => throw UnimplementedError(),
+        ),
+      );
+      expect(find.text('No pudimos conectar con el servidor'), findsOneWidget);
+      expect(
+        find.text('El servidor respondió 403 (alta_cerrada)'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('si falla, ofrece reintentar y se recupera', (tester) async {

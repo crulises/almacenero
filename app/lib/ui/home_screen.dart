@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../app_deps.dart';
 import '../data/api_client.dart';
+import '../data/app_info.dart';
 import '../data/auth_repository.dart';
 import '../data/user_repository.dart';
 import '../domain/ean.dart';
@@ -21,6 +22,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late Future<Me> _me = widget.deps.loadMe();
+  late Future<InfoApp> _info = widget.deps.loadInfoApp();
   final _eanController = TextEditingController();
   final _invitacionController = TextEditingController();
   String? _eanError;
@@ -35,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _retry() {
     setState(() {
       _me = widget.deps.loadMe();
+      _info = widget.deps.loadInfoApp(); // la red pudo cambiar
     });
   }
 
@@ -105,8 +108,52 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 32),
+          _infoApp(context),
         ],
       ),
+    );
+  }
+
+  /// Qué app es esta y a dónde habla: para confirmar que se instaló el APK correcto
+  /// y diagnosticar la conexión sin adivinar.
+  Widget _infoApp(BuildContext context) {
+    final estilo = Theme.of(context).textTheme.bodySmall;
+    return FutureBuilder<InfoApp>(
+      future: _info,
+      builder: (context, snapshot) {
+        final info = snapshot.data;
+        final filas = <(String, String)>[
+          (
+            'Versión',
+            info == null
+                ? BuildInfo.actual.version
+                : '${info.build.version} (${info.build.commit})',
+          ),
+          if (info != null) ('Compilada', info.build.compilado),
+          if (info != null) ('Servidor', info.apiUrl),
+          if (info != null) ('Estado', info.servidor),
+          if (info != null)
+            (
+              'IP del celular',
+              info.ips.isEmpty
+                  ? 'sin red'
+                  : info.ips.map((i) => '${i.ip} (${i.interfaz})').join(', '),
+            ),
+        ];
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final (nombre, valor) in filas)
+                  Text('$nombre: $valor', style: estilo),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -134,6 +181,15 @@ class _HomeScreenState extends State<HomeScreen> {
           return Column(
             children: [
               const Text('No pudimos conectar con el servidor'),
+              // La causa real: «no hay red» y «el servidor dijo 403» se arreglan distinto.
+              if (error is ApiException)
+                Text(
+                  error.statusCode == null
+                      ? error.message
+                      : 'El servidor respondió ${error.statusCode}'
+                            '${error.codigo == null ? '' : ' (${error.codigo})'}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               const SizedBox(height: 12),
               FilledButton(onPressed: _retry, child: const Text('Reintentar')),
             ],
