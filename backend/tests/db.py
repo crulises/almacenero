@@ -73,3 +73,37 @@ def cuerpo_carga(local_id: str, ean: str, precio: str, **extra) -> dict:
         "precision_m": 10,
         **extra,
     }
+
+
+def poner_karma(user_id: str, karma: int) -> None:
+    """Fija el karma como lo haría un admin: habilitando la escritura solo en la transacción."""
+
+    async def run():
+        conn = await asyncpg.connect(get_settings().database_url)
+        try:
+            async with conn.transaction():
+                await conn.execute("select set_config('app.karma_write', 'on', true)")
+                await conn.execute(
+                    "update usuarios set karma = $2 where id = $1::uuid", user_id, karma
+                )
+        finally:
+            await conn.close()
+
+    asyncio.run(run())
+
+
+def poner_estado_sin_fecha(user_id: str, estado: str) -> None:
+    """Cambia SOLO `estado` con la escritura habilitada (para probar el check de coherencia)."""
+
+    async def run():
+        conn = await asyncpg.connect(get_settings().database_url)
+        try:
+            async with conn.transaction():
+                await conn.execute("select set_config('app.estado_write', 'on', true)")
+                await conn.execute(
+                    "update usuarios set estado = $2 where id = $1::uuid", user_id, estado
+                )
+        finally:
+            await conn.close()
+
+    asyncio.run(run())

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.auth import Usuario, current_user
 from app.db import get_pool
 from app.services import config
-from app.services.permisos import exigir, puede
+from app.services.permisos import exigir, exigir_carga, puede
 
 router = APIRouter(tags=["locales"])
 
@@ -97,6 +97,7 @@ async def crear_local(
     `config.alta_locales_abierta` está activa (comodidad de prueba; el Doc 1 dice
     que solo el admin crea locales) y el local nace sin verificar.
     """
+    exigir_carga(user)  # restringido por karma: 403 cuenta_restringida (consultar sí)
     if puede(user, "local.crear"):
         verificado = True
     elif puede(user, "local.proponer") and await config.leer(pool, "alta_locales_abierta"):

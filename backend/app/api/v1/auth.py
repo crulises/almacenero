@@ -12,6 +12,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.auth import CUENTA_BAJA
 from app.config import get_settings
 from app.db import get_pool
 from app.services import config, invitaciones
@@ -142,6 +143,14 @@ async def renovar_sesion(
         3600,
         "demasiados intentos desde esta conexión: probá más tarde",
     )
-    return await _pedir_sesion(
+    sesion = await _pedir_sesion(
         http, "/token?grant_type=refresh_token", {"refresh_token": body.refresh_token}
     )
+    # Cuenta dada de baja (docs/04 §9): el proveedor renovó, pero acá no se entrega la
+    # sesión. 403 y no 401: un 401 haría que la app se cree otra cuenta anónima.
+    auth_id = _auth_id_de(sesion.access_token)
+    if auth_id is not None and await pool.fetchval(
+        "select estado = 'baja' from usuarios where auth_id = $1", auth_id
+    ):
+        raise HTTPException(403, detail=CUENTA_BAJA)
+    return sesion

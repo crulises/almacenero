@@ -119,13 +119,19 @@
           <select x-model="sec.usuarios.f.rol" @change="cargar('usuarios', true)">
             <option value="">Cualquier rol</option><option value="usuario">usuario</option><option value="admin">admin</option>
           </select>
+          <select x-model="sec.usuarios.f.estado" @change="cargar('usuarios', true)">
+            <option value="">Activos y de baja</option><option value="activo">Activos</option><option value="baja">De baja</option>
+          </select>
+          <select x-model="sec.usuarios.f.escalon" @change="cargar('usuarios', true)">
+            <option value="">Cualquier escalón</option><option value="normal">Normal</option><option value="aviso">Con aviso</option><option value="restringido">Restringidos</option>
+          </select>
           <input type="search" placeholder="Alias, email o id" x-model="sec.usuarios.f.q" @input.debounce.400ms="cargar('usuarios', true)">
           <select x-model="sec.usuarios.f.orden" @change="cargar('usuarios', true)">
             <option value="alta">Más nuevos</option><option value="karma">Karma</option><option value="cargas">Cargas</option>
           </select>
         </div>
         <div class="tabla"><table>
-          <thead><tr><th>Alias</th><th>Tipo</th><th>Email</th><th>Anónimo asociado</th><th>Rol</th><th>Karma</th><th>Cargas</th><th>Locales creados</th><th>Alta</th><th>Id</th><th></th></tr></thead>
+          <thead><tr><th>Alias</th><th>Tipo</th><th>Email</th><th>Anónimo asociado</th><th>Rol</th><th>Karma</th><th>Estado</th><th>Cargas</th><th>Locales creados</th><th>Alta</th><th>Id</th><th></th></tr></thead>
           <tbody>
             <template x-for="u in sec.usuarios.items" :key="u.id">
               <tr>
@@ -138,6 +144,7 @@
                 </td>
                 <td x-text="u.rol"></td>
                 <td x-text="u.karma"></td>
+                <td><span class="badge" :class="insignia(u).clase" x-text="insignia(u).texto"></span></td>
                 <td><a href="#" @click.prevent="ir('precios', {user_id: u.id})" x-text="u.cargas"></a></td>
                 <td x-text="u.locales_creados"></td>
                 <td class="suave" x-text="fecha(u.created_at)"></td>
@@ -152,6 +159,7 @@
           <span x-text="rango('usuarios')"></span>
           <button @click="pagina('usuarios', 1)" :disabled="sec.usuarios.offset + sec.usuarios.limit >= sec.usuarios.total">→</button>
         </div>
+        <p class="suave">Escalones por karma (se configuran en Configuración: <span class="mono">karma_umbral_aviso</span> y <span class="mono">karma_umbral_restriccion</span>): <b>aviso</b> = la app avisa; <b>restringido</b> = solo puede consultar; <b>de baja</b> = no entra.</p>
         <p class="suave">El rol y el karma no se editan desde acá: están protegidos en la base (rol: <span class="mono">make admin-crear</span> / <span class="mono">make admin</span>).</p>
       </section>
 
@@ -315,6 +323,7 @@
                 <td class="suave" x-text="fecha(i.usada_at)"></td>
                 <td>
                   <a href="#" x-show="i.usada_por_id" @click.prevent="irFicha('usuario', i.usada_por_id)" x-text="i.usada_por_alias"></a>
+                  <span class="badge baja" x-show="i.usada_por_baja">de baja</span>
                   <span class="suave" x-show="i.estado === 'usada' && !i.usada_por_id">—</span>
                 </td>
                 <td class="suave" x-text="fecha(i.created_at) + (i.creada_por_alias ? ' · ' + i.creada_por_alias : '')"></td>
@@ -520,13 +529,18 @@
         <div class="cuerpo">
           <section class="caja">
             <h3>Identidad <span class="badge" :class="ficha.d.es_anonimo ? 'mal' : 'ok'" x-text="ficha.d.es_anonimo ? 'anónimo' : 'registrado'"></span>
-              <span class="badge" x-text="ficha.d.rol"></span></h3>
+              <span class="badge" x-text="ficha.d.rol"></span>
+              <span class="badge" :class="insignia(ficha.d).clase" x-text="insignia(ficha.d).texto"></span></h3>
             <p>Email: <b x-text="ficha.d.email || '—'"></b></p>
             <p class="mono">auth: <span x-text="ficha.d.auth_id"></span></p>
             <p class="mono">anónimo asociado:
               <span x-show="ficha.d.anonimo_auth_id" x-text="ficha.d.anonimo_auth_id + (ficha.d.anonimo_auth_id === ficha.d.auth_id ? '  (el mismo id: se ligó en el lugar)' : '')"></span>
               <span x-show="!ficha.d.anonimo_auth_id" class="suave">no tiene (nació registrado)</span></p>
             <p>Alta: <span x-text="fecha(ficha.d.created_at)"></span> · Karma: <b x-text="ficha.d.karma"></b> · Cargas: <b x-text="ficha.d.cargas"></b> · Locales creados: <b x-text="ficha.d.locales_creados"></b></p>
+            <p>Entró con el PIN:
+              <b class="mono" x-show="ficha.d.invitacion_codigo" x-text="ficha.d.invitacion_codigo"></b>
+              <span x-show="ficha.d.invitacion_nota" class="suave" x-text="'(' + ficha.d.invitacion_nota + ')'"></span>
+              <span x-show="!ficha.d.invitacion_codigo" class="suave">sin registro (alta anterior a los PINs, o modo abierto)</span></p>
             <div class="form"><label>Alias <input type="text" x-model="ficha.b.alias"></label></div>
             <div class="filas"><button class="primario" :disabled="!hayCambios()" @click="guardarFicha()">Guardar alias</button></div>
           </section>
@@ -546,6 +560,18 @@
               <label>Motivo (obligatorio) <input type="text" x-model="ficha.x.motivoKarma" minlength="3"></label>
             </div>
             <div class="filas"><button :disabled="!ficha.x.delta || (ficha.x.motivoKarma || '').length < 3" @click="ajustarKarmaFicha()">Aplicar ajuste</button></div>
+          </section>
+          <section class="caja" :class="ficha.d.estado === 'baja' ? 'peligro-caja' : ''">
+            <h3>Moderación <span class="badge" :class="insignia(ficha.d).clase" x-text="insignia(ficha.d).texto"></span></h3>
+            <p x-show="ficha.d.estado === 'baja'">De baja desde <b x-text="fecha(ficha.d.baja_at)"></b>. No puede entrar ni renovar la sesión. Si vuelve con otra cuenta, necesita otro PIN: este usuario entró con el de arriba.</p>
+            <p x-show="ficha.d.estado !== 'baja'">Escalón por karma: <b x-text="{normal: 'normal', aviso: 'aviso (la app le avisa; sigue usando todo)', restringido: 'restringido (solo consulta, no puede cargar)'}[ficha.d.escalon]"></b>.
+              Con karma <b x-text="ficha.d.karma"></b>. Para sancionar o levantar una restricción, ajustá el karma abajo.</p>
+            <div class="form"><label>Motivo (obligatorio, queda en la auditoría) <input type="text" x-model="ficha.x.motivoBaja" minlength="3" placeholder="p. ej. precios falsos reiterados"></label></div>
+            <div class="filas">
+              <button class="peligro" x-show="ficha.d.estado !== 'baja'" :disabled="ficha.d.rol === 'admin' || (ficha.x.motivoBaja || '').trim().length < 3" @click="darBajaFicha()">Dar de baja</button>
+              <button class="primario" x-show="ficha.d.estado === 'baja'" :disabled="(ficha.x.motivoBaja || '').trim().length < 3" @click="reactivarFicha()">Reactivar</button>
+              <span class="suave" x-show="ficha.d.rol === 'admin'">Es admin: primero sacale el rol.</span>
+            </div>
           </section>
           <section class="caja">
             <h3>Cargas recientes <a href="#" @click.prevent="verPrecios({user_id: ficha.id})">(ver todas)</a></h3>

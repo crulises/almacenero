@@ -713,6 +713,85 @@ PR aparte cuando esté en `main`. Alcance previsto:
 antes de implementarlos), atribuciones y alta de productos nuevos. Sin HTTPS ni
 protección extra el panel **no se publica junto con la app** (ver Seguridad).
 
+## 9. Moderación: escalera por karma negativo y baja de cuentas (corte 12)
+
+El Doc 1 dice que el karma se pierde al acumular calificaciones negativas, pero la
+validación colaborativa (la que penalizaría sola) está fuera de alcance. En este corte
+el karma negativo lo pone **el admin a mano** (`usuario.ajustar_karma`, ya existía) y la
+escalera queda lista para que una penalización automática futura la use sin cambios.
+
+### Decisiones (tomadas antes de codear)
+
+1. **El escalón se deduce, no se guarda.** Se calcula del karma y de dos umbrales en
+   `config`:
+
+   | Escalón | Condición (karma ≤ umbral) | Qué pasa |
+   |---------|----------------------------|----------|
+   | `normal` | karma > `karma_umbral_aviso` | nada |
+   | `aviso` | karma ≤ `karma_umbral_aviso` (default **-5**) | la app avisa; sigue usando todo |
+   | `restringido` | karma ≤ `karma_umbral_restriccion` (default **-15**) | no puede **cargar** (precios, locales); sí **consultar** |
+
+   Guardar el escalón además del karma permitiría que se contradigan (karma -20 y
+   «normal»). Deducido, subir el karma —por ajuste del admin o por una carga futura—
+   levanta la restricción solo. Los dos umbrales se editan en el panel (Config); no se
+   admite `restricción > aviso` (la escalera tiene que bajar): se valida al guardar.
+   Un **admin nunca se restringe por karma** (no se puede trabar a quien administra);
+   su escalón es siempre `normal`.
+2. **El estado de la cuenta sí se guarda:** `usuarios.estado` (`activo` | `baja`, con
+   `check` en Postgres) y `usuarios.baja_at`. La baja es una decisión humana, no se
+   deduce de nada. Se protege con un trigger igual que el rol y el karma
+   (`app.estado_write`): ningún endpoint de usuario común puede tocarlo; solo el endpoint
+   de admin, dentro de su transacción. El motivo (obligatorio) queda en `auditoria_admin`,
+   no en una columna: ahí ya está el historial completo de bajas y reactivaciones.
+3. **Un admin no se puede dar de baja** y nadie se da de baja a sí mismo (409): primero
+   se le saca el rol de admin (que ya tiene sus propias reglas). Evita dejar el panel sin
+   dueño por un click.
+4. **La baja se aplica en el backend, no en GoTrue.** Todo acceso pasa por `current_user`
+   (cada request mira la fila del usuario en Postgres), así que la baja vale **en el
+   siguiente request**, también con un token todavía vigente — igual que revocar un admin
+   (§8: el rol vive en Postgres, no en el JWT). La otra mitad del cerco es
+   `/v1/auth/refresh`: después de que el proveedor renueva, el backend mira a quién
+   pertenece la sesión nueva y, si está de baja, **no la devuelve** (403 `cuenta_baja`).
+   *Banear en GoTrue además* exigiría la service key (un secreto nuevo con poder total
+   sobre los usuarios) y no agrega cerco: el cliente habla solo con el backend (regla de
+   arquitectura), y un token que solo sirve contra un backend que lo rechaza no sirve para
+   nada. Si algún día hubiera otro consumidor de GoTrue (por ejemplo, Realtime directo),
+   se reevalúa.
+5. **Código de error en la app: 403, no 401.** Un 401 hace que la app «vuelva a empezar
+   anónima» (crearía otra cuenta). Un 403 con `detail.codigo = cuenta_baja` no se
+   reintenta ni se renueva: la app muestra una pantalla final y no vuelve a pedir sesión.
+6. **El agujero de la cuenta nueva.** Un usuario de baja puede intentar crearse otra
+   cuenta anónima. Con `modo_acceso = solo_invitacion` necesita otro PIN: por eso la
+   ficha del usuario muestra **con qué PIN entró** (`invitacion_codigo` y su nota), y
+   el listado de invitaciones marca los PINs usados por cuentas de baja. Eso permite
+   rastrear al que vuelve y no volver a invitarlo. No hay más defensas en este corte
+   (con `modo_acceso = abierto` el agujero queda abierto, y es lo que ya se sabía).
+   Con el código **compartido** solo se guarda el último que lo usó: el rastro fino lo dan
+   los PINs de un solo uso.
+7. **Qué ve la app** (mínimo): en la pantalla principal, con escalón `aviso`, una tarjeta
+   no punitiva («Tu karma está bajo… si sigue bajando no vas a poder cargar precios»);
+   con `restringido`, otra («Por ahora solo podés consultar»); al intentar cargar
+   restringido, el error trae `detail.codigo = cuenta_restringida` (403, como
+   `limite_cargas` pero 429) y la pantalla de carga lo explica; con la cuenta de baja,
+   una pantalla que reemplaza al home, sin botones de escanear.
+
+### Qué se bloquea con `restringido`
+
+Todo lo que **escribe** información de otros: `POST /v1/precios` y `POST /v1/locales`
+(las capacidades `precio.cargar`, `local.proponer`, `local.crear` del módulo
+`permisos.py`). Leer catálogo, precios, mapa y locales sigue andando. Hay un solo punto
+que lo decide (`permisos.exigir_carga`), así que una validación colaborativa futura
+(que también «escribe») lo reutiliza.
+
+### API del panel
+
+- `POST /v1/admin/usuarios/{id}/baja` y `/reactivar` (capacidad `usuario.dar_baja`),
+  cuerpo `{"motivo": "..."}` obligatorio (3 a 300 caracteres), auditoría
+  `usuario.baja` / `usuario.reactivar`.
+- `GET /v1/admin/usuarios` suma `estado` y `escalon` y los filtros `estado` y `escalon`;
+  la ficha suma `invitacion_codigo` / `invitacion_nota`.
+- El karma se sigue ajustando con `POST /v1/admin/usuarios/{id}/karma` (motivo obligatorio).
+
 ## Decisiones
 
 **Tomadas**

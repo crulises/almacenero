@@ -12,8 +12,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import get_settings
 from app.db import get_pool
+from app.services import moderacion
 
 bearer = HTTPBearer(auto_error=False)
+
+CUENTA_BAJA = {
+    "codigo": "cuenta_baja",
+    "mensaje": "tu cuenta fue dada de baja: ya no podés usar Almacenero",
+}
 
 
 @dataclass
@@ -23,6 +29,10 @@ class Usuario:
     alias: str
     karma: int
     rol: str = "usuario"
+    estado: str = "activo"
+    # Escalón por karma (docs/04 §9): normal | aviso | restringido. Deducido, no guardado.
+    escalon: str = "normal"
+    umbral_restriccion: int = -15
 
 
 @lru_cache
@@ -73,11 +83,23 @@ async def current_user(
         on conflict (auth_id) do update
             set email = coalesce(excluded.email, usuarios.email),
                 es_anonimo = excluded.es_anonimo
-        returning id, auth_id, alias, karma, rol
+        returning id, auth_id, alias, karma, rol, estado
         """,
         auth_id,
         f"anon-{str(auth_id)[:6]}",
         email,
         es_anonimo,
     )
-    return Usuario(**dict(row))
+    datos = dict(row)
+    if datos["estado"] == "baja":
+        # Vale en el siguiente request, aunque el token siga vigente. 403 y no 401: un 401
+        # haría que la app «empiece de nuevo» con otra cuenta anónima.
+        raise HTTPException(status_code=403, detail=CUENTA_BAJA)
+    aviso, restriccion = await moderacion.umbrales(pool)
+    return Usuario(
+        **datos,
+        escalon=moderacion.NORMAL
+        if datos["rol"] == "admin"
+        else moderacion.escalon(datos["karma"], aviso, restriccion),
+        umbral_restriccion=restriccion,
+    )

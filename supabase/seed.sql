@@ -37,7 +37,10 @@ insert into config (clave, valor, rubro) values
     ('auth_altas_por_hora_ip',   '100', null),
     ('auth_refresh_por_hora_ip', '120', null),
     ('max_precios_por_hora',     '60',  null),
-    ('max_precios_por_dia',      '300', null)
+    ('max_precios_por_dia',      '300', null),
+    -- Moderación (docs/04 §9)
+    ('karma_umbral_aviso',       '-5',  null),
+    ('karma_umbral_restriccion', '-15', null)
 on conflict do nothing;
 
 -- Invitación de desarrollo (en producción se crea otra: `make invitacion`).

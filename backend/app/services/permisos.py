@@ -32,6 +32,7 @@ CAPACIDADES: dict[str, frozenset[str]] = {
             "usuario.editar",
             "usuario.cambiar_rol",
             "usuario.ajustar_karma",
+            "usuario.dar_baja",
             "local.editar",
             "local.fusionar",
             "local.borrar",
@@ -49,14 +50,35 @@ CAPACIDADES: dict[str, frozenset[str]] = {
 }
 
 
+# Lo que ESCRIBE información (docs/04 §9): un usuario restringido por karma no puede.
+# Leer / consultar no está acá: sigue andando.
+CAPACIDADES_DE_CARGA = frozenset({"precio.cargar", "local.proponer", "local.crear"})
+
+CUENTA_RESTRINGIDA = {
+    "codigo": "cuenta_restringida",
+    "mensaje": "tu karma está muy bajo: por ahora solo podés consultar, no cargar",
+}
+
+
 def puede(usuario: _ConRol, capacidad: str) -> bool:
+    if capacidad in CAPACIDADES_DE_CARGA and getattr(usuario, "escalon", "normal") == "restringido":
+        return False
     return capacidad in CAPACIDADES.get(usuario.rol, frozenset())
+
+
+def exigir_carga(usuario: Usuario) -> None:
+    """403 `cuenta_restringida` si el usuario está en el escalón de restricción. Único
+    punto que decide «no podés cargar»: lo usan los endpoints que escriben."""
+    if getattr(usuario, "escalon", "normal") == "restringido":
+        raise HTTPException(403, detail=CUENTA_RESTRINGIDA)
 
 
 def exigir(capacidad: str):
     """Dependencia de FastAPI: 403 si el usuario no tiene la capacidad."""
 
     async def dependencia(user: Usuario = Depends(current_user)) -> Usuario:
+        if capacidad in CAPACIDADES_DE_CARGA:
+            exigir_carga(user)
         if not puede(user, capacidad):
             raise HTTPException(403, "no tenés permiso para esto")
         return user

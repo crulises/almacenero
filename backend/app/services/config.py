@@ -26,6 +26,9 @@ DEFAULTS: dict[str, Any] = {
     "auth_refresh_por_hora_ip": 120,
     "max_precios_por_hora": 60,
     "max_precios_por_dia": 300,
+    # Moderación (docs/04 §9): el karma se compara con `<=`. Son negativos a propósito.
+    "karma_umbral_aviso": -5,  # desde acá la app avisa; sigue usando todo
+    "karma_umbral_restriccion": -15,  # desde acá no puede cargar; sí consultar
 }
 
 
