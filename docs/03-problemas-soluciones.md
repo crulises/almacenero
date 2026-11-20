@@ -540,6 +540,25 @@ instalá esos.
   no se pueden limpiar (como los usuarios de prueba, que ya se acumulaban). No usar la
   auditoría para contar filas totales en los tests: filtrar por `entidad_id`.
 
+### Fichas del panel (segunda iteración)
+- **Decisión:** el rol se puede cambiar desde `/v1/admin` (no desde la API pública); ver
+  `docs/04` §8 por qué y qué salvaguardas lleva.
+- **Síntoma:** la ficha no podía preguntar «¿es un duplicado?» al recibir el 409.
+  **Causa:** `api()` del front solo propagaba el mensaje del error, no el status ni el
+  `detail` estructurado. **Solución:** el `Error` lleva `status` y `detalle`; la ficha
+  detecta `local_duplicado` y reintenta con `forzar`.
+- **Síntoma:** el enlace «ver precios» de una ficha abría la lista sin filtrar.
+  **Causa:** se cerraba la ficha (`ficha = null`) *antes* de leer `ficha.id` en el mismo
+  handler. **Solución:** una sola función (`verPrecios`) que cierra y filtra con el id ya
+  leído. Regla: en handlers de Alpine, leer lo que haga falta de la ficha antes de cerrarla.
+- **Síntoma:** un test que corrige un local con nombre fijo dio 409 solo en algunas
+  corridas. **Causa:** una corrida anterior que falló en la limpieza dejó un local con el
+  mismo nombre y lugar, y ahora el chequeo de duplicados lo detecta. **Solución:**
+  nombres con sufijo aleatorio en los tests y limpiar los precios de los locales `adm-%`
+  antes de borrarlos (si no, el `delete` falla por la clave foránea y deja basura).
+- **Dato útil:** esta máquina no tiene `node`, así que el JS del panel no se chequea con
+  `node --check`: se prueba en el navegador (consola sin errores y la ficha abierta).
+
 ### `make up` falla con «port is already allocated» (0.0.0.0:8000 o :8080)
 - **Síntoma:** `Bind for 0.0.0.0:8000 failed: port is already allocated`; un `make down`
   seguido de `make up` da el mismo error.

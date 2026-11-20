@@ -34,6 +34,7 @@ function panel() {
     login: { email: "", password: "", error: "", enviando: false },
     config: [],
     destino: "",
+    ficha: null,
     toast: null,
     _t: null,
 
@@ -53,7 +54,11 @@ function panel() {
       if (r.status === 401) { this.salir(); throw new Error("La sesión venció: entrá de nuevo"); }
       if (r.status === 204) return null;
       const datos = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(this.mensaje(datos.detail) || `Error ${r.status}`);
+      if (!r.ok) {
+        const err = new Error(this.mensaje(datos.detail) || `Error ${r.status}`);
+        err.status = r.status; err.detalle = datos.detail;
+        throw err;
+      }
       return datos;
     },
     mensaje(d) {
@@ -233,6 +238,139 @@ function panel() {
           this.avisar(`${c.clave} guardado`);
         } catch (e) { await this.cargarConfig(); throw e; }
       });
+    },
+
+
+    // ------------------------------------------------------------ fichas
+    // Una ficha junta TODO lo que se puede hacer con una entidad y pasa por la lógica de
+    // negocio del backend (validaciones, efectos, auditoría). La tabla sigue para lo masivo.
+    RUTAS: { local: "locales", precio: "precios", usuario: "usuarios", producto: "productos" },
+
+    async abrir(tipo, id) {
+      this.ficha = { tipo, id, d: null, b: {}, x: {}, cargando: true };
+      await this.recargarFicha();
+    },
+    async recargarFicha() {
+      const f = this.ficha; if (!f) return;
+      f.cargando = true;
+      try {
+        const d = await this.api(`/admin/${this.RUTAS[f.tipo]}/${f.id}`);
+        f.d = d; f.b = this.borrador(f.tipo, d); f.x = this.extras(f.tipo, d);
+      } catch (e) { this.avisar(e.message, true); this.ficha = null; return; }
+      f.cargando = false;
+    },
+    borrador(tipo, d) {
+      if (tipo === "local") return { nombre: d.nombre, direccion: d.direccion || "", lat: d.lat, lng: d.lng };
+      if (tipo === "precio") return { precio: d.precio };
+      if (tipo === "usuario") return { alias: d.alias };
+      return { nombre: d.nombre, marca: d.marca || "", tamano_valor: d.tamano_valor, tamano_unidad: d.tamano_unidad || "" };
+    },
+    extras(tipo, d) {
+      if (tipo === "precio") return { motivo: "", revertir: false };
+      if (tipo === "usuario") return { rol: d.rol === "admin" ? "usuario" : "admin", motivoRol: "", delta: 1, motivoKarma: "" };
+      return {};
+    },
+    verPrecios(filtros) { this.ficha = null; this.ir('precios', filtros); },
+    cerrarFicha() { this.ficha = null; this.cargar(this.vista); },
+    // Cambia de ficha sin perder la lista de fondo (p. ej. del precio a su local).
+    irFicha(tipo, id) { this.abrir(tipo, id); },
+
+    // Hace una acción de negocio, avisa y refresca la ficha.
+    async accion(fn, mensaje) {
+      try { await fn(); this.avisar(mensaje); await this.recargarFicha(); }
+      catch (e) { this.avisar(e.message, true); }
+    },
+    cambios(tipo) {
+      const { d, b } = this.ficha, c = {};
+      const num = (v) => (v === "" || v == null ? null : Number(v));
+      if (tipo === "local") {
+        if (b.nombre.trim() !== d.nombre) c.nombre = b.nombre;
+        if ((b.direccion || "") !== (d.direccion || "")) c.direccion = b.direccion.trim() || null;
+        if (num(b.lat) !== d.lat || num(b.lng) !== d.lng) { c.lat = num(b.lat); c.lng = num(b.lng); }
+      } else if (tipo === "usuario") {
+        if (b.alias.trim() !== d.alias) c.alias = b.alias;
+      } else if (tipo === "producto") {
+        if (b.nombre.trim() !== d.nombre) c.nombre = b.nombre;
+        if ((b.marca || "") !== (d.marca || "")) c.marca = b.marca.trim() || null;
+        if (num(b.tamano_valor) !== (d.tamano_valor == null ? null : Number(d.tamano_valor)) || (b.tamano_unidad || "") !== (d.tamano_unidad || "")) {
+          c.tamano_valor = num(b.tamano_valor); c.tamano_unidad = b.tamano_unidad || null;
+        }
+      }
+      return c;
+    },
+    hayCambios() { const f = this.ficha; return !!f && !!f.d && Object.keys(this.cambios(f.tipo)).length > 0; },
+
+    async guardarFicha() {
+      const f = this.ficha, c = this.cambios(f.tipo);
+      if (!Object.keys(c).length) return this.avisar("No hay cambios");
+      const ruta = `/admin/${this.RUTAS[f.tipo]}/${f.id}`;
+      await this.accion(async () => {
+        try { await this.api(ruta, { method: "PATCH", body: c }); }
+        catch (e) {
+          // El backend sospecha un duplicado: el admin decide si es otro local de verdad.
+          if (e.status === 409 && e.detalle?.codigo === "local_duplicado" &&
+              confirm(e.message + "\n\n¿Es otro local distinto? Aceptar guarda igual.")) {
+            await this.api(ruta, { method: "PATCH", body: { ...c, forzar: true } });
+          } else throw e;
+        }
+      }, "Guardado");
+    },
+    async guardarPrecio() {
+      const f = this.ficha;
+      await this.accion(() => this.api(`/admin/precios/${f.id}`, { method: "PATCH", body: { precio: f.b.precio, motivo: f.x.motivo || null } }), "Precio corregido");
+    },
+    async borrarPrecioFicha() {
+      const f = this.ficha;
+      if (!confirm("¿Borrar este precio? Queda el rastro en Auditoría.")) return;
+      const q = new URLSearchParams({ revertir_karma: f.x.revertir });
+      if (f.x.motivo) q.set("motivo", f.x.motivo);
+      await this.intentar(async () => {
+        await this.api(`/admin/precios/${f.id}?${q}`, { method: "DELETE" });
+        this.avisar("Precio borrado"); this.cerrarFicha();
+      });
+    },
+
+    // --- local
+    validarFicha() { return this.accion(() => this.api("/admin/locales/validar", { method: "POST", body: { ids: [this.ficha.id] } }), "Local validado"); },
+    quitarValidacion() { return this.accion(() => this.api(`/admin/locales/${this.ficha.id}`, { method: "PATCH", body: { verificado: false } }), "Verificación quitada"); },
+    async fusionarFicha(dup, esteEnAquel) {
+      const f = this.ficha;
+      const txt = esteEnAquel ? `Fusionar ESTE local en «${dup.nombre}»? Este se borra y sus precios pasan al otro.`
+                              : `Fusionar «${dup.nombre}» en ESTE local? El otro se borra y sus precios pasan a este.`;
+      if (!confirm(txt)) return;
+      const body = esteEnAquel ? { destino_id: dup.id, origen_ids: [f.id] } : { destino_id: f.id, origen_ids: [dup.id] };
+      await this.intentar(async () => {
+        await this.api("/admin/locales/fusionar", { method: "POST", body });
+        this.avisar("Fusionados");
+        if (esteEnAquel) await this.abrir("local", dup.id); else await this.recargarFicha();
+      });
+    },
+    async borrarLocalFicha() {
+      if (!confirm("¿Borrar este local?")) return;
+      await this.intentar(async () => {
+        const r = await this.api("/admin/locales/borrar", { method: "POST", body: { ids: [this.ficha.id] } });
+        if (!r.afectados) return this.avisar(r.motivo, true);
+        this.avisar("Local borrado"); this.cerrarFicha();
+      });
+    },
+
+    // --- usuario
+    cambiarRolFicha() {
+      const x = this.ficha.x;
+      if (!confirm(`¿Cambiar el rol a «${x.rol}»?`)) return;
+      return this.accion(() => this.api(`/admin/usuarios/${this.ficha.id}/rol`, { method: "POST", body: { rol: x.rol, motivo: x.motivoRol || null } }), "Rol cambiado");
+    },
+    ajustarKarmaFicha() {
+      const x = this.ficha.x;
+      return this.accion(() => this.api(`/admin/usuarios/${this.ficha.id}/karma`, { method: "POST", body: { delta: Number(x.delta), motivo: x.motivoKarma } }), "Karma ajustado");
+    },
+
+    // --- producto
+    desbloquear(campo) {
+      return this.accion(() => this.api(`/admin/productos/${this.ficha.id}/desbloquear`, { method: "POST", body: { campos: [campo] } }), `${campo} desbloqueado`);
+    },
+    resolverFicha(c, elegido) {
+      return this.accion(() => this.api(`/admin/conflictos/${c.id}/resolver`, { method: "POST", body: { elegido } }), "Conflicto resuelto");
     },
 
     // ------------------------------------------------------------ varios

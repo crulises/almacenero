@@ -1,5 +1,6 @@
 """Productos canónicos y conflictos del ETL (lo que hace `make conflictos`, desde el panel)."""
 
+import json
 import re
 from datetime import datetime
 from decimal import Decimal
@@ -9,6 +10,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 
+from app.api.v1.admin.auditoria import AuditoriaOut, historial
 from app.api.v1.admin.consulta import Consulta, escapar_like
 from app.api.v1.admin.paginas import Pagina
 from app.auth import Usuario
@@ -59,6 +61,35 @@ class ConflictoOut(BaseModel):
     estado: str
     elegido: str | None
     created_at: datetime
+
+
+class FuenteProductoOut(BaseModel):
+    fuente: str
+    datos: dict  # lo que dijo esa fuente, crudo
+    cargado_en: datetime
+
+
+class ProductoDetalle(ProductoAdminOut):
+    """La ficha del producto: qué dijo cada fuente, qué está en disputa y quién lo usa."""
+
+    imagen_url: str | None
+    fuentes: list[FuenteProductoOut]
+    conflictos: list[ConflictoOut]
+    precios: int
+    locales_con_precio: int
+    historial: list[AuditoriaOut]
+
+
+class DesbloquearIn(BaseModel):
+    campos: list[str] = Field(min_length=1)
+    motivo: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def _validar(self):
+        malos = set(self.campos) - {"nombre", "marca", "tamano"}
+        if malos:
+            raise ValueError(f"campos inválidos: {sorted(malos)}")
+        return self
 
 
 class ResolverIn(BaseModel):
@@ -261,3 +292,85 @@ async def resolver_conflicto(
             conflicto_id,
         )
     return ConflictoOut(**dict(row))
+
+
+@router.get("/productos/{producto_id}", response_model=ProductoDetalle)
+async def ficha_producto(
+    producto_id: UUID,
+    _: Usuario = Depends(exigir("catalogo.editar")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ProductoDetalle:
+    row = await pool.fetchrow(
+        f"""
+        select x.*, p.imagen_url,
+               (select count(*) from precios r where r.producto_canonico_id = x.id) as precios,
+               (select count(distinct r.local_id) from precios r
+                 where r.producto_canonico_id = x.id) as locales_con_precio
+        from ({_SELECT_PRODUCTO} where p.id = $1) x join productos_canonicos p on p.id = x.id
+        """,
+        producto_id,
+    )
+    if row is None:
+        raise HTTPException(404, "producto no encontrado")
+    fuentes = await pool.fetch(
+        "select fuente, datos::text as datos, cargado_en from producto_fuentes "
+        "where ean = $1 order by fuente",
+        row["ean"],
+    )
+    conflictos = await pool.fetch(
+        """
+        select c.id, c.ean, p.nombre as producto_nombre, c.campo, c.valor_a, c.fuente_a,
+               c.valor_b, c.fuente_b, c.estado, c.elegido, c.created_at
+        from conflictos_catalogo c left join productos_canonicos p using (ean)
+        where c.ean = $1 order by c.estado, c.created_at
+        """,
+        row["ean"],
+    )
+    return ProductoDetalle(
+        **dict(row),
+        fuentes=[
+            FuenteProductoOut(**{**dict(f), "datos": json.loads(f["datos"])}) for f in fuentes
+        ],
+        conflictos=[ConflictoOut(**dict(c)) for c in conflictos],
+        historial=await historial(pool, "producto", producto_id),
+    )
+
+
+@router.post("/productos/{producto_id}/desbloquear", response_model=ProductoAdminOut)
+async def desbloquear_campos(
+    producto_id: UUID,
+    body: DesbloquearIn,
+    admin: Usuario = Depends(exigir("catalogo.editar")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ProductoAdminOut:
+    """Vuelve a dejar que los ETL toquen esos campos (los habías corregido a mano)."""
+    async with pool.acquire() as conn, conn.transaction():
+        antes = await conn.fetchval(
+            "select campos_bloqueados from productos_canonicos where id = $1 for update",
+            producto_id,
+        )
+        if antes is None:
+            raise HTTPException(404, "producto no encontrado")
+        sobran = set(body.campos) - set(antes)
+        if sobran:
+            raise HTTPException(409, f"no estaban bloqueados: {sorted(sobran)}")
+        await conn.execute("select set_config('app.catalogo_write', 'on', true)")
+        await conn.execute(
+            "update productos_canonicos set campos_bloqueados = "
+            "array(select c from unnest(campos_bloqueados) c where c <> all($2::text[])) "
+            "where id = $1",
+            producto_id,
+            body.campos,
+        )
+        await auditoria.registrar(
+            conn,
+            admin.id,
+            "producto.desbloquear",
+            "producto",
+            producto_id,
+            {"campos_bloqueados": antes},
+            {"campos_bloqueados": [c for c in antes if c not in body.campos]},
+            nota=body.motivo,
+        )
+        row = await conn.fetchrow(f"{_SELECT_PRODUCTO} where p.id = $1", producto_id)
+    return ProductoAdminOut(**dict(row))

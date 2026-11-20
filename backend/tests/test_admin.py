@@ -31,6 +31,7 @@ def _consulta(query: str, *args):
 @pytest.fixture(autouse=True, scope="module")
 def _limpiar():
     yield
+    sql("delete from precios where local_id in (select id from locales where nombre like 'adm-%')")
     sql("delete from precios where precio in (7777.77, 8888.88)")
     sql("delete from locales where nombre like 'adm-%'")
     sql("delete from usuarios where email like 'adm-%@test.com'")
@@ -245,18 +246,19 @@ def test_filtrar_validar_en_masa_y_auditar(client, admin):
 
 def test_corregir_local(client, admin):
     lid = _local()
+    nuevo = f"adm-corregido-{uuid.uuid4().hex[:6]}"
     r = client.patch(
         f"/v1/admin/locales/{lid}",
         headers=admin,
-        json={"nombre": "adm-corregido", "direccion": "Calle 9", "lat": -34.5, "lng": -58.4},
+        json={"nombre": nuevo, "direccion": "Calle 9", "lat": -34.5, "lng": -58.4},
     )
     assert r.status_code == 200
     d = r.json()
-    assert d["nombre"] == "adm-corregido" and d["lat"] == pytest.approx(-34.5)
+    assert d["nombre"] == nuevo and d["lat"] == pytest.approx(-34.5)
     assert d["lng"] == pytest.approx(-58.4)
     log = client.get(f"/v1/admin/auditoria?entidad=local&entidad_id={lid}", headers=admin).json()
     assert log["items"][0]["antes"]["nombre"].startswith("adm-")
-    assert log["items"][0]["despues"]["nombre"] == "adm-corregido"
+    assert log["items"][0]["despues"]["nombre"] == nuevo
     # validaciones de entrada
     assert (
         client.patch(f"/v1/admin/locales/{lid}", headers=admin, json={"lat": 1}).status_code == 422
@@ -476,3 +478,205 @@ def test_cors_permite_al_panel_y_no_a_otros(client):
         headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "POST"},
     )
     assert "access-control-allow-origin" not in mal.headers
+
+
+# ============================================================ fichas por entidad
+def _registrado(client) -> tuple[str, dict]:
+    """Un usuario registrado (JWT con email e is_anonymous=false). Devuelve (id, headers)."""
+    import time
+
+    import jwt
+
+    s = get_settings()
+    ahora = int(time.time())
+    token = jwt.encode(
+        {
+            "sub": str(uuid.uuid4()),
+            "aud": s.jwt_audience,
+            "iat": ahora,
+            "exp": ahora + 3600,
+            "email": f"adm-{uuid.uuid4().hex[:8]}@test.com",
+            "is_anonymous": False,
+        },
+        s.jwt_secret,
+        algorithm="HS256",
+    )
+    h = {"Authorization": f"Bearer {token}"}
+    return client.get("/v1/me", headers=h).json()["id"], h
+
+
+@pytest.mark.parametrize("ruta", ["locales", "precios", "usuarios", "productos"])
+def test_fichas_exigen_admin_y_dan_404(client, auth, admin, ruta):
+    falso = uuid.uuid4()
+    assert client.get(f"/v1/admin/{ruta}/{falso}", headers=auth).status_code == 403
+    assert client.get(f"/v1/admin/{ruta}/{falso}", headers=admin).status_code == 404
+
+
+def test_ficha_de_local_trae_el_contexto(client, admin, auth):
+    lid = _local(fuente="osm", nombre="adm-Super Vecino")
+    vecino = _local(nombre="adm-Super Vecinos")  # mismo punto, nombre parecido
+    lejano = _local(nombre="adm-Zzzz Otro")  # mismo punto, nombre distinto
+    _cargar(client, auth, lid)
+    sql(
+        "insert into local_fuentes (local_id, fuente, ref, datos) "
+        "values ($1::uuid, 'osm', $2, '{\"brand\": \"X\"}'::jsonb)",
+        lid,
+        f"node/{uuid.uuid4().hex}",
+    )
+    client.patch(f"/v1/admin/locales/{lid}", headers=admin, json={"direccion": "Calle 5"})
+
+    f = client.get(f"/v1/admin/locales/{lid}", headers=admin).json()
+    assert f["fuente"] == "osm" and f["verificado"] is False and f["precios"] == 1
+    assert f["fuentes"][0]["datos"] == {"brand": "X"}
+    assert len(f["precios_recientes"]) == 1 and f["precios_recientes"][0]["ean"] == EAN
+    ids = [d["id"] for d in f["duplicados"]]
+    assert vecino in ids and lejano not in ids  # la similitud filtra
+    assert f["duplicados"][0]["distancia_m"] < 1
+    assert f["historial"][0]["accion"] == "local.corregir"
+
+
+def test_corregir_un_local_hacia_un_duplicado_da_409_salvo_forzar(client, admin):
+    _local(nombre="adm-Kiosco Central")
+    otro = _local(nombre="adm-Almacen Sur")
+    r = client.patch(
+        f"/v1/admin/locales/{otro}", headers=admin, json={"nombre": "adm-Kiosco Central"}
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["codigo"] == "local_duplicado"
+    ok = client.patch(
+        f"/v1/admin/locales/{otro}",
+        headers=admin,
+        json={"nombre": "adm-Kiosco Central", "forzar": True},
+    )
+    assert ok.status_code == 200
+    # el flag no es una columna ni queda en el rastro
+    log = client.get(f"/v1/admin/auditoria?entidad=local&entidad_id={otro}", headers=admin).json()
+    assert "forzar" not in (log["items"][0]["despues"] or {})
+
+
+def test_ficha_de_precio_compara_con_el_resto_del_local(client, admin, auth):
+    lid = _local()
+    for monto in ("100", "100"):
+        _cargar(client, auth, lid, monto)
+    pid = _cargar(client, auth, lid, "150")
+    f = client.get(f"/v1/admin/precios/{pid}", headers=admin).json()
+    assert len(f["otros_en_el_local"]) == 2
+    assert f["promedio_otros_local"] == "100.00"
+    assert f["diferencia_pct"] == 50.0
+    assert f["local_verificado"] is False and f["user_karma"] >= 3
+    r = client.patch(
+        f"/v1/admin/precios/{pid}", headers=admin, json={"precio": "101", "motivo": "tipeo"}
+    )
+    assert r.status_code == 200
+    h = client.get(f"/v1/admin/precios/{pid}", headers=admin).json()["historial"]
+    assert h[0]["nota"] == "tipeo"
+
+
+def test_borrar_precio_puede_revertir_el_karma_del_autor(client, admin, auth):
+    lid = _local()
+    uid = _mi_id(client, auth)
+    pid = _cargar(client, auth, lid)
+    antes = client.get("/v1/me", headers=auth).json()["karma"]
+    r = client.delete(f"/v1/admin/precios/{pid}?revertir_karma=true&motivo=spam", headers=admin)
+    assert r.status_code == 204
+    assert client.get("/v1/me", headers=auth).json()["karma"] == antes - 1
+    log = client.get(f"/v1/admin/auditoria?entidad=precio&entidad_id={pid}", headers=admin).json()
+    assert "spam" in log["items"][0]["nota"] and "karma revertido" in log["items"][0]["nota"]
+    # sin la opción, el karma queda
+    pid2 = _cargar(client, auth, lid)
+    k = client.get("/v1/me", headers=auth).json()["karma"]
+    client.delete(f"/v1/admin/precios/{pid2}", headers=admin)
+    assert client.get("/v1/me", headers=auth).json()["karma"] == k
+    assert uid
+
+
+def test_ficha_de_usuario_y_cambio_de_rol(client, admin):
+    uid, _ = _registrado(client)
+    f = client.get(f"/v1/admin/usuarios/{uid}", headers=admin).json()
+    assert f["es_anonimo"] is False and f["rol"] == "usuario" and f["cargas_recientes"] == []
+
+    r = client.post(
+        f"/v1/admin/usuarios/{uid}/rol", headers=admin, json={"rol": "admin", "motivo": "socio"}
+    )
+    assert r.status_code == 200 and r.json()["rol"] == "admin"
+    assert (
+        client.post(
+            f"/v1/admin/usuarios/{uid}/rol", headers=admin, json={"rol": "admin"}
+        ).status_code
+        == 409
+    )  # ya lo es
+    r = client.post(f"/v1/admin/usuarios/{uid}/rol", headers=admin, json={"rol": "usuario"})
+    assert r.json()["rol"] == "usuario"
+    h = client.get(f"/v1/admin/usuarios/{uid}", headers=admin).json()["historial"]
+    assert [x["accion"] for x in h] == ["usuario.rol", "usuario.rol"]
+
+
+def test_reglas_del_cambio_de_rol(client, admin, auth):
+    yo = _mi_id(client, admin)
+    anon = _mi_id(client, auth)
+    assert (
+        client.post(
+            f"/v1/admin/usuarios/{yo}/rol", headers=admin, json={"rol": "usuario"}
+        ).status_code
+        == 409
+    )  # no el propio
+    assert (
+        client.post(
+            f"/v1/admin/usuarios/{anon}/rol", headers=admin, json={"rol": "admin"}
+        ).status_code
+        == 422
+    )  # un anónimo no puede ser admin
+    assert (
+        client.post(
+            f"/v1/admin/usuarios/{anon}/rol", headers=auth, json={"rol": "admin"}
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            f"/v1/admin/usuarios/{anon}/rol", headers=admin, json={"rol": "dios"}
+        ).status_code
+        == 422
+    )
+
+
+def test_ajustar_karma_exige_motivo_y_queda_auditado(client, admin, auth):
+    uid = _mi_id(client, auth)
+    k0 = client.get("/v1/me", headers=auth).json()["karma"]
+    post = lambda body: client.post(  # noqa: E731
+        f"/v1/admin/usuarios/{uid}/karma", headers=admin, json=body
+    )
+    assert post({"delta": 5}).status_code == 422
+    assert post({"delta": 0, "motivo": "nada"}).status_code == 422
+    r = post({"delta": 5, "motivo": "premio por aporte"})
+    assert r.status_code == 200 and r.json()["karma"] == k0 + 5
+    h = client.get(f"/v1/admin/usuarios/{uid}", headers=admin).json()["historial"][0]
+    assert h["antes"] == {"karma": k0} and h["nota"] == "premio por aporte"
+
+
+def test_ficha_de_producto_fuentes_conflictos_y_desbloqueo(client, admin):
+    pid = str(_producto())
+    sql(
+        "insert into producto_fuentes (ean, fuente, datos) "
+        "values ('7790000000017', 'off', '{\"nombre\": \"Adm Prod\"}'::jsonb) "
+        "on conflict do nothing"
+    )
+    sql(
+        "insert into conflictos_catalogo (ean, campo, valor_a, fuente_a, valor_b, fuente_b) "
+        "values ('7790000000017', 'marca', 'Marca A', 'off', 'Marca B', 'sepa')"
+    )
+    f = client.get(f"/v1/admin/productos/{pid}", headers=admin).json()
+    assert f["fuentes"][0]["datos"] == {"nombre": "Adm Prod"}
+    assert f["conflictos"][0]["campo"] == "marca" and f["conflictos_pendientes"] == 1
+    assert f["precios"] == 0
+
+    client.patch(f"/v1/admin/productos/{pid}", headers=admin, json={"nombre": "Adm Fijo"})
+    desb = lambda campos: client.post(  # noqa: E731
+        f"/v1/admin/productos/{pid}/desbloquear", headers=admin, json={"campos": campos}
+    )
+    assert desb(["marca"]).status_code == 409  # no estaba bloqueado
+    assert desb(["peso"]).status_code == 422
+    r = desb(["nombre"])
+    assert r.status_code == 200 and r.json()["campos_bloqueados"] == []
+    # ya sin bloqueo, el ETL puede volver a tocarlo
+    sql("update productos_canonicos set nombre = 'Pisado' where ean = '7790000000017'")

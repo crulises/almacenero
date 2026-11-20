@@ -1,15 +1,18 @@
+import json
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.api.v1.admin.auditoria import AuditoriaOut, historial
 from app.api.v1.admin.consulta import Consulta, escapar_like
 from app.api.v1.admin.paginas import Pagina
 from app.auth import Usuario
 from app.db import get_pool
-from app.services import auditoria
+from app.services import auditoria, config
 from app.services.permisos import exigir
 
 router = APIRouter(tags=["admin"])
@@ -31,12 +34,50 @@ class LocalAdminOut(BaseModel):
     created_at: datetime
 
 
+class FuenteLocalOut(BaseModel):
+    fuente: str
+    ref: str
+    datos: dict
+    cargado_en: datetime
+
+
+class DuplicadoOut(BaseModel):
+    id: UUID
+    nombre: str
+    direccion: str | None
+    verificado: bool
+    fuente: str
+    precios: int
+    distancia_m: float
+    similitud: float
+
+
+class PrecioRecienteOut(BaseModel):
+    id: UUID
+    precio: Decimal
+    fecha: datetime
+    ean: str | None
+    producto_nombre: str | None
+    user_alias: str
+
+
+class LocalDetalle(LocalAdminOut):
+    """La ficha: el local con todo su contexto."""
+
+    fuentes: list[FuenteLocalOut]
+    duplicados: list[DuplicadoOut]
+    precios_recientes: list[PrecioRecienteOut]
+    historial: list[AuditoriaOut]
+
+
 class LocalPatch(BaseModel):
     nombre: str | None = Field(default=None, min_length=1, max_length=100)
     direccion: str | None = Field(default=None, max_length=200)
     lat: float | None = Field(default=None, ge=-90, le=90)
     lng: float | None = Field(default=None, ge=-180, le=180)
     verificado: bool | None = None
+    # Confirma que NO es un duplicado cuando el backend sospecha que sí (409).
+    forzar: bool = False
 
     @field_validator("nombre", "direccion")
     @classmethod
@@ -124,6 +165,78 @@ async def listar_locales(
     return Pagina(total=total, items=[LocalAdminOut(**dict(r)) for r in rows])
 
 
+async def _buscar_duplicados(
+    conn: asyncpg.Pool | asyncpg.Connection,
+    local_id: UUID,
+    nombre: str,
+    lat: float,
+    lng: float,
+    radio_m: float,
+    similitud_min: float,
+    limite: int = 10,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        select l.id, l.nombre, l.direccion, l.verificado, l.fuente,
+               (select count(*) from precios p where p.local_id = l.id) as precios,
+               st_distance(l.ubicacion, pt.p) as distancia_m,
+               similarity(lower(l.nombre), lower($2)) as similitud
+        from locales l, lateral (select st_setsrid(st_makepoint($4, $3), 4326)::geography as p) pt
+        where l.id <> $1 and st_dwithin(l.ubicacion, pt.p, $5)
+          and similarity(lower(l.nombre), lower($2)) >= $6
+        order by similitud desc, distancia_m
+        limit $7
+        """,
+        local_id,
+        nombre,
+        lat,
+        lng,
+        radio_m,
+        similitud_min,
+        limite,
+    )
+
+
+@router.get("/locales/{local_id}", response_model=LocalDetalle)
+async def ficha_local(
+    local_id: UUID,
+    _: Usuario = Depends(exigir("local.verificar")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> LocalDetalle:
+    """Todo lo que hace falta para decidir sobre un local: datos, fuentes del ETL, posibles
+    duplicados (cerca y con nombre parecido), precios recientes y cambios anteriores."""
+    row = await pool.fetchrow(f"{_SELECT} where l.id = $1", local_id)
+    if row is None:
+        raise HTTPException(404, "local no encontrado")
+    fuentes = await pool.fetch(
+        "select fuente, ref, datos::text as datos, cargado_en from local_fuentes "
+        "where local_id = $1 order by fuente, ref",
+        local_id,
+    )
+    # Para sugerir duplicados se mira el doble del radio con el que el alta los bloquea,
+    # y se acepta una similitud más baja (es una sugerencia, no un bloqueo).
+    radio = float(await config.leer(pool, "local_duplicado_metros")) * 2
+    dups = await _buscar_duplicados(
+        pool, local_id, row["nombre"], row["lat"], row["lng"], radio, 0.3
+    )
+    recientes = await pool.fetch(
+        """
+        select p.id, p.precio, p.fecha, pc.ean, pc.nombre as producto_nombre, u.alias as user_alias
+        from precios p left join productos_canonicos pc on pc.id = p.producto_canonico_id
+        join usuarios u on u.id = p.user_id
+        where p.local_id = $1 order by p.fecha desc limit 15
+        """,
+        local_id,
+    )
+    return LocalDetalle(
+        **dict(row),
+        fuentes=[FuenteLocalOut(**{**dict(f), "datos": json.loads(f["datos"])}) for f in fuentes],
+        duplicados=[DuplicadoOut(**dict(d)) for d in dups],
+        precios_recientes=[PrecioRecienteOut(**dict(r)) for r in recientes],
+        historial=await historial(pool, "local", local_id),
+    )
+
+
 @router.patch("/locales/{local_id}", response_model=LocalAdminOut)
 async def corregir_local(
     local_id: UUID,
@@ -136,6 +249,29 @@ async def corregir_local(
         antes = await conn.fetchrow(f"{_INSTANTANEA} where l.id = $1 for update of l", local_id)
         if antes is None:
             raise HTTPException(404, "local no encontrado")
+        if not body.forzar and ("nombre" in body.model_fields_set or body.lat is not None):
+            # Misma regla que el alta (POST /v1/locales): nombre casi idéntico a muy poca
+            # distancia es casi seguro un duplicado. El admin puede confirmar con `forzar`.
+            dup = await _buscar_duplicados(
+                conn,
+                local_id,
+                body.nombre if "nombre" in body.model_fields_set else antes["nombre"],
+                body.lat if body.lat is not None else antes["lat"],
+                body.lng if body.lng is not None else antes["lng"],
+                float(await config.leer(conn, "local_duplicado_metros")),
+                float(await config.leer(conn, "local_duplicado_similitud")),
+                limite=1,
+            )
+            if dup:
+                raise HTTPException(
+                    409,
+                    detail={
+                        "codigo": "local_duplicado",
+                        "mensaje": f"parece duplicado de «{dup[0]['nombre']}» (a "
+                        f"{round(dup[0]['distancia_m'])} m). Fusionalos o confirmá que es otro.",
+                        "local_id": str(dup[0]["id"]),
+                    },
+                )
         sets, args = [], [local_id]
         for campo in ("nombre", "direccion", "verificado"):
             if campo in body.model_fields_set:

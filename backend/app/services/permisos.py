@@ -30,6 +30,8 @@ CAPACIDADES: dict[str, frozenset[str]] = {
             "admin.acceder",
             "usuario.ver",
             "usuario.editar",
+            "usuario.cambiar_rol",
+            "usuario.ajustar_karma",
             "local.editar",
             "local.fusionar",
             "local.borrar",

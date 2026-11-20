@@ -52,10 +52,30 @@ async def listar_auditoria(
         """,
         *c.args,
     )
-    items = []
-    for r in rows:
-        d = dict(r)
-        d["antes"] = json.loads(d["antes"]) if d["antes"] else None
-        d["despues"] = json.loads(d["despues"]) if d["despues"] else None
-        items.append(AuditoriaOut(**d))
-    return Pagina(total=total, items=items)
+    return Pagina(total=total, items=[_a_out(r) for r in rows])
+
+
+def _a_out(r: asyncpg.Record) -> AuditoriaOut:
+    d = dict(r)
+    d["antes"] = json.loads(d["antes"]) if d["antes"] else None
+    d["despues"] = json.loads(d["despues"]) if d["despues"] else None
+    return AuditoriaOut(**d)
+
+
+async def historial(
+    conn: asyncpg.Pool | asyncpg.Connection, entidad: str, entidad_id, limite: int = 15
+) -> list[AuditoriaOut]:
+    """Últimos cambios de una entidad (para la ficha)."""
+    rows = await conn.fetch(
+        """
+        select a.id, a.created_at, u.alias as admin_alias, a.accion, a.entidad, a.entidad_id,
+               a.antes::text as antes, a.despues::text as despues, a.nota
+        from auditoria_admin a left join usuarios u on u.id = a.usuario_id
+        where a.entidad = $1 and a.entidad_id = $2
+        order by a.created_at desc, a.id limit $3
+        """,
+        entidad,
+        str(entidad_id),
+        limite,
+    )
+    return [_a_out(r) for r in rows]

@@ -576,6 +576,44 @@ escribe en la misma transacción. Al borrar un precio, el rastro guarda la fila 
 panel toma la URL del backend de `config.js` (mismo host, puerto 8000). Para abrirlo desde
 otra máquina de la red, agregar ese origen en `.env`. Con HTTPS, poner el origen real.
 
+**Fichas por entidad (segunda iteración, tras probarlo).** La tabla cruda se queda (sirve
+para cambios y acciones masivas); cada fila tiene un botón **Ficha** que abre un panel
+lateral con *todo* lo que se puede hacer con esa entidad, pasando por la lógica de negocio
+del backend en vez de tocar celdas sueltas. Las fichas se enlazan entre sí (de un precio a
+su local o a su autor, de un local a sus duplicados). Entidades y qué junta cada una:
+
+| Ficha | Contexto que muestra (`GET /admin/<recurso>/{id}`) | Acciones de negocio |
+|-------|------|------|
+| Local | datos, estado, fuente, quién lo creó, vínculos crudos del ETL, **posibles duplicados** (hasta el doble del radio del alta y similitud ≥ 0,3), precios recientes, cambios anteriores | guardar datos (nombre/dirección/ubicación) con **chequeo de duplicado**; validar / quitar verificación; **fusionar este en aquel** o **absorber aquel**; borrar (solo sin precios) |
+| Precio | producto, local (y si está verificado), autor con su karma, validaciones, **comparación con los otros precios del mismo producto en el local** (promedio y % de diferencia, rojo desde ±30 %) | corregir monto con motivo; borrar con motivo y opción de **revertir el karma** que ganó el autor |
+| Usuario | identidad (anónimo/registrado, email, asociación al id anónimo), alta, karma, cargas, cargas recientes, locales que creó, cambios anteriores | alias; **cambiar rol**; **ajustar karma** (motivo obligatorio) |
+| Producto | datos, origen, uso (precios y locales), campos bloqueados, conflictos, **qué dijo cada fuente** (crudo), cambios anteriores | corregir (bloquea el campo contra el ETL); **desbloquear** un campo; resolver conflictos A/B |
+
+Reglas de negocio nuevas (todas en el backend, auditadas, con tests contra Postgres):
+- **Corregir un local no puede crear un duplicado casi seguro.** Mismo criterio que el alta
+  (`local_duplicado_metros` y `local_duplicado_similitud`): si el nombre/ubicación nuevos
+  coinciden con otro local, responde 409 `local_duplicado` y la ficha pregunta; con
+  `forzar: true` el admin confirma que es otro. `forzar` no es una columna ni va a la
+  auditoría.
+- **Cambiar rol desde la API, solo del panel** (`POST /v1/admin/usuarios/{id}/rol`,
+  capacidad `usuario.cambiar_rol`). Esto **ajusta §1**: «el rol no se cambia por la API»
+  sigue valiendo para la API pública y la app; el panel es la excepción, porque pasa por
+  la capacidad, queda auditado y el trigger sigue exigiendo habilitar la escritura dentro
+  de la transacción. Salvaguardas: **no se puede cambiar el rol propio** (nadie se escala
+  ni se deja afuera) y **un admin tiene que estar registrado** (un anónimo no puede
+  iniciar sesión en el panel). `make admin ALIAS=...` sigue existiendo para el arranque.
+- **Ajustar karma a mano** (`usuario.ajustar_karma`): motivo obligatorio, entre -1000 y
+  1000, sin cero. Premio o sanción; el trigger de karma se habilita solo en la transacción.
+- **Borrar precio con `revertir_karma`**: resta `karma_por_carga` al autor (nunca por debajo
+  de 0) y lo anota. Sin la opción el karma queda (como antes). El `motivo` va a la nota
+  de la auditoría en correcciones y borrados (también en masa).
+- **Desbloquear campos** del catálogo (`catalogo.editar`): solo los que estaban bloqueados;
+  devuelve el control al ETL.
+
+Qué quedó para la tabla (masivo, sin ficha): validar y borrar locales, fusionar varios en
+uno, borrar precios, edición rápida de celdas. Se priorizaron local, precio, usuario y
+producto; config y conflictos ya eran un formulario por fila y siguen igual.
+
 **Pendiente del corte** (no entró): patrocinios (§5: falta fijar la regla en el Doc 1
 antes de implementarlos), atribuciones y alta de productos nuevos. Sin HTTPS ni
 protección extra el panel **no se publica junto con la app** (ver Seguridad).
