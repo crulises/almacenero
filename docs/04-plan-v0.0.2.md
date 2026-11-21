@@ -29,7 +29,7 @@ offline, iOS, OAuth, pesables/genéricos.
 | 10 | Preparar release: firma del APK y guía de deploy | — | chico |
 | 12 | **Moderación: escalera por karma negativo y baja de cuentas** (§9) | 9, 11 | medio |
 | 11 | **Panel web de admin** (front chico con nginx + endpoints `/v1/admin`), en paralelo, sin tocar la app | 5 | grande |
-| 13-17 | **Calidad del catálogo, CSV curado, ETL desde el panel y sugerencias** (§10, borrador) | 7, 11 | ver §10 |
+| 13-18 | **Calidad del catálogo, moderador y sugerencias, CSV curado, ETL desde el panel** (§10, acordado) | 7, 11 | ver §10 |
 
 El ETL (7) toca solo `etl/` y el Makefile, así que puede correr en paralelo con
 5 y 6. Los demás van de a uno.
@@ -847,9 +847,9 @@ app). Decisiones:
 4. Contacto fijo en la app si se abre al público: **no por ahora**; lo resuelve el
    formulario del punto 1.
 
-## 10. Calidad del catálogo, CSV curado, ETL desde el panel y sugerencias (cortes 13-17, borrador)
+## 10. Calidad del catálogo, CSV curado, ETL desde el panel y sugerencias (cortes 13-18)
 
-**Estado: propuesta de la fase 1, pendiente de confirmación.** Criterios de normalización,
+**Estado: diseño de la fase 1; el dueño ya decidió lo de abajo y falta confirmar el orden de cortes.** Criterios de normalización,
 mediciones y los casos reales: `docs/07-normalizacion-catalogo.md`. Mediciones de costos
 (2026-11-21, de las páginas de precios; **verificar de nuevo al contratar**): Fly.io
 `shared-cpu-1x` 256 MB ≈ US$ 2,19/mes encendida todo el mes, facturada por segundo
@@ -970,25 +970,40 @@ mayúsculas mezcladas; solo 0,2 % tiene un nombre inservible (el único descarte
 - **Panel:** solapa **Sugerencias** dentro de Catálogo, con globito de pendientes (igual que
   Conflictos), diff «actual → sugerido», y aprobar/rechazar en masa. La ficha de producto
   suma «sugerencias de este producto».
-- **App:** una acción «Sugerir corrección» en la ficha, **visible solo para moderadores**
-  (se decide con vos cuando llegue el corte).
+- **App:** una acción «Sugerir corrección / Dar de alta» en la ficha y en el «no encontrado»,
+  **visible solo para moderadores** (corte 16; el diseño de pantalla se acuerda antes).
+- **Alta de producto nuevo:** `producto_id` null y `cambios` con el EAN completo; al aprobarla
+  se inserta con `origen = 'manual'` y campos bloqueados.
+
+### Decisiones del dueño (2026-11-21)
+
+- **Descarte:** sí se descartan los muy incompletos (estado `descartado`: se guardan pero no
+  se muestran; criterio y números en Doc 7 §5), **y** hace falta una **interfaz simple para que
+  admins y moderadores den de alta o completen productos** (Doc 7 §5.1). Más un **tablero de
+  control** en el panel con los dudosos a revisar.
+- **Ejecución de ETL:** cola en Postgres + worker `local` para los pesados + subproceso `web`
+  para los livianos (§A).
+- **Moderador y sugerencias: antes del release** (solo hay un probador hoy: el dueño; lo quiere
+  listo). La acción en la app se muestra solo a moderadores.
+- **Ficha:** nombre limpio arriba, detalles abajo. `app/` se toca solo para eso y para la
+  acción de sugerir/alta.
 
 ### Cortes propuestos (cada uno su rama y su PR a `main`; yo no mergeo)
 
 | # | Corte | Qué trae | Tamaño |
 |---|-------|----------|--------|
 | 13 | **Normalizador + medidor** | `etl/comun/normalizar.py`, diccionarios (arranque a partir de la medición), tests con los casos reales, `make catalogo-calidad` (la tabla de §1 del Doc 7). Sin migración ni cambios en datos. | medio |
-| 14 | **Integración + calidad en la base** | Migración (columnas del Doc 7 §3), el normalizador dentro de `fusionar_lote`, `make catalogo-renormalizar`, `ProductoOut` con los campos nuevos (compatibles), panel: columna/filtro/orden por calidad. Re-correr el ETL local lo deja listo. | grande |
-| 15 | **CSV curado por CLI** | `catalogo_lotes`, fuente `curado`, formato `catalogo_curado_v1`, `make catalogo-curado` (genera) y `make catalogo-importar` (valida en seco + importa), hashes. | medio |
-| 16 | **ETL desde el panel** | `etl_ejecuciones`, registro de definiciones, worker `web` y `local`, API `/v1/admin/etl`, sección ETL con formularios generados, cancelación, auditoría, subida del CSV por el panel. | grande |
-| 17 | **Rol moderador + sugerencias** | migración, capacidades, API y solapa del panel; la acción en la app **solo si lo acordamos**. | medio |
-| app | **Ficha normalizada** (mínimo en `app/`) | mostrar `presentacion`/`pack` y el estado. Va **después del 14**. | chico |
+| 14 | **Integración + calidad en la base + tablero** | Migración (columnas del Doc 7 §3 y estado `descartado`), el normalizador dentro de `fusionar_lote`, `make catalogo-renormalizar`, la búsqueda por EAN oculta los `descartado`, `ProductoOut` con campos nuevos (compatibles), panel: columna/filtro/orden por calidad y **tablero de control** (conteo por estado y motivo). | grande |
+| 15 | **Rol moderador + sugerencias + alta simple** | migración (rol, `sugerencias_catalogo`), capacidades, API; panel: solapa Sugerencias y formulario simple de alta/corrección por EAN (Doc 7 §5.1) con aplicación directa del admin. | grande |
+| 16 | **App: ficha normalizada y sugerir** (`app/`) | nombre limpio + marca · tamaño · presentación; acción «Sugerir / dar de alta» solo para moderadores. Se acuerda el diseño antes de tocar. | medio |
+| 17 | **CSV curado por CLI** | `catalogo_lotes`, fuente `curado`, formato `catalogo_curado_v1`, `make catalogo-curado` (genera) y `make catalogo-importar` (valida en seco + importa), hashes. | medio |
+| 18 | **ETL desde el panel** | `etl_ejecuciones`, registro de definiciones, worker `web` y `local`, API `/v1/admin/etl`, sección ETL con formularios generados, cancelación, auditoría, subida del CSV por el panel. | grande |
 
-**Orden recomendado y por qué:** 13 → 14 → app (ficha) → 15 → 16 → 17. Primero la calidad,
-porque es lo que se ve en el primer release y no depende de nada (un normalizador puro es
-fácil de revisar). El CSV curado (15) se puede usar por CLI contra la base remota sin esperar
-al panel (16), que es la parte más grande y la menos urgente: mientras tanto el ejecutor
-`local` es tu terminal. Sugerencias (17) cuando haya moderadores de verdad.
+**Orden y por qué:** 13 → 14 → 15 → 16 → (release) → 17 → 18. Hasta el 16 inclusive el release
+sale con datos normalizados, un tablero para revisar lo dudoso, una forma de completar lo
+descartado y el moderador listo. Para cargar la base de producción **no hace falta** el panel de
+ETL: se corre el ETL desde tu Mac con `DATABASE_URL` remoto (es lo que hace el worker local de
+todos modos), así que 17 y 18 pueden ir después del primer reparto sin bloquearlo.
 
 ## Decisiones
 

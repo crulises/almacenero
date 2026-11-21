@@ -62,8 +62,9 @@ Hallazgos que cambian el diseño:
 - **Lo que decide un humano gana.** Los campos bloqueados (trigger existente) no se
   tocan; el normalizador corre dentro de la misma fusión (`etl/comun/catalogo.py`) y
   respeta `campos_bloqueados`.
-- **Calidad = estado + puntaje, no todo-o-nada.** Nada se descarta salvo basura
-  (§5). Lo dudoso entra, con estado, y el panel permite revisarlo.
+- **Calidad = estado + puntaje, no todo-o-nada.** Lo muy incompleto o inservible
+  se **oculta** (estado `descartado`, §5) y se puede completar; lo dudoso se muestra, con
+  estado, y el panel permite revisarlo.
 - **Se mide antes y después.** `make catalogo-calidad` imprime esta misma tabla sobre la
   base; cada corte tiene que mover los números.
 
@@ -88,7 +89,7 @@ Columnas nuevas en `productos_canonicos` (migración en el corte de integración
 | `pack_cantidad` int null | unidades del pack (`24` en «24x275ml»); el tamaño sigue siendo el total (6,6 l) |
 | `presentacion` text null | envase en minúscula del diccionario: `botella`, `caja`, `doypack`, `lata`… |
 | `calidad` smallint | 0–100 |
-| `estado_calidad` text | `completo`, `parcial`, `dudoso` (check) |
+| `estado_calidad` text | `completo`, `parcial`, `dudoso`, `descartado` (check) |
 | `calidad_motivos` text[] | por qué: `sin_marca`, `sin_tamano`, `nombre_corto`, `no_latino`, `tamano_en_conflicto`… |
 | `normalizador_version` int | con qué reglas se calculó |
 
@@ -142,16 +143,37 @@ nombre y queda `tamano_en_conflicto`.
 
 Idiomas y escrituras: ver §7.
 
-## 5. Qué se carga y qué no
+## 5. Qué se muestra y qué no (decidido con el dueño)
 
-| Situación | Decisión |
+Los registros **muy incompletos o inservibles no se muestran**: reciben `estado_calidad =
+'descartado'`. Se guardan igual en `productos_canonicos` (con su crudo en `producto_fuentes`),
+para no perderlos y para que el panel los liste; pero la búsqueda por EAN de la app los trata
+como **«no encontrado»**. Cuando una persona autorizada los completa, se recalcula el estado y
+pasan a verse (§5.1).
+
+| Situación | Estado |
 |---|---|
-| Nombre sin ninguna letra (solo dígitos y símbolos) o con fecha/hora de vencimiento | **No se carga** al catálogo (queda en `producto_fuentes`, que es crudo). Ver caso `8052467549754` y `7898972607067`. |
-| Nombre de < 2 caracteres útiles | No se carga. |
-| Todo lo demás | Se carga, con `estado_calidad`. |
+| Nombre sin ninguna letra, con fecha/hora de vencimiento, o de < 2 caracteres útiles | `descartado` (`nombre_inservible`) — 266 productos (0,2 %) |
+| Nombre usable **sin marca real, sin tamaño y de ≤ 2 palabras** (ej. `Aceite`) | `descartado` (`muy_incompleto`) — ≈ 5 100 productos (3,8 %, medido) |
+| Todo lo demás | `completo` / `parcial` / `dudoso` (§6) |
 
-Esto afecta a 266 productos (0,2 %). Quien escanee uno de esos EAN cae en el flujo normal
-de «producto no encontrado» (alta mínima), que es mejor que mostrar `0238321840`.
+Total descartado hoy: ≈ 5 400 (4,0 %). Es **reversible**: el umbral es una constante
+versionada con el normalizador; cambiarlo y correr `make catalogo-renormalizar` los
+reclasifica sin tocar las fuentes.
+
+### 5.1 Completar lo que falta: alta e edición simple
+
+Lo descartado y lo dudoso se arreglan con una **interfaz simple para admins y moderadores**
+(dos pasos: «buscar por EAN» → formulario corto):
+
+- Campos: nombre, marca (con autocompletado del lookup), tamaño + unidad, presentación.
+  Nada más. Se ve al lado lo que dijo cada fuente (crudo) para copiar.
+- Si el EAN **no existe** en ningún lado (producto nuevo), es un **alta**; si existe
+  (descartado/dudoso), es una **corrección**. En el panel (admin) se aplica directo y queda
+  bloqueado contra el ETL; en la app (moderador) va a la **cola de sugerencias** (Doc 4 §10-D)
+  y un admin la aprueba.
+- Una carga manual nunca se descarta: si pasa por acá, el estado se calcula normal y el
+  origen es `manual`.
 
 ## 6. Puntaje y estados
 
@@ -168,11 +190,12 @@ Puntaje 0–100 (todo configurable por constantes versionadas con el normalizado
 | Penalizaciones | `tamano_en_conflicto` −20, `abreviado` −10, `marca_en_nombre` −5 |
 
 `estado_calidad`: **completo** (≥ 75), **parcial** (40–74), **dudoso** (< 40 o con
-`tamano_en_conflicto`). Con los números de hoy: 36 % tendría marca + tamaño (el máximo
+`tamano_en_conflicto`) y **descartado** (§5; se decide antes del puntaje). Con los números de hoy: 36 % tendría marca + tamaño (el máximo
 actual); la extracción debería subir ese número a ~47 % solo por tamaño (+11 pp).
 
-El panel filtra y ordena por estado y puntaje: «dudosos primero», para que lo poco que
-vale la pena corregir a mano aparezca arriba. Lo corregido a mano queda bloqueado y su
+El panel filtra y ordena por estado y puntaje y tiene un **tablero de control** (conteo por
+estado y por motivo, con enlace al listado filtrado): «dudosos primero», para que lo poco
+que vale la pena corregir a mano aparezca arriba. Lo corregido a mano queda bloqueado y su
 puntaje se recalcula.
 
 ## 7. Idiomas y escrituras no latinas
@@ -195,13 +218,13 @@ menos datos: `parcial`, a la espera de una sugerencia (§4, cola de sugerencias 
 | Mayúsculas mezcladas con capitalizadas | 13 561 con un token en mayúsculas | regla 9. |
 | Marca repetida en el nombre | 31,9 % (tope) | regla 7, solo con marca confiable. |
 | Tamaño en el nombre y no en el campo | 15 166 | reglas 2 y 4: ~14 000 recuperables (medido). |
-| Solo `Aceite` (sin marca ni tamaño) | 111 nombres genéricos de este tipo | se carga, `dudoso` (`nombre_corto`, `sin_marca`, `sin_tamano`); aparece arriba en el panel. |
+| Solo `Aceite` (sin marca ni tamaño) | 111 nombres genéricos de este tipo | `descartado` (`muy_incompleto`, §5); se completa con la interfaz simple (§5.1). |
 | ¿Cambia el EAN si cambia el tamaño? | — | **Sí, según GS1**: cualquier cambio del contenido neto declarado exige un GTIN nuevo ([regla «declared net content»](https://gs1.org/1/gtinrules/en/rule/266/declared-net-content)); el 20 % es de dimensiones/peso bruto. En la práctica algunos fabricantes lo incumplen, así que el tamaño sigue siendo un dato por EAN que se **concilia** entre fuentes (conflicto de tamaño, ya implementado), no una verdad. |
 | `8801043004398` (coreano, completo) | cargado | **correcto** (§7), `parcial` por `no_latino`. |
 | `7801003785580` (coreano, solo nombre) | cargado | `parcial`, a completar por sugerencia. |
-| `7891121035001` (`0000018353 Gin Com Tonica Seager S 24x275ml`) | todo en el nombre | quita el código, `24x275ml` → pack 24, tamaño total 6,6 l; marca `Seager's` **solo si** está en el lookup (si no, `sin_marca`); nombre `Gin Con Tónica`… ⚠ `Com` es portugués («con»): la fuente es brasileña, el diccionario es solo español. Resultado probable `parcial`. |
-| `8052467549754` (nombre `0238321840`) | cargado | **no se carga** (§5). |
-| `7898972607067` (`06:39 VENC:27/12/24`) | cargado | **no se carga** (§5). |
+| `7891121035001` (`0000018353 Gin Com Tonica Seager S 24x275ml`) | todo en el nombre | quita el código, `24x275ml` → pack 24, tamaño total 6,6 l; marca `Seager's` **solo si** está en el lookup (si no, `sin_marca`); ⚠ `Com` es portugués («con»): la fuente es brasileña y el diccionario es solo español, así que el nombre queda `Gin Com Tonica Seager S`. Resultado probable `parcial`. |
+| `8052467549754` (nombre `0238321840`) | cargado | `descartado` (§5): no se ve en la app. |
+| `7898972607067` (`06:39 VENC:27/12/24`) | cargado | `descartado` (§5). |
 | `7790520995285` (Lysoform) | SEPA: `Desinfect Amb Origin`, `Lysof`, 380 ml; OFF: `Lysoform`, sin tamaño | marca → `Lysoform` (alias `lysof`); el nombre queda abreviado (`abreviado`, `dudoso`). **El 380 ml vs 257 g / 360 cm³ del envase no lo resuelve ningún software**: lo corrige una persona (admin, o moderador por sugerencia) y queda bloqueado. OFF no trae tamaño, así que ni siquiera hay conflicto automático. |
 
 ## 9. Diccionarios y lookup (archivos del repo, no código)
