@@ -132,7 +132,13 @@ nombre y queda `tamano_en_conflicto`.
    **inequívocas**): `p/` → `para`, `c/` → `con`, `s/` → `sin`, `x` suelto antes de un
    número es «por», `clas` → `clásico`, `s/sal` → `sin sal`. Las **ambiguas** (`desc` =
    descremado/descartable/descuento; `ch` = chocolate/chico) **no** se expanden sin
-   contexto: se dejan y reciben `abreviado` si el nombre tiene ≥ 2 tokens abreviados.
+   contexto. Hay un tercer grupo, las **contextuales** (`abreviaturas_contexto.csv`): se
+   expanden solo si el nombre trae palabras que las desambiguan (`ev` → extra virgen con
+   «aceite/oliva»; `me`/`su` → medio/suave solo junto a «café molido»; `gira/oliv` →
+   `Girasol/Oliva`; `cep dent` → cepillo dental). Sin contexto se dejan como están.
+   **Lo que no se pudo resolver** (un token de `ambiguas.txt` que sigue en el nombre)
+   recibe el motivo `abreviado` y el producto queda **dudoso**: no se inventa, lo revisa
+   una persona desde el tablero.
 9. **Capitalización:** si el nombre es todo MAYÚSCULAS o todo minúsculas → «Título» con
    partículas en minúscula (`de`, `la`, `con`, `para`, `y`, `en`, `del`, `sin`, `al`, `por`)
    y unidades/siglas fijas (`ml`, `kg`, `cc`, `uht`, `pet`, `tacc`, `sa`). Si es mixto, se
@@ -235,8 +241,14 @@ menos datos: queda `descartado` (`muy_incompleto`, §5) hasta que alguien lo com
   reproducible sin base; el archivo se versiona con git y entra en `normalizador_version`.
   Más adelante puede pasar a una tabla editable desde el panel (sin cambiar el normalizador:
   solo la fuente del diccionario).
-- `etl/comun/datos/abreviaturas.csv` — `patron,expansion,contexto`.
-- `etl/comun/datos/envases.csv` — `codigo,presentacion` (`BOT,botella`).
+- `etl/comun/datos/abreviaturas.csv` — `token,expansion`: solo las inequívocas.
+- `etl/comun/datos/abreviaturas_contexto.csv` — `token,expansion,contexto`: se expanden
+  solo con las palabras del contexto en el nombre (`a|b+c`: una de `a|b` Y una de `c`).
+- `etl/comun/datos/ambiguas.txt` — tokens que no se expanden; si quedan, el producto es
+  `dudoso` (`abreviado`).
+- `etl/comun/datos/envases.csv` — `codigo,presentacion,en_nombre` (`BOT,botella`).
+  `en_nombre=2` (`pet`): además se saca si es la última palabra aunque no haya tamaño
+  (`… Ext Virg PET`); `bid`/`bidon` → bidón.
 - **Herramienta de descubrimiento:** `make catalogo-abreviaturas` lista los tokens
   frecuentes que parecen truncados (prefijo de otra palabra más frecuente) para que el
   dueño apruebe o rechace; no aplica nada solo.
@@ -257,15 +269,22 @@ Corrido sobre los mismos 134 505 productos, sin escribir nada:
 | Sin tamaño | 82 130 (61,1 %) | **65 686 (48,8 %)**: −16 444 |
 | Marcas distintas | 19 022 | 16 593 |
 | Sin marca | 17 158 | 29 378 |
-| Estado | — | completo 72 109 (53,6 %) · parcial 55 663 (41,4 %) · dudoso 923 (0,7 %) · **descartado 5 810 (4,3 %)** |
+| Estado | — | completo 71 484 (53,1 %) · parcial 54 484 (40,5 %) · dudoso 2 727 (2,0 %) · **descartado 5 810 (4,3 %)** |
 
 - **«Sin marca» sube a propósito:** los placeholders (`S/d`, `sin Marca`, `Generico`: 16 627)
   dejan de pasar por marca. El número honesto de productos sin marca real es 29 378 (21,8 %).
 - **El normalizador ya corrigió 1 013 tamaños de SEPA que estaban mal** (coma corrida:
   `1.5 g` vs `1.5 kg` en el nombre; unidad errónea; `1 g` imposible), `tamano_campo_corregido`.
-- **923 dudosos** son discrepancias reales de tamaño entre el campo y el nombre (p. ej.
+- **923 dudosos por tamaño** son discrepancias reales de tamaño entre el campo y el nombre (p. ej.
   `Pomada … 60 Grm` con 60 ml en el campo): es la cola de revisión del panel.
 - Se descubrió que `parsear_tamano` no entendía `cm3` (el patrón de unidades no admitía un
   dígito): arreglado en `etl/comun/tamano.py` (afectaba también al campo de SEPA).
-- `abreviado` solo se marca con ≥ 2 tokens de la lista de ambiguas y baja el estado a
-  `parcial` como máximo.
+- **Revisión del dueño (abreviaturas y marcas):** se corrigieron 4 marcas
+  (`Carol Argentina`, `Molinos Río de la Plata`, `Pet's Class`, `Villa D'agri`) y el
+  diccionario ahora gana sobre «razón social = fabricante» (`CINCAM(CAROL) S.A.C.I.F.A.`
+  es la marca Carol Argentina, no un fabricante). Las abreviaturas de aceite/café/envases
+  que detectó se resuelven por contexto.
+- `abreviado` (un token ambiguo sin resolver) pasa a ser **dudoso** desde el primer token
+  (antes: ≥ 2 y `parcial`). Se sacó `pro` de las ambiguas (falso positivo: «Oral B Pro»).
+  Resultado: dudosos 2 727 (2,0 %): 923 de tamaño en conflicto + 1 818 abreviados
+  (se solapan en parte).

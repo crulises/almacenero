@@ -14,6 +14,5 @@ tint
 shamp
 acond
 antico
-pro
 est
 rem

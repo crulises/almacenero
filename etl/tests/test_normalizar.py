@@ -61,13 +61,13 @@ D = Decimal
         # Nombre solo números / fecha y hora de vencimiento: inservible.
         (Entrada("0238321840", "a|x"), "0238321840", None, None, DESCARTADO),
         (Entrada("06:39 VENC:27/12/24"), "06:39 VENC:27/12/24", None, None, DESCARTADO),
-        # Lysoform: marca truncada corregida; nombre abreviado queda `parcial`.
+        # Lysoform: marca truncada corregida; el nombre abreviado sin resolver queda `dudoso`.
         (
             Entrada("Desinfect Amb Origin", "LYSOF", (D(380), "ml")),
             "Desinfect Amb Origin",
             "Lysoform",
             (D(380), "ml"),
-            PARCIAL,
+            DUDOSO,
         ),
     ],
 )
@@ -198,3 +198,65 @@ def test_marca_no_vacia_el_nombre():
 
 def test_envase_suelto_solo_con_tamano():
     assert "Pvc" in normalizar(Entrada("Alfombra Pvc Premium", "Premium")).nombre
+
+
+@pytest.mark.parametrize(
+    "marca_cruda,esperada",
+    [
+        ("CINCAM(CAROL) S.A.C.I.F.A. e I", "Carol Argentina"),
+        ("Molinos Rio Dl.plata", "Molinos Río de la Plata"),
+        ("Pet' S Class", "Pet's Class"),
+        ("Villa D Agri", "Villa D'agri"),
+    ],
+)
+def test_marcas_corregidas_por_el_dueno(marca_cruda, esperada):
+    s = normalizar(Entrada("Producto Prueba 1 kg", marca_cruda))
+    assert s.marca == esperada
+    assert s.fabricante is None  # el diccionario manda sobre «razón social = fabricante»
+
+
+@pytest.mark.parametrize(
+    "nombre,marca,esperado,presentacion",
+    [
+        ("5hi Caf Mol me", "5hi", "5Hi Café Molido Medio", None),
+        ("5hi Caf Mol su", "5hi", "5Hi Café Molido Suave", None),
+        ("ACEITE COCINERO OLIVA EXT.VIRG.PET", None, "Aceite Oliva Extra Virgen", "pet"),
+        (
+            "Aceite de Oliva NUCETE EV SUAVE X500ml BOT-500-ml.",
+            None,
+            "Aceite de Oliva Extra Virgen Suave",
+            "botella",
+        ),
+        ("Aceite FRITOLIM Manteca x126cc AER-126-ml.", None, "Aceite Fritolim Manteca", "aerosol"),
+        ("Aceite Gira/oliv Cocinero", None, "Aceite Girasol/Oliva", None),
+        ("Aceite De Oliva Virgen Nucete Bid 2 Ltr", None, "Aceite De Oliva Virgen", "bidón"),
+    ],
+)
+def test_abreviaturas_con_contexto(nombre, marca, esperado, presentacion):
+    s = normalizar(Entrada(nombre, marca))
+    assert s.nombre == esperado
+    assert s.presentacion == presentacion
+    assert s.estado != DUDOSO
+
+
+def test_abreviatura_contextual_sin_contexto_se_deja():
+    # «me» y «su» son palabras comunes: sin café molido al lado, no se tocan.
+    assert normalizar(Entrada("Remera me su")).nombre == "Remera me su"
+    assert normalizar(Entrada("Ev Pantalla")).nombre == "Ev Pantalla"
+
+
+def test_bot_con_cc_y_tamano():
+    s = normalizar(Entrada("Aceite De Dende Cepera Palma Bot 200 cc"))
+    assert s.tamano == (D(200), "ml")
+    assert s.presentacion == "botella"
+
+
+def test_abreviatura_sin_resolver_es_dudosa():
+    s = normalizar(Entrada("Limpiador Desinfect Pisos 900 ml", "Ayudin"))
+    assert "abreviado" in s.motivos
+    assert s.estado == DUDOSO
+
+
+def test_cepillo_dental_con_contexto():
+    s = normalizar(Entrada("Colgate Cep Dent Med", "Colgate"))
+    assert s.nombre.startswith("Cepillo Dental")

@@ -85,11 +85,25 @@ def _abreviaturas() -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
-def _envases() -> tuple[dict[str, str], dict[str, str]]:
-    """(codigo -> presentacion, palabra-en-nombre -> presentacion)."""
-    todos = {c: p for c, p, _ in _leer_csv("envases.csv")}
-    en_nombre = {c: p for c, p, e in _leer_csv("envases.csv") if e.strip() == "1"}
-    return todos, en_nombre
+def _envases() -> tuple[dict[str, str], dict[str, str], frozenset[str]]:
+    """(codigo -> presentacion, palabra-en-nombre -> presentacion, palabras que se sacan
+    del final del nombre aunque no haya tamaño)."""
+    filas = _leer_csv("envases.csv")
+    todos = {c: p for c, p, _ in filas}
+    en_nombre = {c: p for c, p, e in filas if e.strip() in ("1", "2")}
+    al_final = frozenset(c for c, _, e in filas if e.strip() == "2")
+    return todos, en_nombre, al_final
+
+
+@lru_cache(maxsize=1)
+def _abreviaturas_contexto() -> dict[str, tuple[str, tuple[frozenset[str], ...]]]:
+    """token -> (expansión, grupos de contexto). Se expande si TODOS los grupos tienen al
+    menos una de sus palabras en el nombre."""
+    reglas = {}
+    for token, expansion, contexto in _leer_csv("abreviaturas_contexto.csv"):
+        grupos = tuple(frozenset(clave(w) for w in g.split("|")) for g in contexto.split("+"))
+        reglas[token.strip().lower()] = (expansion.strip(), grupos)
+    return reglas
 
 
 @lru_cache(maxsize=1)
@@ -129,7 +143,19 @@ _PARTICULAS = {
     "de", "la", "las", "el", "los", "con", "para", "y", "en", "del", "sin", "al", "por",
     "a", "o", "e", "un", "una",
 }  # fmt: skip
-_MAYUSCULAS_FIJAS = {"pet", "pvc", "uht", "tacc", "led", "usb", "tv", "hd", "pc", "spf", "uv"}
+_MAYUSCULAS_FIJAS = {
+    "pet",
+    "pvc",
+    "uht",
+    "tacc",
+    "led",
+    "usb",
+    "tv",
+    "hd",
+    "pc",
+    "spf",
+    "uv",
+}
 _MINUSCULAS_FIJAS = {"ml", "cc", "kg", "g", "l", "cm"}
 
 
@@ -220,20 +246,37 @@ def _marca_desde_fuente(marca: str | None) -> tuple[str | None, str | None, list
     k = clave(marca)
     if (not k and not _letras(marca)) or k in _PLACEHOLDERS:
         return None, None, []
+    canonica = _marcas().get(k)
+    # El diccionario manda: si dice que esa razón social ES una marca (CINCAM(CAROL) → Carol
+    # Argentina), se respeta. Si no, una razón social es el fabricante, no la marca.
+    if canonica and not (_RAZON_SOCIAL.search(canonica) and canonica == marca):
+        return canonica, None, []
     if _RAZON_SOCIAL.search(marca):
         return None, marca, ["fabricante_como_marca"]
-    if k in _marcas():
-        return _marcas()[k], None, []
     if marca == marca.upper() or marca == marca.lower():
         marca = titulo(marca) if _es_latino(marca) else marca
     return marca, None, []
 
 
 def _expandir(expansion: str, original: str) -> str:
-    """La expansión hereda el estilo del token: «Clas» -> «Clásico», «clas» -> «clásico»."""
-    if expansion in _PARTICULAS or not original[:1].isupper():
+    """La expansión hereda el estilo del token: «Clas» -> «Clásico», «EV» -> «Extra Virgen»."""
+    if not original[:1].isupper():
         return expansion
-    return expansion[:1].upper() + expansion[1:]
+    return " ".join(p if p in _PARTICULAS else _mayuscula_inicial(p) for p in expansion.split(" "))
+
+
+def _palabras_de(tokens: list[str]) -> frozenset[str]:
+    """Claves de todas las palabras del nombre (también las partes de «gira/oliv»)."""
+    return frozenset(clave(p) for t in tokens for p in re.split(r"[/\s]", t) if clave(p))
+
+
+def _expandir_contextual(
+    palabra: str, original: str, contexto: frozenset[str], titulado: bool
+) -> str | None:
+    regla = _abreviaturas_contexto().get(palabra.lower().rstrip("."))
+    if regla is None or not all(g & contexto for g in regla[1]):
+        return None
+    return _expandir(regla[0], original.capitalize() if titulado else original)
 
 
 def _equivalentes(a: Tamano, b: Tamano) -> bool:
@@ -304,7 +347,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
     tam_sufijo = None
     m = _SUFIJO_SEPA.search(texto)
     if m:
-        todos, _ = _envases()
+        todos, _, _ = _envases()
         presentacion = todos.get(m.group(1).lower())
         tam_sufijo = parsear_tamano(f"{m.group(2)} {m.group(3).lower()}")
         if tam_sufijo == (Decimal(1), "u"):
@@ -403,12 +446,21 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
     tokens = nombre.split(" ")
 
     # 9. Abreviaturas inequívocas, envase suelto, ambiguas.
-    _, envase_nombre = _envases()
+    _, envase_nombre, envase_final = _envases()
     abrev = _abreviaturas()
+    contexto = _palabras_de(tokens)
+    largos = [t for t in tokens if len(t) >= 3 and t[0].isalpha()]
+    titulado = sum(t[0].isupper() for t in largos) * 2 > len(largos)  # nombre «Estilo Título»
     nuevos: list[str] = []
-    for t in tokens:
+    for i, t in enumerate(tokens):
         bajo = t.lower().rstrip(".")
-        if bajo in envase_nombre and presentacion is None and len(tokens) > 1 and tam_nombre:
+        suelto_al_final = bajo in envase_final and i == len(tokens) - 1
+        if (
+            bajo in envase_nombre
+            and presentacion is None
+            and len(tokens) > 1
+            and (tam_nombre or suelto_al_final)
+        ):
             presentacion = envase_nombre[bajo]
             continue
         if (
@@ -421,6 +473,24 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
         if bajo in abrev:
             nuevos.append(_expandir(abrev[bajo], t))
             continue
+        if (ctx := _expandir_contextual(bajo, t, contexto, titulado)) is not None:
+            nuevos.append(ctx)
+            continue
+        if "/" in bajo and not re.match(r"^[pcs]/", bajo):
+            partes = t.split("/")
+            exp = [
+                _expandir_contextual(p.lower().rstrip("."), p, contexto, titulado) for p in partes
+            ]
+            if any(x is not None for x in exp):
+                nuevos.append(
+                    "/".join(
+                        _mayuscula_inicial(x if x is not None else p)
+                        if partes[0][:1].isupper()
+                        else (x or p)
+                        for x, p in zip(exp, partes, strict=True)
+                    )
+                )
+                continue
         mm = re.match(r"^([pcs])/(\S+)$", bajo)
         if mm:
             nuevos += [_expandir(abrev[mm.group(1) + "/"], t), mm.group(2)]
@@ -428,8 +498,8 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
         nuevos.append(t)
     nombre = _tokens_a_texto(nuevos)
     tokens = nombre.split(" ")
-    ambiguas = sum(1 for t in tokens if t.lower().rstrip(".") in _ambiguas())
-    if ambiguas >= 2:
+    # Lo que no se pudo resolver no se inventa: queda dudoso para que lo mire una persona.
+    if any(t.lower().rstrip(".") in _ambiguas() for t in tokens):
         motivos.append("abreviado")
 
     # 10. Puntaje y estado.
@@ -457,7 +527,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
     if marca is None and tamano is None and palabras <= 2:
         estado = DESCARTADO
         motivos.append("muy_incompleto")
-    elif calidad < UMBRAL_DUDOSO or "tamano_en_conflicto" in motivos:
+    elif calidad < UMBRAL_DUDOSO or {"tamano_en_conflicto", "abreviado"} & set(motivos):
         estado = DUDOSO
     elif calidad >= UMBRAL_COMPLETO and "abreviado" not in motivos:
         estado = COMPLETO
