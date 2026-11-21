@@ -8,6 +8,7 @@ import 'package:almacenero/data/price_repository.dart';
 import 'package:almacenero/data/product_repository.dart';
 import 'package:almacenero/data/user_repository.dart';
 import 'package:almacenero/main.dart';
+import 'package:almacenero/ui/acerca_screen.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -33,6 +34,7 @@ class _Backend {
   Object? errorAlCargar;
   Object? errorHistorial;
   Object? errorMe;
+  final enlaces = <Uri>[];
   Object? errorVigentes;
   final ubicacionesVigentes = <Ubicacion?>[];
 
@@ -48,6 +50,7 @@ class _Backend {
   final precios = <PrecioHistorial>[];
 
   AppDeps deps({Future<Producto> Function(String)? loadProducto}) => AppDeps(
+    abrirEnlace: (url) async => enlaces.add(url),
     loadMe: () async {
       final error = errorMe;
       if (error != null) throw error;
@@ -288,10 +291,66 @@ void main() {
           }) => throw UnimplementedError(),
         ),
       );
+      // La tarjeta ya no está en el inicio: se muda a «Acerca de».
+      expect(find.text('Versión: 0.0.7 (abc1234)'), findsNothing);
+      await tester.tap(find.byTooltip('Acerca de'));
+      await tester.pumpAndSettle();
       expect(find.text('Versión: 0.0.7 (abc1234)'), findsOneWidget);
       expect(find.text('Servidor: http://192.168.1.5:8000'), findsOneWidget);
       expect(find.text('Estado: responde (35 ms)'), findsOneWidget);
       expect(find.text('IP del celular: 192.168.1.42 (wlan0)'), findsOneWidget);
+    });
+
+    testWidgets(
+      '«Acerca de» lista las fuentes con licencia y abre sus enlaces',
+      (tester) async {
+        // Pantalla alta: así la lista (perezosa) construye todas las tarjetas.
+        tester.view.physicalSize = const Size(800, 4000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await abrir(tester);
+        await tester.tap(find.byTooltip('Acerca de'));
+        await tester.pumpAndSettle();
+        expect(find.text('Acerca de'), findsOneWidget); // título de la barra
+        expect(find.text('Almacenero'), findsOneWidget);
+        expect(find.text('Versión dev'), findsOneWidget);
+
+        for (final f in fuentesDatos) {
+          expect(find.text(f.nombre), findsWidgets);
+          expect(find.text('Licencia: ${f.licencia}'), findsOneWidget);
+          expect(find.text(f.texto), findsOneWidget);
+        }
+        expect(
+          find.textContaining('© colaboradores de OpenStreetMap'),
+          findsWidgets,
+        );
+        expect(
+          find.textContaining('Creative Commons Atribución 4.0'),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.text('CC BY 4.0'));
+        await tester.pump();
+        expect(backend.enlaces, [
+          Uri.parse('https://creativecommons.org/licenses/by/4.0/deed.es'),
+        ]);
+      },
+    );
+
+    testWidgets('«Acerca de» abre las licencias de las librerías', (
+      tester,
+    ) async {
+      await abrir(tester);
+      await tester.tap(find.byTooltip('Acerca de'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Licencias de librerías'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Licencias de librerías'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LicensePage), findsOneWidget);
     });
 
     testWidgets('distingue «el servidor tardó» de «sin red»', (tester) async {
@@ -795,7 +854,10 @@ void main() {
       backend.cerca.clear();
       await abrir(tester);
       await _irAlFormulario(tester);
-      expect(find.text('No hay locales registrados cerca de acá.'), findsOne);
+      expect(
+        find.text('No hay locales registrados cerca de acá.'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Crear local aquí'));
       await tester.pumpAndSettle();
@@ -885,7 +947,10 @@ void main() {
 
       await tester.tap(find.text('Crear local'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Ya hay un local con ese nombre'), findsOne);
+      expect(
+        find.textContaining('Ya hay un local con ese nombre'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Crear local')); // reintenta con otro nombre
       await tester.pumpAndSettle();
@@ -1022,6 +1087,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(FlutterMap), findsOneWidget);
+      // La atribución de OSM es obligatoria (ODbL) y tiene que estar a la vista.
+      expect(find.text('© OpenStreetMap contributors'), findsOneWidget);
       expect(find.text(r'$ 900,00'), findsWidgets);
       expect(backend.ubicacionesVigentes.last, isNull);
     });

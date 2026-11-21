@@ -11,6 +11,8 @@ import 'data/user_repository.dart';
 /// reemplazan solo lo que les importa, sin armar una red falsa.
 Future<void> _sinInvitacion(String codigo) async {}
 
+Future<void> _sinEnlaces(Uri url) async {}
+
 Future<InfoApp> _infoDePrueba() async =>
     const InfoApp(build: BuildInfo.actual, apiUrl: '-', ips: [], servidor: '-');
 
@@ -18,6 +20,7 @@ class AppDeps {
   const AppDeps({
     this.guardarInvitacion = _sinInvitacion,
     this.loadInfoApp = _infoDePrueba,
+    this.abrirEnlace = _sinEnlaces,
     this.cuentaBaja,
     this.despertando,
     this.verificarCada,
@@ -35,7 +38,10 @@ class AppDeps {
   /// Guarda el código de invitación que el usuario escribió (primer arranque).
   final Future<void> Function(String codigo) guardarInvitacion;
 
-  /// Versión, servidor e IP del celular, para mostrar en la pantalla principal.
+  /// Abre un enlace en el navegador (pantalla «Acerca de»).
+  final Future<void> Function(Uri url) abrirEnlace;
+
+  /// Versión, servidor e IP del celular, para la pantalla «Acerca de».
   final Future<InfoApp> Function() loadInfoApp;
 
   /// Pasa a `true` cuando el backend avisa que la cuenta fue dada de baja, desde

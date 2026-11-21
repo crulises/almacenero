@@ -2,10 +2,10 @@ import 'package:material_ui/material_ui.dart';
 
 import '../app_deps.dart';
 import '../data/api_client.dart';
-import '../data/app_info.dart';
 import '../data/auth_repository.dart';
 import '../data/user_repository.dart';
 import '../domain/ean.dart';
+import 'acerca_screen.dart';
 import 'invitacion_screen.dart';
 import 'moderacion.dart';
 import 'product_screen.dart';
@@ -24,7 +24,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late Future<Me> _me = _cargarMe();
-  late Future<InfoApp> _info = widget.deps.loadInfoApp();
   final _eanController = TextEditingController();
   bool _yaEntro =
       false; // hubo una sesión: los recargos no vuelven a la pantalla de carga
@@ -43,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void _retry() {
     setState(() {
       _me = _cargarMe();
-      _info = widget.deps.loadInfoApp(); // la red pudo cambiar
     });
   }
 
@@ -112,7 +110,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _principal(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Almacenero')),
+      appBar: AppBar(
+        title: const Text('Almacenero'),
+        actions: [
+          IconButton(
+            tooltip: 'Acerca de',
+            icon: const Icon(Icons.info_outline),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AcercaScreen(deps: widget.deps),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -139,52 +150,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 32),
-          _infoApp(context),
         ],
       ),
-    );
-  }
-
-  /// Qué app es esta y a dónde habla: para confirmar que se instaló el APK correcto
-  /// y diagnosticar la conexión sin adivinar.
-  Widget _infoApp(BuildContext context) {
-    final estilo = Theme.of(context).textTheme.bodySmall;
-    return FutureBuilder<InfoApp>(
-      future: _info,
-      builder: (context, snapshot) {
-        final info = snapshot.data;
-        final filas = <(String, String)>[
-          (
-            'Versión',
-            info == null
-                ? BuildInfo.actual.version
-                : '${info.build.version} (${info.build.commit})',
-          ),
-          if (info != null) ('Compilada', info.build.compilado),
-          if (info != null) ('Servidor', info.apiUrl),
-          if (info != null) ('Estado', info.servidor),
-          if (info != null)
-            (
-              'IP del celular',
-              info.ips.isEmpty
-                  ? 'sin red'
-                  : info.ips.map((i) => '${i.ip} (${i.interfaz})').join(', '),
-            ),
-        ];
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final (nombre, valor) in filas)
-                  Text('$nombre: $valor', style: estilo),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 

@@ -1,6 +1,7 @@
 import 'package:android_id/android_id.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'app_deps.dart';
 import 'data/api_client.dart';
@@ -44,6 +45,9 @@ void main() {
         despertando: api.despertando,
         verificarCada: const Duration(seconds: 30),
         guardarInvitacion: auth.guardarInvitacion,
+        abrirEnlace: (url) async {
+          await launchUrl(url, mode: LaunchMode.externalApplication);
+        },
         loadInfoApp: () async => InfoApp(
           build: BuildInfo.actual,
           apiUrl: apiUrl,

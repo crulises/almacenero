@@ -746,3 +746,19 @@ Decisiones en `docs/04` §9.
   demasiado en responder (N s)» = hay red pero el servidor no contestó (dormido, caído,
   muy lento): subir `API_TIMEOUT_S` o revisar el backend. «Sin conexión con el servidor» =
   no hay red o la URL es inalcanzable.
+
+## Pantalla «Acerca de» y atribuciones (ajustes previos al corte 10)
+
+- **Dónde está.** Ícono ⓘ en la barra del inicio → «Acerca de»: nombre y versión, la
+  tarjeta de versión/compilación/servidor/IP (se mudó desde el pie del inicio; sigue
+  accesible aunque no haya conexión, porque el ícono vive en la barra del inicio también
+  cuando falla `/me`), las tres fuentes con su licencia y enlaces (textos literales de
+  `docs/05` §4.3) y el botón de licencias de librerías (`showLicensePage`).
+  **Si cambia un texto de `docs/05`, cambiarlo también en `lib/ui/acerca_screen.dart`**
+  (`fuentesDatos`); el test de la pantalla compara contra esa lista.
+- **Mapa:** ya mostraba «© OpenStreetMap contributors» (`SimpleAttributionWidget` en
+  `mapa_precios.dart`); ahora hay un test que lo exige. El enlace a la licencia vive en
+  «Acerca de», no en el mapa.
+- **Enlaces:** `url_launcher` abre el navegador; en Android 11+ hace falta declarar el
+  intent `VIEW https` en `<queries>` del `AndroidManifest.xml` (ya está). **Síntoma si
+  falta:** tocar un enlace no hace nada.
