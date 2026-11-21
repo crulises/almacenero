@@ -29,6 +29,7 @@ offline, iOS, OAuth, pesables/genéricos.
 | 10 | Preparar release: firma del APK y guía de deploy | — | chico |
 | 12 | **Moderación: escalera por karma negativo y baja de cuentas** (§9) | 9, 11 | medio |
 | 11 | **Panel web de admin** (front chico con nginx + endpoints `/v1/admin`), en paralelo, sin tocar la app | 5 | grande |
+| 13-17 | **Calidad del catálogo, CSV curado, ETL desde el panel y sugerencias** (§10, borrador) | 7, 11 | ver §10 |
 
 El ETL (7) toca solo `etl/` y el Makefile, así que puede correr en paralelo con
 5 y 6. Los demás van de a uno.
@@ -845,6 +846,149 @@ app). Decisiones:
    motivo/evento para mostrarlo una vez. A futuro, notificación push.
 4. Contacto fijo en la app si se abre al público: **no por ahora**; lo resuelve el
    formulario del punto 1.
+
+## 10. Calidad del catálogo, CSV curado, ETL desde el panel y sugerencias (cortes 13-17, borrador)
+
+**Estado: propuesta de la fase 1, pendiente de confirmación.** Criterios de normalización,
+mediciones y los casos reales: `docs/07-normalizacion-catalogo.md`. Mediciones de costos
+(2026-11-21, de las páginas de precios; **verificar de nuevo al contratar**): Fly.io
+`shared-cpu-1x` 256 MB ≈ US$ 2,19/mes encendida todo el mes, facturada por segundo
+([precios](https://fly.io/pricing-update/)); Supabase gratis: base de 500 MB, 5 GB de egreso y
+pausa tras una semana sin actividad ([precios](https://supabase.com/pricing)). El catálogo
+actual (134 505 productos con crudo) pesa ~75-80 MB: entra bien; OFF completo (2,4 GB) no.
+
+### A. Disparar los ETL desde el panel
+
+**Decisión de diseño: una cola en Postgres y dos tipos de ejecutor.** El panel no corre nada
+pesado dentro del backend web (256 MB de RAM, y un proceso largo lo tira o lo deja sin
+responder):
+
+- **Tabla `etl_ejecuciones`**: `id`, `etl` (clave), `parametros jsonb`, `estado`
+  (`en_cola` · `corriendo` · `ok` · `fallo` · `cancelando` · `cancelada`), `ejecutor`
+  (`web` · `local`), `creado_por`, `creado_en`, `iniciado_en`, `terminado_en`, `latido_en`
+  (el ejecutor lo renueva cada pocos segundos: sin latido por 2 min → se marca `fallo`),
+  `reporte jsonb` (filas leídas, nuevas, actualizadas, descartadas por motivo: el `Reporte`
+  que ya existe en `etl/comun/catalogo.py`), `log text` (últimas ~64 KB; las líneas viejas se
+  recortan), `cancelar bool`. La toma de trabajos es `for update skip locked`; una sola
+  ejecución a la vez por ejecutor. Todo `iniciar`/`cancelar` pasa por `auditoria_admin`.
+- **Definición de cada ETL en código** (`etl/registro.py`): `clave`, `titulo`, `descripcion`,
+  `ejecutor` (`web` o `local`), y `parametros = [Param(nombre, tipo, obligatorio, ayuda,
+  default, opciones)]` con tipos `texto | entero | booleano | opcion | fecha | archivo`. El
+  panel pide la lista (`GET /v1/admin/etl`) y **dibuja el formulario a partir de ella**; el
+  backend valida el payload contra la misma definición. Los `__main__` actuales quedan como
+  envoltorios finos del mismo `ejecutar(parametros, ctx)` (`ctx.log()`, `ctx.cancelado()`,
+  `ctx.reporte`), así que **corre lo mismo que corre hoy**.
+- **Ejecutor `web`** (livianos: importar un CSV curado, re-normalizar, recalcular calidad):
+  el backend lanza **un subproceso** (`python -m etl.ejecutar <id>`), no un hilo, con tope de
+  memoria y de tiempo, de a uno por vez. La imagen del backend incluye `etl/` **sin** los
+  extras pesados (`pyosmium`). Costo adicional: 0 (la máquina ya existe).
+- **Ejecutor `local`** (pesados: bajar y leer SEPA/OFF/OSM): `make etl-worker` en tu
+  máquina consulta la cola de la base remota (conexión saliente, **sin abrir puertos**), toma
+  lo que esté marcado `local` y lo ejecuta con tus archivos. En el panel el botón es el
+  mismo y se ve el mismo estado/log; solo que corre en tu Mac, con tu ancho de banda.
+  **Costo: 0**; el tráfico hacia Supabase es de entrada (≈ 80 MB para una carga de SEPA
+  completa, medido con el tamaño de las tablas).
+- **Opción descartada por ahora:** una máquina Fly aparte por corrida (`fly machine run`).
+  Es viable (se paga por segundo mientras corre) pero suma operación y secretos en Fly para
+  algo que cabe en tu Mac; no se descarta para más adelante.
+- **Archivos que entran por el panel** (el CSV curado): se guardan **temporalmente en la
+  base** (`etl_archivos`, bytea, tope 25 MB comprimido) en vez de en disco (el disco de Fly es
+  efímero y de ~0 GB útil para esto), porque así lo ven por igual el ejecutor `web` y el
+  `local`. Se borran al terminar la importación; queda solo metadato y hash (§B).
+- **Cancelación:** `cancelar = true`; el ETL lo mira entre lotes (cada 20 000 filas) y
+  corta limpio (cada lote es una transacción). Si no responde en 30 s y corre en el mismo
+  host, SIGTERM.
+- **Capacidades** (`permisos.py`): `etl.ver`, `etl.ejecutar`, `etl.cancelar`; solo admin.
+  Panel: sección **ETL** (lista de definiciones → formulario → historial con estado, filas,
+  duración y log).
+
+### B. CSV curado en vez de bajar OFF entero cada vez
+
+**Respuesta corta: no, bajar y leer 1,5 GB cada vez no es sensato.** Medido en este
+proyecto (Doc 5 §2): 40 min de descarga, 14 min de proceso, 4 916 182 filas leídas para
+quedarnos con 61 463 (1,25 %). Para un catálogo argentino, lo correcto es **extraer una vez
+los productos relevantes y guardar ese extracto como CSV**.
+
+- **Qué es relevante:** OFF con `countries_tags` de Argentina y vecinos; SEPA con los EAN
+  más frecuentes (columna `filas`: cuántas cadenas lo informan); lo que ya tenga precio
+  cargado en la app; y lo que el dueño agregue a mano.
+- **Formato (`catalogo_curado_v1`)**: CSV UTF-8, separador `,`, con cabecera de comentarios
+  `#` (`# formato: catalogo_curado_v1`, `# generado: …`, `# normalizador: <versión>`,
+  `# fuentes: sepa:<sha256>, off:<sha256>`) y columnas: `ean, nombre, marca,
+  tamano_valor, tamano_unidad, pack_cantidad, presentacion, imagen_url, fuente_origen, nota`.
+  Las filas ya están **normalizadas** (§C). Un archivo `.gz` también se acepta.
+- **Flujo de subida** (panel: ETL → «Importar CSV curado»): (1) se sube el archivo;
+  (2) **validación en seco** (no escribe): EAN válido, unidad permitida, largos, duplicados
+  dentro del archivo, y un reporte «X nuevos, Y cambian, Z sin cambios, W inválidos» con
+  las primeras filas con error; (3) el admin **confirma**; (4) se importa en lotes con la
+  misma fusión idempotente (`fusionar_lote`), con `fuente = 'curado'`; (5) se **borra el
+  archivo** y se guarda el lote.
+- **Prioridad:** `manual > curado > sepa > off` (el curado es lo que el dueño revisó).
+  Requiere ampliar los checks de `fuente`/`origen` y la config de prioridad (migración
+  pequeña).
+- **Qué se conserva para poder reconstruir** (tabla `catalogo_lotes`, una fila por
+  importación): `id`, `formato`, `version_normalizador`, `nombre_archivo`,
+  `sha256` del CSV, `filas`, `nuevos/cambiados/iguales/invalidos`, `fuentes_entrada` (nombre
+  + sha256 + fecha de cada archivo de origen: el zip de SEPA, el CSV de OFF),
+  `subido_por`, `creado_en`, `etl_ejecucion_id`. El CSV **no** se guarda en la base; lo que
+  queda es el dato (que ya está en `productos_canonicos` y `producto_fuentes`) y la receta.
+- **Reproducibilidad:** `make catalogo-curado` regenera el CSV desde las fuentes crudas
+  (`etl/data/…`) con el mismo normalizador versionado, y su salida lleva el hash del
+  archivo; si las fuentes y la versión coinciden con las del lote, el `sha256` tiene que
+  coincidir (se prueba). Además **no hace falta volver a las fuentes** para re-normalizar:
+  `producto_fuentes` guarda el crudo de cada una; `make catalogo-renormalizar` rehace
+  `productos_canonicos` desde ahí al cambiar `normalizador_version`.
+- **Periodicidad:** el dueño decide; recomendación: OFF cada 3-6 meses (cambia poco para
+  Argentina), SEPA mensual (cada corrida solo toca lo que cambió, ya es idempotente).
+
+### C. Calidad y normalización
+
+Todo en `docs/07-normalizacion-catalogo.md` (reglas, puntaje, casos). Resumen de lo que se
+mide hoy (134 505 productos): 61,1 % sin tamaño, de los cuales **~11 pp son recuperables del
+nombre**; 12,4 % con marca placeholder; 17 % de variantes de escritura de marca; 10,1 % con
+mayúsculas mezcladas; solo 0,2 % tiene un nombre inservible (el único descarte duro).
+
+### D. Rol «moderador» y cola de sugerencias (diseño; **no se implementa en la app sin acordarlo**)
+
+- **Rol:** `usuarios.rol` suma `moderador` (ampliar el check; el trigger de protección del
+  rol queda igual). En `permisos.py`: `moderador` = `usuario` + `catalogo.sugerir`; `admin`
+  suma `catalogo.sugerencias.resolver`. Los endpoints preguntan por la capacidad, no por el
+  rol (la regla de `permisos.py` ya existente). Un moderador **restringido por karma** pierde
+  `catalogo.sugerir` (es una capacidad de carga: entra en `CAPACIDADES_DE_CARGA`).
+- **Tabla `sugerencias_catalogo`**: `id`, `producto_id` (null = alta de producto nuevo),
+  `ean`, `usuario_id`, `cambios jsonb` (solo `nombre`, `marca`, `tamano_valor`,
+  `tamano_unidad`, `pack_cantidad`, `presentacion`), `motivo text`, `estado`
+  (`pendiente` · `aprobada` · `rechazada` · `reemplazada`), `resuelto_por`, `resuelto_en`,
+  `nota_resolucion`, `created_at`. Índice único parcial: una sugerencia **pendiente** por
+  (producto, usuario). `check` de coherencia estado/resuelto como en `conflictos_catalogo`.
+- **Aprobar** = aplicar los cambios por **el mismo camino que la corrección del admin**
+  (`PATCH /admin/productos`: bloquea los campos contra el ETL) y registrar en
+  `auditoria_admin`, todo en una transacción. **Rechazar** exige nota. Si el producto cambió
+  desde que se sugirió, la sugerencia se muestra con el valor actual al lado.
+- **Karma:** aprobada → premio (config `karma_sugerencia_aprobada`); rechazada → sin castigo
+  por sí sola; un patrón de rechazos entra por la escalera de moderación del §9, no acá.
+- **Panel:** solapa **Sugerencias** dentro de Catálogo, con globito de pendientes (igual que
+  Conflictos), diff «actual → sugerido», y aprobar/rechazar en masa. La ficha de producto
+  suma «sugerencias de este producto».
+- **App:** una acción «Sugerir corrección» en la ficha, **visible solo para moderadores**
+  (se decide con vos cuando llegue el corte).
+
+### Cortes propuestos (cada uno su rama y su PR a `main`; yo no mergeo)
+
+| # | Corte | Qué trae | Tamaño |
+|---|-------|----------|--------|
+| 13 | **Normalizador + medidor** | `etl/comun/normalizar.py`, diccionarios (arranque a partir de la medición), tests con los casos reales, `make catalogo-calidad` (la tabla de §1 del Doc 7). Sin migración ni cambios en datos. | medio |
+| 14 | **Integración + calidad en la base** | Migración (columnas del Doc 7 §3), el normalizador dentro de `fusionar_lote`, `make catalogo-renormalizar`, `ProductoOut` con los campos nuevos (compatibles), panel: columna/filtro/orden por calidad. Re-correr el ETL local lo deja listo. | grande |
+| 15 | **CSV curado por CLI** | `catalogo_lotes`, fuente `curado`, formato `catalogo_curado_v1`, `make catalogo-curado` (genera) y `make catalogo-importar` (valida en seco + importa), hashes. | medio |
+| 16 | **ETL desde el panel** | `etl_ejecuciones`, registro de definiciones, worker `web` y `local`, API `/v1/admin/etl`, sección ETL con formularios generados, cancelación, auditoría, subida del CSV por el panel. | grande |
+| 17 | **Rol moderador + sugerencias** | migración, capacidades, API y solapa del panel; la acción en la app **solo si lo acordamos**. | medio |
+| app | **Ficha normalizada** (mínimo en `app/`) | mostrar `presentacion`/`pack` y el estado. Va **después del 14**. | chico |
+
+**Orden recomendado y por qué:** 13 → 14 → app (ficha) → 15 → 16 → 17. Primero la calidad,
+porque es lo que se ve en el primer release y no depende de nada (un normalizador puro es
+fácil de revisar). El CSV curado (15) se puede usar por CLI contra la base remota sin esperar
+al panel (16), que es la parte más grande y la menos urgente: mientras tanto el ejecutor
+`local` es tu terminal. Sugerencias (17) cuando haya moderadores de verdad.
 
 ## Decisiones
 
