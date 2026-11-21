@@ -861,25 +861,44 @@ app). Decisiones:
 6. Roles: empezar con una columna `rol` detrás de un módulo de capacidades, para
    migrar a tablas sin tocar endpoints (§1).
 
+7. **`applicationId` = `dev.crulises.almacenero`** (dominio `crulises.dev` al revés). Se
+   cambia en el corte 10, antes del primer release firmado; el grupo cerrado desinstala
+   la versión vieja (hoy `ar.almacenero.almacenero`) e instala la nueva.
+8. **Hosting: Fly.io** (cuenta creada, créditos iniciales). Se mantienen abiertas las
+   alternativas (p. ej. Cloudflare Pages para el panel estático) y se vigila el costo
+   desde el inicio: hay más proyectos de hobby por venir. Se elige lo más barato
+   mientras no complique mucho el despliegue.
+9. **Dominio y rutas:** todo lo que se accede por navegador va detrás de
+   `almacenero.crulises.dev` separado por rutas (`/admin`, y las que vengan); el backend
+   (que la app usa, sin interfaz) va en `almacenero-api.crulises.dev`. La raíz
+   `crulises.dev` queda como firma/currículum y cada proyecto de hobby cuelga de un
+   subdominio propio.
+10. **Timeout configurable + «Despertando servidor…» y `make backup` con simulacro**:
+    se adelantan, en una rama propia y antes que el resto del corte 10.
+11. **Atribuciones:** pantalla «Acerca de» desde un ícono ⓘ en la barra (versión, fuentes
+    con su licencia y enlace, licencias de librerías con `showLicensePage`) y etiqueta
+    «© OpenStreetMap» en el mapa; la tarjeta de versión/servidor/IP se muda ahí.
+12. **Curación del catálogo:** corte propio, con ejemplos que reúne el dueño del proyecto
+    (qué estandarizar y qué no gusta). Antes de usar el catálogo de forma permanente.
+
 **Abiertas**
 
-- **Host del backend:** en evaluación por el dueño del proyecto.
-- **Dominio:** lo busca el dueño del proyecto (uno solo, con subdominios).
-- **`applicationId`:** decidir tras comprar el dominio y antes del primer release
-  firmado (§7).
-- **Proveedor de teselas del mapa:** OSM público solo sirve para el grupo
-  cerrado; decidir (proveedor con plan gratis o propio) **antes de abrir la app**.
-- **Timeouts de red configurables:** el tiempo de espera de `ApiClient` (hoy 15 s)
-  pasa a ser un valor de configuración (`--dart-define` al compilar o ajuste
-  remoto) para poder pasar a 30/60/90 s sin tocar código; con reintento y el
-  mensaje «Despertando servidor…» cuando el primer pedido tarda. Se hace en el
-  corte 10 (antes de repartir el APK).
+- **Proveedor de teselas del mapa (NO SE OLVIDE):** OSM público solo sirve para el grupo
+  cerrado (política de uso de OSM: uso liviano, atribución, sin abuso). Decidir **antes de
+  abrir la app a más gente**: proveedor con plan gratis (MapTiler, Stadia), Google Maps
+  (paga pasado cierto uso) o **autohospedar** con Protomaps/PMTiles (un archivo servido
+  desde Cloudflare R2, costo casi nulo). Tema para revisar en cada repaso de pendientes.
+- **Estrategia de ramas y versiones:** definir una convención que alinee número de versión
+  de la app (`APP_VERSION`), tags de git y releases del backend en Fly.
+- **Setup del entorno en otra computadora:** documentar todo lo necesario (Docker,
+  Supabase CLI, Flutter/Android, `flyctl`, etc.) para mover el entorno de desarrollo a
+  cualquier máquina; se escribe con el corte 10.
 - **Base de datos y pausa de Supabase gratis:** ver §7 «Elegir host»; si la pausa
   no es tolerable, evaluar Postgres en otro servicio (costo-beneficio).
 - **Imágenes subidas por usuarios** (diferidas): compresión en el cliente y
   re-codificación en el servidor; moderación antes de publicar (§7).
 - **Tamaño del catálogo en producción:** se decide tras medir la carga completa
-  en local (§4).
+  en local (§4). El catálogo de OFF sigue sin cargarse; SEPA de un día sí.
 
 ## Plan de escape: recrear todo en otro lugar
 
