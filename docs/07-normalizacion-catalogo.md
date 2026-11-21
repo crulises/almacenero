@@ -161,7 +161,7 @@ Total descartado hoy: ≈ 5 400 (4,0 %). Es **reversible**: el umbral es una con
 versionada con el normalizador; cambiarlo y correr `make catalogo-renormalizar` los
 reclasifica sin tocar las fuentes.
 
-### 5.1 Completar lo que falta: alta e edición simple
+### 5.1 Completar lo que falta: alta y edición simple
 
 Lo descartado y lo dudoso se arreglan con una **interfaz simple para admins y moderadores**
 (dos pasos: «buscar por EAN» → formulario corto):
