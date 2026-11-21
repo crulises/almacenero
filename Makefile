@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
+.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -68,6 +68,42 @@ admin-crear: $(PY) ## Crea/promueve un admin con email y contraseña para el pan
 admin-web: ## Reconstruye y levanta solo el panel web (http://localhost:8080)
 	docker compose up -d --build admin-web
 	@echo "Panel de admin: http://localhost:8080"
+
+# --- backup y plan de escape (docs/04, «Plan de escape») -------------------
+# Tablas cuyo conteo se registra al hacer el backup y se verifica al restaurar.
+CONTEOS := locales productos_canonicos precios usuarios
+BACKUP_DIR ?= backups
+
+backup: ## pg_dump de la base (DATABASE_URL) a backups/almacenero-<fecha>.dump (carpeta ignorada por git)
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	set -e; mkdir -p $(BACKUP_DIR); \
+	f=$(BACKUP_DIR)/almacenero-$$(date +%Y%m%d-%H%M%S).dump; \
+	pg_dump "$$DATABASE_URL" --format=custom --schema=public --exclude-table=spatial_ref_sys --no-owner --no-privileges --file="$$f"; \
+	for t in $(CONTEOS); do echo "$$t $$(psql "$$DATABASE_URL" -tA -c "select count(*) from $$t")"; done > "$$f.conteos"; \
+	echo "Backup: $$f ($$(du -h "$$f" | cut -f1))"; cat "$$f.conteos"
+
+restore-test: ## Simulacro: restaura el último backup en una base TEMPORAL (se crea y se borra) y compara conteos
+	@# Nunca toca la base real: crea `almacenero_restore_test` en el mismo servidor, restaura
+	@# ahí y la borra al terminar (también si algo falla). Funciona con el Postgres de `make up`.
+	@# El grep saca un SET que agrega pg_dump 17 (no existe en servidores 15/16) y el CREATE SCHEMA public (ya existe).
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	set -e; \
+	f=$$(ls -1t $(BACKUP_DIR)/*.dump 2>/dev/null | head -1); \
+	test -n "$$f" || { echo "No hay backups en $(BACKUP_DIR)/: corré make backup"; exit 1; }; \
+	base=$${DATABASE_URL%%\?*}; tmp=almacenero_restore_test; \
+	admin=$${base%/*}/postgres; url=$${base%/*}/$$tmp; \
+	[ "$${base##*/}" != "$$tmp" ] || { echo "DATABASE_URL apunta a la base temporal: abortando"; exit 1; }; \
+	trap 'psql "$$admin" -q -c "drop database if exists $$tmp" >/dev/null' EXIT; \
+	psql "$$admin" -q -c "drop database if exists $$tmp" -c "create database $$tmp"; \
+	echo "Restaurando $$f en $$tmp..."; \
+	psql "$$url" -q -c "create extension if not exists postgis" -c "create extension if not exists pg_trgm" -c "create extension if not exists unaccent"; \
+	pg_restore --no-owner --no-privileges -f - "$$f" | grep -Ev '^(SET transaction_timeout|CREATE SCHEMA public;)' | psql "$$url" -q -v ON_ERROR_STOP=1 --single-transaction -o /dev/null; \
+	ok=1; \
+	while read -r t esperado; do \
+		real=$$(psql "$$url" -tA -c "select count(*) from $$t"); \
+		if [ "$$real" = "$$esperado" ]; then echo "OK   $$t: $$real"; else echo "FALLA $$t: restauradas $$real, el backup tenía $$esperado"; ok=0; fi; \
+	done < "$$f.conteos"; \
+	[ $$ok = 1 ] && echo "Simulacro OK: el backup se restaura completo" || { echo "Simulacro FALLÓ"; exit 1; }
 
 # --- calidad ---------------------------------------------------------------
 $(PY):

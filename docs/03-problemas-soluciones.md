@@ -709,3 +709,40 @@ Decisiones en `docs/04` §9.
 - **Síntoma:** dar de baja a alguien que está quieto en una pantalla no muestra nada.
   **Causa:** el backend no puede avisarle; la app se entera solo cuando hace un pedido.
   **Solución:** `VigilanteDeCuenta` consulta `/me` cada 30 s y al volver a la app.
+
+## Backup, simulacro de restauración y servidor dormido (ajustes previos al corte 10)
+
+- **`make backup`** hace `pg_dump` (formato custom, solo el esquema `public`) de
+  `DATABASE_URL` a `backups/almacenero-<fecha>.dump`, más un `.conteos` con las filas de
+  `locales`, `productos_canonicos`, `precios` y `usuarios` en ese momento. `backups/` está
+  en `.gitignore`: **un backup tiene datos de personas, no se commitea ni se sube a un
+  lugar público**. **`make restore-test`** crea la base `almacenero_restore_test` en el
+  mismo servidor, restaura ahí el último dump, compara los conteos y la borra (también si
+  falla). Nunca escribe en la base real.
+- **Síntoma:** `pg_restore` falla con `unrecognized configuration parameter
+  "transaction_timeout"`. **Causa:** el `pg_dump` del Mac es 17 y escribe un `SET` que los
+  servidores 15 y 16 (el de `supabase start` es 15) no conocen. **Solución:** el simulacro
+  filtra esa línea al restaurar (`pg_restore -f - | grep -v ... | psql`). Si más adelante
+  el servidor es 17, el filtro sobra pero no molesta.
+- **Síntoma:** al restaurar, `schema "public" already exists`. **Causa:** el dump
+  incluye `CREATE SCHEMA public` y toda base nueva ya tiene `public`. **Solución:** se
+  filtra esa línea. Las extensiones (`postgis`, `pg_trgm`, `unaccent`) **no** vienen en un
+  dump de `--schema=public`: el simulacro las crea antes de restaurar. En una base nueva
+  de verdad hay que correr primero las migraciones (o crear las extensiones a mano).
+- **Síntoma:** `permission denied for table spatial_ref_sys`. **Causa:** esa tabla es de
+  PostGIS (la crea la extensión, con otro dueño); no es un dato nuestro. **Solución:**
+  el backup la excluye (`--exclude-table=spatial_ref_sys`).
+- **En producción:** `DATABASE_URL` tiene que ser la conexión **directa** de Supabase
+  (puerto 5432), no el pooler en modo transacción: `pg_dump` no anda por ahí. El backup
+  incluye solo `public`; los usuarios de Supabase Auth (`auth.users`) NO están: ver el
+  punto de Auth del plan de escape en `docs/04`.
+- **Servidor dormido (Fly.io).** El backend se apaga solo sin tráfico; el primer pedido
+  espera el arranque en frío (varios segundos). La app (`ApiClient`) espera cada intento
+  `API_TIMEOUT_S` segundos (20 por defecto; se cambia al compilar: `make apk
+  API_TIMEOUT_S=40`), muestra «Despertando servidor…» si un pedido pasa de 4 s y reintenta
+  con backoff (1 s, 2 s) **solo** lo que se puede repetir sin efectos: los GET y
+  `/auth/refresh`. Un POST común (cargar un precio) no se reintenta solo: si el servidor lo
+  procesó y se perdió la respuesta, quedaría duplicado. **Síntoma:** «El servidor tardó
+  demasiado en responder (N s)» = hay red pero el servidor no contestó (dormido, caído,
+  muy lento): subir `API_TIMEOUT_S` o revisar el backend. «Sin conexión con el servidor» =
+  no hay red o la URL es inalcanzable.
