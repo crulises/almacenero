@@ -1,4 +1,4 @@
-.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
+.PHONY: apk-release version deploy-api deploy-web backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -204,3 +204,39 @@ apk: ## APK debug (arm64) para el celular: sube la versión sola (0.0.1, 0.0.2, 
 		$(if $(API_TIMEOUT_S),--dart-define=API_TIMEOUT_S=$(API_TIMEOUT_S)) \
 		--dart-define=APP_COMMIT=$$commit --dart-define=APP_BUILT_AT=$$(date +%Y-%m-%dT%H:%M) \
 	&& echo "APK v$$ver: app/build/app/outputs/flutter-apk/app-debug.apk"
+
+# --- release firmado (docs/06-deploy.md) -----------------------------------
+API_URL_PROD ?= https://almacenero-api.crulises.dev
+# Versión de release = la de `version:` del pubspec sin el «+N» (0.1.0). El versionCode de
+# Android es la cantidad de commits: crece siempre y sale igual en cualquier máquina.
+APP_VERSION_REL = $$(sed -n 's/^version: *\([0-9][0-9.]*\).*/\1/p' app/pubspec.yaml)
+
+apk-release: ## APK release FIRMADO (arm64) contra la API de producción: make apk-release [API_URL_PROD=https://...]
+	@test -f app/android/key.properties || { echo "Falta app/android/key.properties: ver docs/06-deploy.md, «Firma del APK»"; exit 1; }
+	@ver=$(APP_VERSION_REL); \
+	[ -n "$$ver" ] || { echo "no pude leer la versión de app/pubspec.yaml"; exit 1; }; \
+	git rev-parse -q --verify "refs/tags/v$$ver" >/dev/null || echo "AVISO: no existe el tag v$$ver (ver docs/06-deploy.md, «Versionado»)"; \
+	[ "$$(git rev-parse -q --verify "refs/tags/v$$ver^{commit}")" = "$$(git rev-parse HEAD)" ] || echo "AVISO: HEAD no está en el tag v$$ver: este APK no se puede reproducir desde el tag"; \
+	[ -z "$$(git status --porcelain)" ] || echo "AVISO: hay cambios sin commitear"; \
+	code=$$(git rev-list --count HEAD); commit=$$(git rev-parse --short HEAD); \
+	echo "Release $$ver (versionCode $$code, $$commit) -> $(API_URL_PROD)"; \
+	cd app && flutter build apk --release --target-platform android-arm64 \
+		--build-name=$$ver --build-number=$$code \
+		--dart-define=API_URL=$(API_URL_PROD) --dart-define=APP_VERSION=$$ver \
+		$(if $(API_TIMEOUT_S),--dart-define=API_TIMEOUT_S=$(API_TIMEOUT_S)) \
+		--dart-define=APP_COMMIT=$$commit --dart-define=APP_BUILT_AT=$$(date +%Y-%m-%dT%H:%M) \
+	&& cd .. && mkdir -p dist && cp app/build/app/outputs/flutter-apk/app-release.apk dist/almacenero-$$ver.apk \
+	&& echo "APK firmado: dist/almacenero-$$ver.apk" && shasum -a 256 dist/almacenero-$$ver.apk
+
+version: ## Muestra versión de la app, tag más cercano y qué versión corre en producción
+	@echo "app (pubspec):     $(APP_VERSION_REL)"
+	@echo "git describe:      $$(git describe --tags --always --dirty 2>/dev/null)"
+	@echo "backend en prod:   $$(curl -fsS -m 10 $(API_URL_PROD)/v1/health 2>/dev/null || echo 'sin respuesta (¿dormido o sin desplegar?)')"
+
+# --- deploy a Fly.io (docs/06-deploy.md). Cuestan plata: no los corre CI ----
+deploy-api: ## Despliega el backend a Fly con la versión del pubspec
+	@ver=$(APP_VERSION_REL); echo "Desplegando backend v$$ver a Fly"; \
+	cd backend && fly deploy --build-arg APP_VERSION=$$ver
+
+deploy-web: ## Despliega el panel de admin (nginx) a Fly
+	cd admin-web && fly deploy

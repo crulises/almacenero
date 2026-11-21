@@ -1,7 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Firma de release: los datos de la keystore viven en android/key.properties, que NO está
+// en git (docs/06-deploy.md, §2). Sin ese archivo, `flutter build apk --release` falla
+// con un mensaje claro en vez de firmar con la clave de debug sin avisar.
+val keyProps = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
 }
 
 android {
@@ -28,11 +38,28 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            if (keyProps.containsKey("storeFile")) {
+                storeFile = rootProject.file(keyProps.getProperty("storeFile"))
+                storePassword = keyProps.getProperty("storePassword")
+                keyAlias = keyProps.getProperty("keyAlias")
+                keyPassword = keyProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
+    // Falla temprano y claro si se pide un release sin key.properties.
+    gradle.taskGraph.whenReady {
+        val pideRelease = allTasks.any { it.name.contains("Release", ignoreCase = true) && it.project == project }
+        if (pideRelease && !keyProps.containsKey("storeFile")) {
+            throw GradleException("Falta app/android/key.properties (ver docs/06-deploy.md, sección «Firma»)")
         }
     }
 }
