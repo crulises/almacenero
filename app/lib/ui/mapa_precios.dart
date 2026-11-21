@@ -72,7 +72,7 @@ class _MapaPreciosState extends State<MapaPrecios> {
         children: [
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'ar.almacenero.almacenero',
+            userAgentPackageName: 'dev.crulises.almacenero',
           ),
           MarkerLayer(
             markers: [

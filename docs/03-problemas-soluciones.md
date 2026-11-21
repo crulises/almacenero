@@ -276,7 +276,7 @@ instalá esos.
   `./gradlew --stop`, cerrar lo que no se use, reiniciar el emulador en frío
   (`adb emu kill` y relanzar con `-no-snapshot -no-audio -no-boot-anim`).
 - **`monkey -p <paquete> 1` no abre la app** (no hay `MainActivity` con ese
-  nombre de paquete: el `applicationId` es `ar.almacenero.almacenero`). Tocar el
+  nombre de paquete: el `applicationId` es `dev.crulises.almacenero`; hasta el corte 10 era `ar.almacenero.almacenero`). Tocar el
   ícono de Flutter en el launcher y esperar ~40 s en el primer arranque debug.
 - **El historial de un producto muestra precios «de más» en el entorno local:** son
   los que cargan los tests del backend (usan la misma base). No es un bug.
