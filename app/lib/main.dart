@@ -1,4 +1,5 @@
 import 'package:android_id/android_id.dart';
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_deps.dart';
@@ -40,6 +41,7 @@ void main() {
     AlmaceneroApp(
       deps: AppDeps(
         cuentaBaja: cuentaBaja,
+        despertando: api.despertando,
         verificarCada: const Duration(seconds: 30),
         guardarInvitacion: auth.guardarInvitacion,
         loadInfoApp: () async => InfoApp(
@@ -74,7 +76,10 @@ class AlmaceneroApp extends StatelessWidget {
       theme: ThemeData(colorSchemeSeed: Colors.green, useMaterial3: true),
       // La baja se avisa desde cualquier pantalla: reemplaza a toda la app.
       builder: (context, child) {
-        final vigilado = VigilanteDeCuenta(deps: deps, child: child!);
+        final vigilado = AvisoDespertando(
+          despertando: deps.despertando,
+          child: VigilanteDeCuenta(deps: deps, child: child!),
+        );
         final baja = deps.cuentaBaja;
         if (baja == null) return vigilado;
         return ValueListenableBuilder<bool>(
@@ -84,6 +89,64 @@ class AlmaceneroApp extends StatelessWidget {
         );
       },
       home: HomeScreen(deps: deps),
+    );
+  }
+}
+
+/// «Despertando servidor…» sobre cualquier pantalla mientras un pedido tarda: el backend
+/// (Fly.io) se apaga solo y el primer pedido después de un rato espera su arranque.
+class AvisoDespertando extends StatelessWidget {
+  const AvisoDespertando({super.key, this.despertando, required this.child});
+
+  final ValueListenable<bool>? despertando;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final escucha = despertando;
+    if (escucha == null) return child;
+    return Stack(
+      children: [
+        child,
+        ValueListenableBuilder<bool>(
+          valueListenable: escucha,
+          builder: (context, activo, _) {
+            if (!activo) return const SizedBox.shrink();
+            return Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                child: Material(
+                  color: Theme.of(context).colorScheme.inverseSurface,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Despertando servidor…',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onInverseSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }

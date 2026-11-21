@@ -19,6 +19,7 @@ class AppDeps {
     this.guardarInvitacion = _sinInvitacion,
     this.loadInfoApp = _infoDePrueba,
     this.cuentaBaja,
+    this.despertando,
     this.verificarCada,
     required this.loadMe,
     required this.loadProducto,
@@ -40,6 +41,10 @@ class AppDeps {
   /// Pasa a `true` cuando el backend avisa que la cuenta fue dada de baja, desde
   /// cualquier pantalla: la app entera se reemplaza por la pantalla de baja.
   final ValueListenable<bool>? cuentaBaja;
+
+  /// `true` cuando un pedido tarda más de lo normal (el backend arranca en frío):
+  /// la app muestra «Despertando servidor…» sobre cualquier pantalla.
+  final ValueListenable<bool>? despertando;
 
   /// Cada cuánto la app consulta `/me` mientras está abierta, para enterarse de una
   /// baja (o un cambio de escalón) sin que la persona toque nada. `null` = no consulta

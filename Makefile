@@ -152,6 +152,7 @@ conflictos: $(PY) ## Lista los conflictos de catálogo pendientes de revisión
 	$(PY) -m etl.conflictos
 
 # --- app en un celular -----------------------------------------------------
+# API_TIMEOUT_S=40 make apk -> espera 40 s por intento (default de la app: 20 s).
 apk: ## APK debug (arm64) para el celular: sube la versión sola (0.0.1, 0.0.2, ...) y la muestra en la app
 	@# El celular no puede usar 10.0.2.2 (solo existe en el emulador): la app apunta
 	@# a la IP de esta máquina. Se puede forzar con `make apk LAN_IP=192.168.1.50`.
@@ -164,5 +165,6 @@ apk: ## APK debug (arm64) para el celular: sube la versión sola (0.0.1, 0.0.2, 
 	cd app && flutter build apk --debug --target-platform android-arm64 \
 		--build-name=$$ver --build-number=$$code \
 		--dart-define=API_URL=http://$$ip:8000 --dart-define=APP_VERSION=$$ver \
+		$(if $(API_TIMEOUT_S),--dart-define=API_TIMEOUT_S=$(API_TIMEOUT_S)) \
 		--dart-define=APP_COMMIT=$$commit --dart-define=APP_BUILT_AT=$$(date +%Y-%m-%dT%H:%M) \
 	&& echo "APK v$$ver: app/build/app/outputs/flutter-apk/app-debug.apk"

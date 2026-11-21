@@ -32,6 +32,7 @@ class _Backend {
       <({String ean, String localId, String precio, Ubicacion ubicacion})>[];
   Object? errorAlCargar;
   Object? errorHistorial;
+  Object? errorMe;
   Object? errorVigentes;
   final ubicacionesVigentes = <Ubicacion?>[];
 
@@ -47,8 +48,11 @@ class _Backend {
   final precios = <PrecioHistorial>[];
 
   AppDeps deps({Future<Producto> Function(String)? loadProducto}) => AppDeps(
-    loadMe: () async =>
-        Me(id: 'u1', alias: 'anon-abc123', karma: karma, escalon: escalon),
+    loadMe: () async {
+      final error = errorMe;
+      if (error != null) throw error;
+      return Me(id: 'u1', alias: 'anon-abc123', karma: karma, escalon: escalon);
+    },
     loadProducto: loadProducto ?? (_) async => _aceite,
     obtenerUbicacion: () async {
       final error = errorUbicacion;
@@ -168,6 +172,28 @@ Future<void> _enviarPrecio(WidgetTester tester, String precio) async {
 void main() {
   late _Backend backend;
 
+  testWidgets('«Despertando servidor…» aparece y desaparece con el aviso', (
+    tester,
+  ) async {
+    final despertando = ValueNotifier(false);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AvisoDespertando(
+          despertando: despertando,
+          child: const Scaffold(body: Text('contenido')),
+        ),
+      ),
+    );
+    expect(find.text('Despertando servidor…'), findsNothing);
+    despertando.value = true;
+    await tester.pump();
+    expect(find.text('Despertando servidor…'), findsOneWidget);
+    expect(find.text('contenido'), findsOneWidget);
+    despertando.value = false;
+    await tester.pump();
+    expect(find.text('Despertando servidor…'), findsNothing);
+  });
+
   setUp(() => backend = _Backend());
 
   Future<void> abrir(WidgetTester tester, {AppDeps? deps}) async {
@@ -266,6 +292,27 @@ void main() {
       expect(find.text('Servidor: http://192.168.1.5:8000'), findsOneWidget);
       expect(find.text('Estado: responde (35 ms)'), findsOneWidget);
       expect(find.text('IP del celular: 192.168.1.42 (wlan0)'), findsOneWidget);
+    });
+
+    testWidgets('distingue «el servidor tardó» de «sin red»', (tester) async {
+      backend.errorMe = ApiException(
+        'El servidor tardó demasiado en responder (20 s)',
+        esTimeout: true,
+      );
+      await abrir(tester);
+      expect(find.text('No pudimos conectar con el servidor'), findsOneWidget);
+      expect(
+        find.text('El servidor tardó demasiado en responder (20 s)'),
+        findsOneWidget,
+      );
+
+      backend.errorMe = ApiException('Sin conexión con el servidor: sin ruta');
+      await tester.tap(find.text('Reintentar'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Sin conexión con el servidor: sin ruta'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('si el servidor rechaza el alta, dice la causa real', (
