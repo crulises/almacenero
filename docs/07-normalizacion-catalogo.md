@@ -1,6 +1,6 @@
 # Doc 7 — Calidad y normalización del catálogo
 
-**Estado: borrador de diseño (fase 1), sin implementar.** Las mediciones son del
+**Estado: normalizador implementado en el corte 13 (`etl/comun/normalizar.py`, sin tocar la base); la integración en la carga es el corte 14.** Las mediciones son del
 2026-11-21 sobre la base local (134 505 productos: SEPA de un día + OFF de Argentina y
 vecinos; ver Doc 5 §2b). No es fuente de verdad del producto (Doc 1) ni de la
 arquitectura (Doc 2). El plan de cortes está en `docs/04-plan-v0.0.2.md` §10.
@@ -205,8 +205,8 @@ real de Corea que aparece en Chile) es **correcto**: el producto existe y el nom
 de su fabricante; que no lo lea un rioplatense no lo vuelve un error. Se marca
 `no_latino` (estado `parcial`) y la app lo muestra sin transliterar (transliterar sería
 inventar). `7801003785580` (solo nombre coreano, sin marca ni tamaño) es el mismo caso con
-menos datos: `parcial`, a la espera de una sugerencia (§4, cola de sugerencias del Doc 4
-§10) o de que OFF lo complete.
+menos datos: queda `descartado` (`muy_incompleto`, §5) hasta que alguien lo complete
+(§5.1) o OFF lo complete.
 
 ## 8. Los casos reales, uno por uno
 
@@ -221,7 +221,7 @@ menos datos: `parcial`, a la espera de una sugerencia (§4, cola de sugerencias 
 | Solo `Aceite` (sin marca ni tamaño) | 111 nombres genéricos de este tipo | `descartado` (`muy_incompleto`, §5); se completa con la interfaz simple (§5.1). |
 | ¿Cambia el EAN si cambia el tamaño? | — | **Sí, según GS1**: cualquier cambio del contenido neto declarado exige un GTIN nuevo ([regla «declared net content»](https://gs1.org/1/gtinrules/en/rule/266/declared-net-content)); el 20 % es de dimensiones/peso bruto. En la práctica algunos fabricantes lo incumplen, así que el tamaño sigue siendo un dato por EAN que se **concilia** entre fuentes (conflicto de tamaño, ya implementado), no una verdad. |
 | `8801043004398` (coreano, completo) | cargado | **correcto** (§7), `parcial` por `no_latino`. |
-| `7801003785580` (coreano, solo nombre) | cargado | `parcial`, a completar por sugerencia. |
+| `7801003785580` (coreano, solo nombre) | cargado | `descartado` (`muy_incompleto`): se completa con la interfaz simple (§5.1). |
 | `7891121035001` (`0000018353 Gin Com Tonica Seager S 24x275ml`) | todo en el nombre | quita el código, `24x275ml` → pack 24, tamaño total 6,6 l; marca `Seager's` **solo si** está en el lookup (si no, `sin_marca`); ⚠ `Com` es portugués («con»): la fuente es brasileña y el diccionario es solo español, así que el nombre queda `Gin Com Tonica Seager S`. Resultado probable `parcial`. |
 | `8052467549754` (nombre `0238321840`) | cargado | `descartado` (§5): no se ve en la app. |
 | `7898972607067` (`06:39 VENC:27/12/24`) | cargado | `descartado` (§5). |
@@ -247,3 +247,25 @@ Fixtures con los casos reales de §8 (entrada cruda → salida exacta), más pro
 idempotencia (`normalizar(normalizar(x)) == normalizar(x)`), no agrega palabras que no
 estén en la entrada o el diccionario, y no toca campos bloqueados. Es la misma convención
 del repo: pytest, sin mocks; la integración con la fusión corre contra Postgres real.
+
+## 11. Resultado medido del normalizador (corte 13, `make catalogo-calidad`)
+
+Corrido sobre los mismos 134 505 productos, sin escribir nada:
+
+| | Antes | Después |
+|---|---|---|
+| Sin tamaño | 82 130 (61,1 %) | **65 686 (48,8 %)**: −16 444 |
+| Marcas distintas | 19 022 | 16 593 |
+| Sin marca | 17 158 | 29 378 |
+| Estado | — | completo 72 109 (53,6 %) · parcial 55 663 (41,4 %) · dudoso 923 (0,7 %) · **descartado 5 810 (4,3 %)** |
+
+- **«Sin marca» sube a propósito:** los placeholders (`S/d`, `sin Marca`, `Generico`: 16 627)
+  dejan de pasar por marca. El número honesto de productos sin marca real es 29 378 (21,8 %).
+- **El normalizador ya corrigió 1 013 tamaños de SEPA que estaban mal** (coma corrida:
+  `1.5 g` vs `1.5 kg` en el nombre; unidad errónea; `1 g` imposible), `tamano_campo_corregido`.
+- **923 dudosos** son discrepancias reales de tamaño entre el campo y el nombre (p. ej.
+  `Pomada … 60 Grm` con 60 ml en el campo): es la cola de revisión del panel.
+- Se descubrió que `parsear_tamano` no entendía `cm3` (el patrón de unidades no admitía un
+  dígito): arreglado en `etl/comun/tamano.py` (afectaba también al campo de SEPA).
+- `abreviado` solo se marca con ≥ 2 tokens de la lista de ambiguas y baja el estado a
+  `parcial` como máximo.

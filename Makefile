@@ -1,4 +1,4 @@
-.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos
+.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -186,6 +186,10 @@ etl-osm: $(PY) ## Carga supermercados/almacenes de OSM como locales: make etl-os
 conflictos: $(PY) ## Lista los conflictos de catálogo pendientes de revisión
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m etl.conflictos
+
+catalogo-calidad: $(PY) ## Mide la calidad del catálogo con el normalizador (no escribe): make catalogo-calidad [MUESTRA=20] [ESTADO=dudoso]
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.calidad --muestra $(or $(MUESTRA),0) $(if $(ESTADO),--estado $(ESTADO))
 
 # --- app en un celular -----------------------------------------------------
 # API_TIMEOUT_S=40 make apk -> espera 40 s por intento (default de la app: 20 s).

@@ -67,7 +67,7 @@ _UNIDADES: dict[str, tuple[str, Decimal]] = {
 }
 
 _NUM = r"\d+(?:[.,]\d+)?"
-_UNI = r"(?:fl\.?\s*oz|[a-zA-Z]+)"
+_UNI = r"(?:fl\.?\s*oz|[a-zA-Z]+[0-9]?)"  # «cm3», «dm3» llevan un dígito
 _MULTI = re.compile(rf"^(\d+)\s*[x×*]\s*({_NUM})\s*({_UNI})\.?$", re.IGNORECASE)
 _SIMPLE = re.compile(rf"^({_NUM})\s*({_UNI})\.?$", re.IGNORECASE)
 

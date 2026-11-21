@@ -1,0 +1,9 @@
+# token,expansion — solo abreviaturas INEQUÍVOCAS (se compara sin mayúsculas ni punto final).
+# Las ambiguas (desc, ch, amb...) NO van acá: ver `ambiguas.txt`.
+p/,para
+c/,con
+s/,sin
+clas,clásico
+clasi,clásico
+clasica,clásica
+clasico,clásico
