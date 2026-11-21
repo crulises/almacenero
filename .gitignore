@@ -9,3 +9,10 @@ supabase/.branches/
 supabase/.temp/
 etl/data/
 backups/
+# Firma de Android: NUNCA al repo (docs/06-deploy.md)
+key.properties
+*.jks
+*.keystore
+dist/
+.env.*
+!.env.example

@@ -23,5 +23,8 @@ services:
     build: ./admin-web
     depends_on:
       - backend
+    environment:
+      # Vacío: el panel usa el mismo host con puerto 8000. En Fly se fija en admin-web/fly.toml.
+      API_URL: ""
     ports:
-      - "8080:80"
+      - "8080:8080"

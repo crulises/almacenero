@@ -1,6 +1,6 @@
 # Plan v0.0.2
 
-Estado: **plan aprobado, con decisiones abiertas al final**. Parte de v0.0.1
+Estado: **plan aprobado, con decisiones abiertas al final** (cortes 5-9, 11 y 12 mergeados; el 10 en revisión: tabla de cortes). Parte de v0.0.1
 cerrada y probada en un celular real (escanear, cargar precio, karma,
 historial). Ante una duda de comportamiento gana el Doc 1; ante una duda técnica,
 el Doc 2. **El Doc 1 no cambia**: la regla «solo el admin crea locales» sigue
@@ -19,16 +19,18 @@ offline, iOS, OAuth, pesables/genéricos.
 
 ## Cortes (cada uno, su rama y su PR)
 
-| # | Corte | Depende de | Tamaño |
-|---|-------|-----------|--------|
-| 5 | Roles + alta de local + «locales cerca» | — | medio |
-| 6 | Geofence al cargar un precio | 5 | medio |
-| 7 | ETL de Open Food Facts | — (en paralelo a 5/6) | medio |
-| 8 | **Precios vigentes por local: lista con frescura + mapa** (adelantado: va antes que 6) | — | medio |
-| 9 | Anti-spam (invitaciones, rate limit, límites por usuario) | 5 | medio |
-| 10 | Preparar release: firma del APK y guía de deploy | — | chico |
-| 12 | **Moderación: escalera por karma negativo y baja de cuentas** (§9) | 9, 11 | medio |
-| 11 | **Panel web de admin** (front chico con nginx + endpoints `/v1/admin`), en paralelo, sin tocar la app | 5 | grande |
+| # | Corte | Depende de | Tamaño | Estado |
+|---|-------|-----------|--------|--------|
+| 5 | Roles + alta de local + «locales cerca» | — | medio | ✅ en `main` |
+| 6 | Geofence al cargar un precio | 5 | medio | ✅ en `main` |
+| 7 | ETL de Open Food Facts (y SEPA/OSM) | — (en paralelo a 5/6) | medio | ✅ en `main` |
+| 8 | **Precios vigentes por local: lista con frescura + mapa** (adelantado: va antes que 6) | — | medio | ✅ en `main` |
+| 9 | Anti-spam (invitaciones, rate limit, límites por usuario) | 5 | medio | ✅ en `main` |
+| 10 | Preparar release: firma del APK, Docker de producción, guía de deploy (`docs/06-deploy.md`) | — | chico | 🔎 PR en revisión; **los pasos en Fly/Cloudflare/Supabase los hace el dueño** |
+| 11 | **Panel web de admin** (front chico con nginx + endpoints `/v1/admin`), en paralelo, sin tocar la app | 5 | grande | ✅ en `main` |
+| 12 | **Moderación: escalera por karma negativo y baja de cuentas** (§9) | 9, 11 | medio | ✅ en `main` |
+| — | Ajustes previos al 10: timeout + «Despertando servidor…», `make backup`/`restore-test`, «Acerca de» | — | chico | ✅ en `main` |
+| ? | **Proveedor de teselas del mapa** (ver «Abiertas»): decidir antes de abrir la app a más gente | — | chico | ⏳ **pendiente** |
 
 El ETL (7) toca solo `etl/` y el Makefile, así que puede correr en paralelo con
 5 y 6. Los demás van de a uno.
@@ -425,6 +427,10 @@ Un PIN es una invitación con `usos_max = 1`; la descripción va en `nota`.
   guardada NO ve esta pantalla (no necesita código): ver docs/03.
 
 ## 7. Release firmado y deploy con HTTPS (corte 10: preparación)
+
+> **Ejecutado en el corte 10: la guía paso a paso vive en [`docs/06-deploy.md`](06-deploy.md)**
+> (firma, Docker de producción, Fly.io, Cloudflare, Supabase, costos verificados, versionado y
+> backup). Lo que sigue es el razonamiento previo, conservado como contexto.
 
 ### Firmar un build release de Android
 
@@ -881,6 +887,15 @@ app). Decisiones:
 12. **Curación del catálogo:** corte propio, con ejemplos que reúne el dueño del proyecto
     (qué estandarizar y qué no gusta). Antes de usar el catálogo de forma permanente.
 
+13. **Fly.io para backend y panel** (escala a cero, región `gru`), con Cloudflare Pages como
+    alternativa documentada para el panel (`docs/06-deploy.md` §4). El panel sale bajo
+    `almacenero.crulises.dev/admin/`; el backend en `almacenero-api.crulises.dev`.
+14. **Versión única:** `version:` del pubspec = tag `vX.Y.Z` = `APP_VERSION` del backend en Fly =
+    APK publicado; `versionCode` = cantidad de commits. Ramas: `main` + una rama por corte,
+    PR con merge commit (`docs/06-deploy.md` §8).
+15. **`DATABASE_URL` de producción por el *session pooler* de Supabase (5432)**: el modo
+    transacción (6543) rompe los *prepared statements* de `asyncpg`.
+
 **Abiertas**
 
 - **Proveedor de teselas del mapa (NO SE OLVIDE):** OSM público solo sirve para el grupo
@@ -888,12 +903,7 @@ app). Decisiones:
   abrir la app a más gente**: proveedor con plan gratis (MapTiler, Stadia), Google Maps
   (paga pasado cierto uso) o **autohospedar** con Protomaps/PMTiles (un archivo servido
   desde Cloudflare R2, costo casi nulo). Tema para revisar en cada repaso de pendientes.
-- **Estrategia de ramas y versiones:** definir una convención que alinee número de versión
-  de la app (`APP_VERSION`), tags de git y releases del backend en Fly.
-- **Setup del entorno en otra computadora:** documentar todo lo necesario (Docker,
-  Supabase CLI, Flutter/Android, `flyctl`, etc.) para mover el entorno de desarrollo a
-  cualquier máquina; se escribe con el corte 10.
-- **Base de datos y pausa de Supabase gratis:** ver §7 «Elegir host»; si la pausa
+- **Base de datos y pausa de Supabase gratis:** ver `docs/06-deploy.md` §6; si la pausa
   no es tolerable, evaluar Postgres en otro servicio (costo-beneficio).
 - **Imágenes subidas por usuarios** (diferidas): compresión en el cliente y
   re-codificación en el servidor; moderación antes de publicar (§7).
@@ -928,7 +938,8 @@ Hacerlo **antes de cargar datos reales** y repasarlo cada tanto.
     transaction_timeout|CREATE SCHEMA public;)' | psql <url> -v ON_ERROR_STOP=1
     --single-transaction` (los porqués de los filtros, en `docs/03`) y apuntar el backend
     con `DATABASE_URL`. Esta ruta está probada solo contra el Postgres local; el simulacro
-    en el Postgres final de producción queda para el corte 10. **Nunca** restaurar sobre la
+    en el Postgres final de producción está documentado en `docs/06-deploy.md` §7 y **lo corre el
+    dueño** cuando exista el proyecto de Supabase. **Nunca** restaurar sobre la
     base real en uso.
   - **Lo que el backup NO cubre:** `auth.users` de Supabase Auth (ver «Auth» arriba) y las
     variables de entorno/secretos.

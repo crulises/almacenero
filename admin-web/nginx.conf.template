@@ -1,0 +1,32 @@
+# Panel de admin: solo archivos estáticos, servidos bajo /admin/ (detrás de
+# almacenero.crulises.dev; otras rutas del dominio quedan libres para otros servicios).
+# Habla únicamente con el backend (/v1/admin), por CORS. El HTTPS lo termina Fly/Cloudflare.
+# ${API_URL} lo reemplaza nginx al arrancar (imagen oficial: /etc/nginx/templates).
+server {
+    listen 8080;
+    # Redirects relativos (/admin/): con absolute_redirect nginx pondría su puerto interno
+    # (:8080) y el http, que detrás de Fly/Cloudflare serían incorrectos.
+    absolute_redirect off;
+    root /usr/share/nginx/html;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+    # Nada se cachea: el panel se actualiza con cada despliegue.
+    add_header Cache-Control "no-store" always;
+
+    location = / { return 302 /admin/; }
+
+    # Para el healthcheck del contenedor y de Fly (no pasa por /admin).
+    location = /healthz { access_log off; default_type text/plain; return 200 "ok\n"; }
+
+    # URL del backend por entorno. Sin API_URL: mismo host que sirve el panel, puerto 8000.
+    location = /admin/config.js {
+        default_type application/javascript;
+        return 200 'window.API_URL = "${API_URL}" || (location.protocol + "//" + location.hostname + ":8000");\n';
+    }
+
+    location /admin/ {
+        try_files $uri $uri/ /admin/index.html;
+    }
+}

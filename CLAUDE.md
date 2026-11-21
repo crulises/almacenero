@@ -19,6 +19,12 @@ gana el Doc 1. Ante una duda técnica, gana el Doc 2.
 
 Además:
 
+- `docs/00-setup-entorno.md` — instalar el entorno de desarrollo en otra máquina y verificarlo.
+- `docs/06-deploy.md` — release firmado de Android, Fly.io, Cloudflare, Supabase, backup y
+  versionado/ramas. **Leelo antes de tocar Dockerfiles, `fly.toml` o la firma.** Nunca corras
+  `fly deploy`/`fly launch`/`fly apps create`/`fly certs`/`fly secrets` ni nada que cree o exponga
+  recursos en Fly/Cloudflare/Supabase sin OK explícito del usuario.
+
 - `docs/03-problemas-soluciones.md` — cómo armar el entorno desde cero y los
   problemas ya vividos (con su solución). **Leelo antes de debuggear un problema
   de entorno, de build o de auth**, y agregale lo nuevo que aparezca (formato
@@ -50,7 +56,7 @@ Fuera (NO implementar todavía, aunque se modele o se deje el cableado):
 
 Plan en `docs/04-plan-v0.0.2.md`: roles y alta de local (corte 5), geofence,
 panel web de admin (corte 11), ETL por fuente, frescura visible, anti-spam, moderación
-por karma y baja de cuentas (corte 12, `docs/04` §9) y preparación del release. El Doc 1
+por karma y baja de cuentas (corte 12, `docs/04` §9) y preparación del release (`docs/06-deploy.md`). El Doc 1
 sigue mandando: el alta de locales por cualquier usuario es solo un interruptor de
 prueba (`config.alta_locales_abierta`).
 
@@ -101,7 +107,10 @@ Toda la lógica operativa va en el Makefile. CI solo llama a estos targets.
 - `make lint` — linter.
 - `make build` — build de imágenes.
 - `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel
-  web (http://localhost:8080; `make admin-web` lo reconstruye).
+  web (http://localhost:8080/admin/; `make admin-web` lo reconstruye).
+- `make apk-release` — APK **firmado** de release (necesita `app/android/key.properties`).
+- `make version` — versión de la app, tag y backend en producción.
+- `make deploy-api` / `make deploy-web` — despliegan a Fly (cuestan: solo con OK del usuario).
 - `make apk` — APK debug para probar en un celular de la misma red (apunta a la
   IP local de esta máquina; `LAN_IP=...` para forzarla).
 
