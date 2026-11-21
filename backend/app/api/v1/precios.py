@@ -6,10 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.v1.productos import es_ean_de_balanza
-from app.auth import Usuario, current_user
+from app.auth import Usuario
 from app.db import get_pool
 from app.services import config
 from app.services.karma import karma_por_carga, sumar_karma
+from app.services.permisos import exigir
 
 router = APIRouter(tags=["precios"])
 
@@ -88,7 +89,7 @@ async def _exigir_bajo_limite(conn: asyncpg.Connection, user_id: UUID) -> None:
 @router.post("/precios", response_model=PrecioCreado, status_code=201)
 async def cargar_precio(
     body: PrecioIn,
-    user: Usuario = Depends(current_user),
+    user: Usuario = Depends(exigir("precio.cargar")),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> PrecioCreado:
     if es_ean_de_balanza(body.ean):

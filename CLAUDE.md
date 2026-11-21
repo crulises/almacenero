@@ -49,7 +49,8 @@ Fuera (NO implementar todavía, aunque se modele o se deje el cableado):
 ## Alcance de v0.0.2 (en curso)
 
 Plan en `docs/04-plan-v0.0.2.md`: roles y alta de local (corte 5), geofence,
-panel web de admin (corte 11), ETL por fuente, frescura visible, anti-spam y preparación del release. El Doc 1
+panel web de admin (corte 11), ETL por fuente, frescura visible, anti-spam, moderación
+por karma y baja de cuentas (corte 12, `docs/04` §9) y preparación del release. El Doc 1
 sigue mandando: el alta de locales por cualquier usuario es solo un interruptor de
 prueba (`config.alta_locales_abierta`).
 

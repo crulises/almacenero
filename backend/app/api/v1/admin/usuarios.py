@@ -11,7 +11,7 @@ from app.api.v1.admin.consulta import Consulta, escapar_like
 from app.api.v1.admin.paginas import Pagina
 from app.auth import Usuario
 from app.db import get_pool
-from app.services import auditoria
+from app.services import auditoria, dispositivos, moderacion
 from app.services.permisos import exigir
 
 router = APIRouter(tags=["admin"])
@@ -32,9 +32,17 @@ class UsuarioAdminOut(BaseModel):
     anonimo_auth_id: UUID | None  # el id anónimo con el que empezó (asociación)
     rol: str
     karma: int
+    # Moderación (docs/04 §9): el estado se guarda; el escalón se deduce del karma.
+    estado: str  # activo | baja
+    baja_at: datetime | None
+    escalon: str  # normal | aviso | restringido
     cargas: int
     locales_creados: int
     created_at: datetime
+    # Con qué invitación entró (rastro para no volver a invitar a quien se dio de baja).
+    # Con el código compartido solo queda el último que lo usó; los PINs son exactos.
+    invitacion_codigo: str | None = None
+    invitacion_nota: str | None = None
 
 
 class CargaOut(BaseModel):
@@ -53,12 +61,20 @@ class LocalCreadoOut(BaseModel):
     fuente: str
 
 
+class CuentaHermanaOut(BaseModel):
+    id: UUID
+    alias: str
+    estado: str
+
+
 class UsuarioDetalle(UsuarioAdminOut):
     """La ficha del usuario: identidad, actividad y cambios anteriores."""
 
     cargas_recientes: list[CargaOut]
     locales_creados_lista: list[LocalCreadoOut]
     historial: list[AuditoriaOut]
+    # Otras cuentas que usaron el mismo dispositivo (ANDROID_ID, docs/04 §9).
+    mismo_dispositivo: list[CuentaHermanaOut] = []
 
 
 class RolIn(BaseModel):
@@ -71,23 +87,39 @@ class KarmaIn(BaseModel):
     motivo: str = Field(min_length=3, max_length=300)
 
 
+class BajaIn(BaseModel):
+    motivo: str = Field(min_length=3, max_length=300)
+
+
 class UsuarioPatch(BaseModel):
     alias: str = Field(min_length=1, max_length=50)
 
 
 _SELECT = """
     select u.id, u.auth_id, u.alias, u.email, u.es_anonimo, u.anonimo_auth_id, u.rol,
-           u.karma, u.created_at,
+           u.karma, u.created_at, u.estado, u.baja_at,
+           (select i.codigo from invitaciones i where i.usada_por_auth = u.auth_id
+             limit 1) as invitacion_codigo,
+           (select i.nota from invitaciones i where i.usada_por_auth = u.auth_id
+             limit 1) as invitacion_nota,
            (select count(*) from precios p where p.user_id = u.id) as cargas,
            (select count(*) from locales l where l.creado_por = u.id) as locales_creados
     from usuarios u
 """
 
 
+async def _salida(pool: asyncpg.Pool | asyncpg.Connection, row) -> UsuarioAdminOut:
+    d = dict(row)
+    d["escalon"] = await moderacion.escalon_de(pool, d["karma"], d["rol"])
+    return UsuarioAdminOut(**d)
+
+
 @router.get("/usuarios", response_model=Pagina[UsuarioAdminOut])
 async def listar_usuarios(
     tipo: str | None = Query(None, pattern="^(anonimo|registrado)$"),
     rol: str | None = Query(None, pattern="^(usuario|admin)$"),
+    estado: str | None = Query(None, pattern="^(activo|baja)$"),
+    escalon: str | None = Query(None, pattern="^(normal|aviso|restringido)$"),
     q: str | None = Query(None, max_length=100, description="alias, email o id"),
     orden: str = Query("alta", pattern="^(alta|karma|cargas)$"),
     limit: int = Query(50, ge=1, le=200),
@@ -100,6 +132,22 @@ async def listar_usuarios(
         c.condiciones.append("u.es_anonimo" if tipo == "anonimo" else "not u.es_anonimo")
     if rol:
         c.donde("u.rol = {}", rol)
+    if estado:
+        c.donde("u.estado = {}", estado)
+    if escalon:
+        # El escalón se deduce: se traduce a rangos de karma (un admin es siempre normal).
+        aviso, restriccion = await moderacion.umbrales(pool)
+        if escalon == "restringido":
+            c.condiciones.append("u.rol = 'usuario'")
+            c.donde("u.karma <= {}", restriccion)
+        elif escalon == "aviso":
+            c.condiciones.append("u.rol = 'usuario'")
+            c.donde("u.karma <= {}", aviso)
+            c.donde("u.karma > {}", restriccion)
+        else:  # normal: un admin, o un usuario por encima de los dos umbrales
+            c.condiciones.append(
+                "(u.rol = 'admin' or u.karma > " + c.param(max(aviso, restriccion)) + ")"
+            )
     if q and q.strip():
         p = c.param(f"%{escapar_like(q.strip().lower())}%")
         c.condiciones.append(
@@ -111,7 +159,7 @@ async def listar_usuarios(
     rows = await pool.fetch(
         f"{_SELECT} {c.where} order by {_ORDEN[orden]} limit {lim} offset {off}", *c.args
     )
-    return Pagina(total=total, items=[UsuarioAdminOut(**dict(r)) for r in rows])
+    return Pagina(total=total, items=[await _salida(pool, r) for r in rows])
 
 
 @router.patch("/usuarios/{usuario_id}", response_model=UsuarioAdminOut)
@@ -142,7 +190,7 @@ async def editar_usuario(
             {"alias": alias},
         )
         row = await conn.fetchrow(f"{_SELECT} where u.id = $1", usuario_id)
-    return UsuarioAdminOut(**dict(row))
+    return await _salida(pool, row)
 
 
 @router.get("/usuarios/{usuario_id}", response_model=UsuarioDetalle)
@@ -170,10 +218,14 @@ async def ficha_usuario(
         usuario_id,
     )
     return UsuarioDetalle(
-        **dict(row),
+        **(await _salida(pool, row)).model_dump(),
         cargas_recientes=[CargaOut(**dict(c)) for c in cargas],
         locales_creados_lista=[LocalCreadoOut(**dict(x)) for x in locales],
         historial=await historial(pool, "usuario", usuario_id),
+        mismo_dispositivo=[
+            CuentaHermanaOut(**dict(c))
+            for c in await dispositivos.cuentas_del_dispositivo(pool, usuario_id)
+        ],
     )
 
 
@@ -216,7 +268,7 @@ async def cambiar_rol(
             nota=body.motivo,
         )
         row = await conn.fetchrow(f"{_SELECT} where u.id = $1", usuario_id)
-    return UsuarioAdminOut(**dict(row))
+    return await _salida(pool, row)
 
 
 @router.post("/usuarios/{usuario_id}/karma", response_model=UsuarioAdminOut)
@@ -252,4 +304,65 @@ async def ajustar_karma(
             nota=body.motivo,
         )
         row = await conn.fetchrow(f"{_SELECT} where u.id = $1", usuario_id)
-    return UsuarioAdminOut(**dict(row))
+    return await _salida(pool, row)
+
+
+async def _cambiar_estado(
+    pool: asyncpg.Pool, admin: Usuario, usuario_id: UUID, nuevo: str, motivo: str
+) -> UsuarioAdminOut:
+    """Pone o saca la baja. El estado está protegido por trigger: se habilita solo dentro
+    de esta transacción. El motivo y el antes/después quedan en la auditoría."""
+    accion = "usuario.baja" if nuevo == "baja" else "usuario.reactivar"
+    if usuario_id == admin.id:
+        raise HTTPException(409, "no podés darte de baja (ni reactivarte) a vos mismo")
+    async with pool.acquire() as conn, conn.transaction():
+        u = await conn.fetchrow(
+            "select estado, rol from usuarios where id = $1 for update", usuario_id
+        )
+        if u is None:
+            raise HTTPException(404, "usuario no encontrado")
+        if u["estado"] == nuevo:
+            raise HTTPException(409, "ya está de baja" if nuevo == "baja" else "ya está activo")
+        if nuevo == "baja" and u["rol"] == "admin":
+            raise HTTPException(409, "es admin: primero sacale el rol y después dalo de baja")
+        await conn.execute("select set_config('app.estado_write', 'on', true)")
+        await conn.execute(
+            "update usuarios set estado = $2, baja_at = case when $2 = 'baja' then now() end "
+            "where id = $1",
+            usuario_id,
+            nuevo,
+        )
+        await auditoria.registrar(
+            conn,
+            admin.id,
+            accion,
+            "usuario",
+            usuario_id,
+            {"estado": u["estado"]},
+            {"estado": nuevo},
+            nota=motivo,
+        )
+        row = await conn.fetchrow(f"{_SELECT} where u.id = $1", usuario_id)
+    return await _salida(pool, row)
+
+
+@router.post("/usuarios/{usuario_id}/baja", response_model=UsuarioAdminOut)
+async def dar_de_baja(
+    usuario_id: UUID,
+    body: BajaIn,
+    admin: Usuario = Depends(exigir("usuario.dar_baja")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> UsuarioAdminOut:
+    """Deja al usuario afuera: desde el próximo request no entra ni renueva sesión.
+    Se puede revertir con `/reactivar`. Motivo obligatorio (queda en la auditoría)."""
+    return await _cambiar_estado(pool, admin, usuario_id, "baja", body.motivo.strip())
+
+
+@router.post("/usuarios/{usuario_id}/reactivar", response_model=UsuarioAdminOut)
+async def reactivar(
+    usuario_id: UUID,
+    body: BajaIn,
+    admin: Usuario = Depends(exigir("usuario.dar_baja")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> UsuarioAdminOut:
+    return await _cambiar_estado(pool, admin, usuario_id, "activo", body.motivo.strip())

@@ -13,6 +13,12 @@ from app.services.permisos import exigir
 
 router = APIRouter(tags=["admin"])
 
+# Umbrales de moderación (docs/04 §9) → el otro de la pareja.
+UMBRALES_KARMA = {
+    "karma_umbral_aviso": "karma_umbral_restriccion",
+    "karma_umbral_restriccion": "karma_umbral_aviso",
+}
+
 
 class ConfigItem(BaseModel):
     clave: str
@@ -82,7 +88,26 @@ async def cambiar_config(
             raise HTTPException(
                 422, f"el valor tiene que ser de tipo {_tipo(actual)} (como el actual)"
             )
-        if _tipo(actual) == "numero" and body.valor < 0:
+        if clave in UMBRALES_KARMA:
+            # Son negativos a propósito (karma <= umbral). La escalera tiene que bajar:
+            # primero el aviso, después la restricción.
+            if body.valor > 0:
+                raise HTTPException(422, "el umbral de karma tiene que ser cero o negativo")
+            otra = UMBRALES_KARMA[clave]
+            valor_otra = await conn.fetchval(
+                "select valor::text from config where clave = $1 and rubro is null", otra
+            )
+            valor_otra = json.loads(valor_otra) if valor_otra is not None else DEFAULTS[otra]
+            aviso, restriccion = (
+                (body.valor, valor_otra)
+                if clave == "karma_umbral_aviso"
+                else (valor_otra, body.valor)
+            )
+            if restriccion > aviso:
+                raise HTTPException(
+                    422, "el umbral de restricción no puede estar por encima del de aviso"
+                )
+        elif _tipo(actual) == "numero" and body.valor < 0:
             raise HTTPException(422, "el valor no puede ser negativo")
         await conn.execute(
             """

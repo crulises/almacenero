@@ -1,3 +1,4 @@
+import 'package:android_id/android_id.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_deps.dart';
@@ -12,6 +13,7 @@ import 'data/product_repository.dart';
 import 'data/session.dart';
 import 'data/user_repository.dart';
 import 'ui/home_screen.dart';
+import 'ui/moderacion.dart';
 
 /// URL del backend. Desde el emulador Android, el host es 10.0.2.2.
 /// Se cambia con `--dart-define=API_URL=...` (`make apk` lo hace para un celular).
@@ -21,7 +23,12 @@ const apiUrl = String.fromEnvironment(
 );
 
 void main() {
-  final api = ApiClient(baseUrl: apiUrl);
+  final cuentaBaja = ValueNotifier<bool>(false);
+  final api = ApiClient(
+    baseUrl: apiUrl,
+    onCuentaBaja: () => cuentaBaja.value = true,
+    idDispositivo: () => const AndroidId().getId(),
+  );
   final auth = AuthRepository(
     api: api,
     store: SecureSessionStore(),
@@ -32,6 +39,8 @@ void main() {
   runApp(
     AlmaceneroApp(
       deps: AppDeps(
+        cuentaBaja: cuentaBaja,
+        verificarCada: const Duration(seconds: 30),
         guardarInvitacion: auth.guardarInvitacion,
         loadInfoApp: () async => InfoApp(
           build: BuildInfo.actual,
@@ -63,6 +72,17 @@ class AlmaceneroApp extends StatelessWidget {
     return MaterialApp(
       title: 'Almacenero',
       theme: ThemeData(colorSchemeSeed: Colors.green, useMaterial3: true),
+      // La baja se avisa desde cualquier pantalla: reemplaza a toda la app.
+      builder: (context, child) {
+        final vigilado = VigilanteDeCuenta(deps: deps, child: child!);
+        final baja = deps.cuentaBaja;
+        if (baja == null) return vigilado;
+        return ValueListenableBuilder<bool>(
+          valueListenable: baja,
+          builder: (_, estaDeBaja, _) =>
+              estaDeBaja ? const CuentaBajaScreen() : vigilado,
+        );
+      },
       home: HomeScreen(deps: deps),
     );
   }

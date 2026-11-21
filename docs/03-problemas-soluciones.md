@@ -656,3 +656,56 @@ instalá esos.
 - **Un PIN «usado» que nadie usó:** si el alta falló después de gastarlo (proveedor de
   auth caído) el uso se devuelve solo; si el PIN figura usado en el panel, alguien creó
   un usuario con él (ver «Usado por»).
+
+---
+
+## Moderación y baja de cuentas (corte 12)
+
+Decisiones en `docs/04` §9.
+
+- **Síntoma:** en un worktree nuevo, `make test` falla con `backend/.venv/bin/python: No
+  such file or directory` y el backend no encuentra `DATABASE_URL`. **Causa:** un worktree
+  es un checkout limpio: trae lo que git versiona, y `.env` y `backend/.venv` están en
+  `.gitignore`, así que no se copian. **Solución:** `cp <checkout principal>/.env .env` y
+  `make venv`. (No se commitean: son secretos y binarios locales.)
+- **Síntoma:** una cuenta dada de baja «revive»: la app vuelve a mostrar el home con otro
+  alias. **Causa (evitada):** si el backend rechazara con 401, la app lo interpreta como
+  «sesión perdida» y se crea una cuenta anónima nueva (`AuthRepository._resolve`).
+  **Solución:** la baja responde **403** con `detail.codigo = cuenta_baja`, tanto en
+  `current_user` como en `/auth/refresh`; la app lo muestra como pantalla final y no pide
+  sesión. La defensa contra el alta nueva es el PIN (`modo_acceso = solo_invitacion`).
+- **Síntoma:** el usuario de baja sigue entrando un rato. **Causa:** nada, salvo que el
+  backend viejo siga corriendo: el último que corrió `make up` es el que sirve y puede ser
+  el de otra rama sin este corte. **Solución:** `make up` desde la rama correcta. Con el
+  código del corte, la baja vale en el **siguiente request**, también con el token vigente
+  (cada request consulta la fila del usuario).
+- **Síntoma:** el panel dice `el valor no puede ser negativo` al editar
+  `karma_umbral_aviso`. **Causa:** la validación genérica de `/v1/admin/config` rechaza
+  números negativos. **Solución:** los dos umbrales de karma tienen una regla propia
+  (cero o negativos, y la restricción nunca por encima del aviso).
+- **Síntoma:** un test que prepara estado con `sql("select set_config(...); update ...")`
+  falla con `cannot insert multiple commands into a prepared statement`. **Causa:**
+  asyncpg no ejecuta varias sentencias con parámetros. **Solución:** un helper que abre la
+  transacción y las ejecuta por separado (`tests/db.py`: `poner_karma`,
+  `poner_estado_sin_fecha`). El `set_config(..., true)` solo vale dentro de la transacción.
+- **Síntoma:** el panel abre con «no tenés permiso para esto» y una sesión «prueba@local».
+  **Causa:** el navegador conservó la sesión de otro usuario (localStorage) que no es
+  admin. **Solución:** «Salir» y entrar con el admin (`make admin-crear`).
+- **«Entró con el PIN: sin registro» en la ficha.** El PIN de un solo uso queda atado a
+  quien lo usó; el código **compartido** (`almacenero-dev`) solo guarda al último. Para
+  rastrear a quien vuelve después de una baja, repartir PINs individuales.
+- **Dispositivo (ANDROID_ID).** Un dispositivo asociado a una cuenta de baja no puede
+  crear otra (403 `cuenta_baja` antes de gastar el PIN). **Síntoma típico:** probás con el
+  mismo celular un alta nueva después de dar de baja a tu cuenta de prueba y la app
+  muestra «cuenta dada de baja». **Causa:** es lo esperado. **Solución:** reactivar la
+  cuenta vieja desde el panel (deja de bloquear) o probar desde otro celular. Las cuentas
+  anteriores a esta versión se asocian al dispositivo la próxima vez que renuevan sesión
+  (`/auth/refresh`), no antes. Solo se guarda el hash (`tabla dispositivos`).
+- **Síntoma:** probás una feature nueva del backend desde el celular y no hace nada.
+  **Causa:** el contenedor del backend sigue con la imagen vieja (el APK es nuevo, el
+  servidor no). Comprobación: `docker exec almacenero-backend-1 ls app/services`.
+  **Solución:** `docker compose up -d --build backend admin-web` (migraciones:
+  `make migrate`). Cada corte con backend nuevo necesita esto antes de probar.
+- **Síntoma:** dar de baja a alguien que está quieto en una pantalla no muestra nada.
+  **Causa:** el backend no puede avisarle; la app se entera solo cuando hace un pedido.
+  **Solución:** `VigilanteDeCuenta` consulta `/me` cada 30 s y al volver a la app.

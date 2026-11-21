@@ -34,6 +34,7 @@ _SELECT = f"""
     select i.id, i.codigo, i.nota, i.usos, i.usos_max, i.vence, i.created_at, i.usada_at,
            {_ESTADO} as estado,
            u.id as usada_por_id, u.alias as usada_por_alias,
+           coalesce(u.estado = 'baja', false) as usada_por_baja,
            c.alias as creada_por_alias
     from invitaciones i
     left join usuarios u on u.auth_id = i.usada_por_auth
@@ -53,6 +54,7 @@ class InvitacionOut(BaseModel):
     usada_at: datetime | None
     usada_por_id: UUID | None  # para abrir la ficha del usuario
     usada_por_alias: str | None
+    usada_por_baja: bool  # quien entró con este código está dado de baja
     creada_por_alias: str | None
 
 

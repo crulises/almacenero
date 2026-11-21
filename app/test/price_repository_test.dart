@@ -124,6 +124,22 @@ void main() {
       );
     });
 
+    test('clasifica la restricción por karma y la baja', () {
+      ApiException e(String codigo) =>
+          ApiException('x', statusCode: 403, detail: {'codigo': codigo});
+      expect(
+        clasificarErrorCarga(e('cuenta_restringida')),
+        CargaError.cuentaRestringida,
+      );
+      expect(clasificarErrorCarga(e('cuenta_baja')), CargaError.cuentaBaja);
+      expect(
+        clasificarErrorAltaLocal(e('cuenta_restringida')),
+        AltaLocalError.cuentaRestringida,
+      );
+      expect(e('cuenta_baja').isCuentaBaja, isTrue);
+      expect(e('cuenta_restringida').isCuentaRestringida, isTrue);
+    });
+
     test('un 401 renueva la sesión y reintenta una vez', () async {
       var intentos = 0;
       estado = (_) => ++intentos == 1 ? 401 : 201;

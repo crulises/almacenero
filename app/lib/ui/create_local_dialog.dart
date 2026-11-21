@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../app_deps.dart';
 import '../data/local_repository.dart';
 import '../data/location_service.dart';
+import 'moderacion.dart';
 
 /// Pide el nombre de un local nuevo y lo crea donde está parado el usuario.
 /// Devuelve el [Local] creado, o null si se cancela.
@@ -69,6 +70,7 @@ class _CrearLocalDialogState extends State<_CrearLocalDialog> {
             'Por ahora solo un administrador puede crear locales.',
           AltaLocalError.limiteDiario =>
             'Llegaste al máximo de locales nuevos por hoy.',
+          AltaLocalError.cuentaRestringida => mensajeRestringido(),
           AltaLocalError.datosInvalidos => 'Revisá el nombre del local.',
           AltaLocalError.otro => 'No pudimos crear el local. Probá de nuevo.',
         };

@@ -48,6 +48,8 @@ td input.guardando { border-color: var(--aviso); }
 .badge { padding: 1px 7px; border-radius: 10px; font-size: 12px; border: 1px solid var(--borde); }
 .badge.ok { color: var(--ok); border-color: var(--ok); }
 .badge.mal { color: var(--aviso); border-color: var(--aviso); }
+.badge.aviso { color: var(--aviso); border-color: var(--aviso); }
+.badge.baja { color: var(--mal); border-color: var(--mal); }
 .pag { display: flex; gap: 8px; align-items: center; margin-top: 10px; color: var(--suave); }
 .toast { position: fixed; right: 18px; bottom: 18px; background: var(--panel); border: 1px solid var(--borde);
          border-left: 4px solid var(--ok); border-radius: 8px; padding: 10px 14px; max-width: 420px; box-shadow: 0 4px 16px #0003; }

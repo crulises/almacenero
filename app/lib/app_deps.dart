@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'data/app_info.dart';
 import 'data/local_repository.dart';
 import 'data/location_service.dart';
@@ -16,6 +18,8 @@ class AppDeps {
   const AppDeps({
     this.guardarInvitacion = _sinInvitacion,
     this.loadInfoApp = _infoDePrueba,
+    this.cuentaBaja,
+    this.verificarCada,
     required this.loadMe,
     required this.loadProducto,
     required this.obtenerUbicacion,
@@ -32,6 +36,15 @@ class AppDeps {
 
   /// Versión, servidor e IP del celular, para mostrar en la pantalla principal.
   final Future<InfoApp> Function() loadInfoApp;
+
+  /// Pasa a `true` cuando el backend avisa que la cuenta fue dada de baja, desde
+  /// cualquier pantalla: la app entera se reemplaza por la pantalla de baja.
+  final ValueListenable<bool>? cuentaBaja;
+
+  /// Cada cuánto la app consulta `/me` mientras está abierta, para enterarse de una
+  /// baja (o un cambio de escalón) sin que la persona toque nada. `null` = no consulta
+  /// (los tests).
+  final Duration? verificarCada;
   final Future<Me> Function() loadMe;
   final Future<Producto> Function(String ean) loadProducto;
   final Future<Ubicacion> Function() obtenerUbicacion;

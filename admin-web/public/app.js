@@ -6,7 +6,7 @@ const CLAVE = "almacenero_admin_sesion";
 
 const SECCIONES = {
   locales: { ruta: "/admin/locales", filtros: { verificado: "", fuente: "", q: "", sin_precios: false, orden: "alta" } },
-  usuarios: { ruta: "/admin/usuarios", filtros: { tipo: "", rol: "", q: "", orden: "alta" } },
+  usuarios: { ruta: "/admin/usuarios", filtros: { tipo: "", rol: "", estado: "", escalon: "", q: "", orden: "alta" } },
   precios: { ruta: "/admin/precios", filtros: { local_id: "", ean: "", user_id: "", desde: "", hasta: "" } },
   productos: { ruta: "/admin/productos", filtros: { q: "", origen: "", con_conflictos: false } },
   conflictos: { ruta: "/admin/conflictos", filtros: { estado: "pendiente" } },
@@ -312,7 +312,7 @@ function panel() {
     },
     extras(tipo, d) {
       if (tipo === "precio") return { motivo: "", revertir: false };
-      if (tipo === "usuario") return { rol: d.rol === "admin" ? "usuario" : "admin", motivoRol: "", delta: 1, motivoKarma: "" };
+      if (tipo === "usuario") return { rol: d.rol === "admin" ? "usuario" : "admin", motivoRol: "", delta: 1, motivoKarma: "", motivoBaja: "" };
       return {};
     },
     verPrecios(filtros) { this.ficha = null; this.ir('precios', filtros); },
@@ -408,6 +408,23 @@ function panel() {
     ajustarKarmaFicha() {
       const x = this.ficha.x;
       return this.accion(() => this.api(`/admin/usuarios/${this.ficha.id}/karma`, { method: "POST", body: { delta: Number(x.delta), motivo: x.motivoKarma } }), "Karma ajustado");
+    },
+
+    darBajaFicha() {
+      const x = this.ficha.x;
+      if (!confirm(`¿Dar de baja a ${this.ficha.d.alias}? Pierde el acceso en el próximo pedido (se puede revertir).`)) return;
+      return this.accion(() => this.api(`/admin/usuarios/${this.ficha.id}/baja`, { method: "POST", body: { motivo: x.motivoBaja } }), "Usuario dado de baja");
+    },
+    reactivarFicha() {
+      const x = this.ficha.x;
+      return this.accion(() => this.api(`/admin/usuarios/${this.ficha.id}/reactivar`, { method: "POST", body: { motivo: x.motivoBaja } }), "Usuario reactivado");
+    },
+    // Estado + escalón en una sola insignia (la baja manda sobre el karma).
+    insignia(u) {
+      if (u.estado === "baja") return { texto: "de baja", clase: "baja" };
+      if (u.escalon === "restringido") return { texto: "restringido", clase: "baja" };
+      if (u.escalon === "aviso") return { texto: "aviso", clase: "aviso" };
+      return { texto: "normal", clase: "ok" };
     },
 
     // --- producto

@@ -113,6 +113,22 @@ void main() {
     expect(llamadas.last, '/v1/auth/anonymous');
   });
 
+  test('refresh de una cuenta de baja: no se crea otra cuenta sola', () async {
+    final auth = build();
+    await auth.accessToken();
+    now = now.add(const Duration(hours: 2));
+    estados['/v1/auth/refresh'] = 403;
+    detalles['/v1/auth/refresh'] = {'codigo': 'cuenta_baja'};
+    await expectLater(
+      auth.accessToken(),
+      throwsA(
+        isA<ApiException>().having((e) => e.isCuentaBaja, 'isCuentaBaja', true),
+      ),
+    );
+    expect(llamadas.last, '/v1/auth/refresh'); // no volvió a /anonymous
+    expect(store.session, isNotNull);
+  });
+
   test('llamadas simultáneas crean un solo usuario', () async {
     final auth = build();
     final tokens = await Future.wait([auth.accessToken(), auth.accessToken()]);

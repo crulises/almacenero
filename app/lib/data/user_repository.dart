@@ -1,16 +1,37 @@
 import 'authed_api.dart';
 
+/// normal: nada. aviso: la app avisa, sigue usando todo. restringido: solo consulta.
+enum Escalon { normal, aviso, restringido }
+
 class Me {
-  const Me({required this.id, required this.alias, required this.karma});
+  const Me({
+    required this.id,
+    required this.alias,
+    required this.karma,
+    this.escalon = Escalon.normal,
+    this.umbralRestriccion = -15,
+  });
 
   final String id;
   final String alias;
   final int karma;
 
+  /// Moderación por karma (docs/04 §9): lo decide el backend.
+  final Escalon escalon;
+
+  /// Karma desde el cual no se puede cargar (para explicarlo en el aviso).
+  final int umbralRestriccion;
+
   factory Me.fromJson(Map<String, dynamic> json) => Me(
     id: json['id'] as String,
     alias: json['alias'] as String,
     karma: json['karma'] as int,
+    escalon: switch (json['escalon']) {
+      'aviso' => Escalon.aviso,
+      'restringido' => Escalon.restringido,
+      _ => Escalon.normal,
+    },
+    umbralRestriccion: json['umbral_restriccion'] as int? ?? -15,
   );
 }
 
