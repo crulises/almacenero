@@ -1,14 +1,24 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// Error de la API: respuesta no-2xx, o falla de red (statusCode == null).
 class ApiException implements Exception {
-  ApiException(this.message, {this.statusCode, this.detail});
+  ApiException(
+    this.message, {
+    this.statusCode,
+    this.detail,
+    this.esTimeout = false,
+  });
 
   final String message;
   final int? statusCode;
+
+  /// El servidor no contestó a tiempo (hay red, pero no respondió). Se distingue de
+  /// «sin red» (statusCode == null y esTimeout == false) porque se arreglan distinto.
+  final bool esTimeout;
 
   /// El `detail` de la respuesta de error (texto o JSON), si lo hay.
   final Object? detail;
@@ -36,14 +46,45 @@ class ApiException implements Exception {
   String toString() => 'ApiException($statusCode): $message';
 }
 
+/// Tiempo de espera por pedido, en segundos: `--dart-define=API_TIMEOUT_S=40` al
+/// compilar (`make apk API_TIMEOUT_S=40`). El backend en Fly.io se apaga solo y el
+/// primer pedido después de un rato espera el arranque en frío.
+const apiTimeoutS = int.fromEnvironment('API_TIMEOUT_S', defaultValue: 20);
+
 /// Cliente HTTP del backend (`/v1`). El cliente habla SOLO con el backend.
+///
+/// Si el servidor no contesta (timeout o sin conexión), los pedidos que se pueden
+/// repetir sin efectos (todos los GET y `/auth/refresh`) se reintentan con backoff
+/// exponencial acotado. Un POST común (cargar un precio, crear un local) NUNCA se
+/// reintenta solo: si el servidor lo procesó pero la respuesta se perdió, se duplicaría.
 class ApiClient {
   ApiClient({
     required this.baseUrl,
     http.Client? httpClient,
     this.onCuentaBaja,
     this.idDispositivo,
+    this.timeout = const Duration(seconds: apiTimeoutS),
+    this.reintentos = 2,
+    this.esperaBase = const Duration(seconds: 1),
+    this.avisarTras = const Duration(seconds: 4),
   }) : _http = httpClient ?? http.Client();
+
+  /// Cuánto se espera la respuesta de CADA intento.
+  final Duration timeout;
+
+  /// Cuántas veces más se intenta un pedido repetible que no obtuvo respuesta.
+  final int reintentos;
+
+  /// Espera antes del primer reintento; se duplica en cada uno (1 s, 2 s, ...).
+  final Duration esperaBase;
+
+  /// Si un pedido lleva más que esto sin respuesta, `despertando` pasa a `true`.
+  final Duration avisarTras;
+
+  /// `true` mientras algún pedido tarda más de lo normal: la app muestra
+  /// «Despertando servidor…» (el backend arranca en frío).
+  final ValueNotifier<bool> despertando = ValueNotifier(false);
+  int _lentos = 0;
 
   final String baseUrl;
 
@@ -77,6 +118,36 @@ class ApiClient {
     Map<String, dynamic>? body,
     String? token,
   }) async {
+    // El primer pedido tras un rato puede tardar (arranque en frío): se avisa.
+    var marcado = false;
+    final aviso = Timer(avisarTras, () {
+      marcado = true;
+      despertando.value = ++_lentos > 0;
+    });
+    try {
+      final repetible = method == 'GET' || path == '/auth/refresh';
+      for (var intento = 0; ; intento++) {
+        try {
+          return await _enviar(method, path, body: body, token: token);
+        } on ApiException catch (e) {
+          final sinRespuesta = e.statusCode == null;
+          if (!sinRespuesta || !repetible || intento >= reintentos) rethrow;
+          await Future<void>.delayed(esperaBase * (1 << intento));
+        }
+      }
+    } finally {
+      aviso.cancel();
+      if (marcado) despertando.value = --_lentos > 0;
+    }
+  }
+
+  /// Un intento. Falla con `statusCode == null` si no hubo respuesta.
+  Future<Object?> _enviar(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    String? token,
+  }) async {
     final request = http.Request(method, Uri.parse('$baseUrl/v1$path'));
     request.headers['Accept'] = 'application/json';
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
@@ -91,10 +162,13 @@ class ApiClient {
     final http.Response response;
     try {
       response = await http.Response.fromStream(
-        await _http.send(request).timeout(const Duration(seconds: 15)),
+        await _http.send(request).timeout(timeout),
       );
     } on TimeoutException {
-      throw ApiException('Tiempo de espera agotado');
+      throw ApiException(
+        'El servidor tardó demasiado en responder (${timeout.inSeconds} s)',
+        esTimeout: true,
+      );
     } on http.ClientException catch (e) {
       throw ApiException('Sin conexión con el servidor: ${e.message}');
     }

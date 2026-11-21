@@ -912,9 +912,26 @@ Hacerlo **antes de cargar datos reales** y repasarlo cada tanto.
   desde el propio backend. Es el punto más acoplado: decidirlo y probarlo antes
   de salir.
 - **Datos:** `pg_dump` periódico (lógico, `make backup`) a un lugar fuera de
-  Supabase, más una prueba de restauración en un Postgres limpio. Los ETL
-  (`make etl-*`) regeneran el catálogo, así que el backup crítico son usuarios,
+  Supabase, más una prueba de restauración en un Postgres limpio (`make restore-test`).
+  Los ETL (`make etl-*`) regeneran el catálogo, así que el backup crítico son usuarios,
   locales y precios cargados.
+  - **Procedimiento.** (1) `make backup` → `backups/almacenero-<fecha>.dump` (+ `.conteos`
+    con las filas de locales, productos, precios y usuarios; la carpeta no va a git).
+    (2) `make restore-test` → crea una base temporal `almacenero_restore_test` en el mismo
+    servidor, restaura el último dump, verifica que los conteos coincidan y la borra. Si
+    imprime «Simulacro OK», ese backup sirve. Hacerlo con cada backup que importe y
+    **siempre antes de un release**. Copiar el `.dump` a un lugar fuera de la máquina
+    (otro disco, un bucket privado): un backup en el mismo disco no es un backup.
+  - **Restaurar de verdad** (en otro Postgres): es lo mismo que hace el simulacro, sobre
+    una base **vacía** nueva: crear las extensiones (`postgis`, `pg_trgm`, `unaccent`),
+    `pg_restore --no-owner --no-privileges -f - <dump> | grep -Ev '^(SET
+    transaction_timeout|CREATE SCHEMA public;)' | psql <url> -v ON_ERROR_STOP=1
+    --single-transaction` (los porqués de los filtros, en `docs/03`) y apuntar el backend
+    con `DATABASE_URL`. Esta ruta está probada solo contra el Postgres local; el simulacro
+    en el Postgres final de producción queda para el corte 10. **Nunca** restaurar sobre la
+    base real en uso.
+  - **Lo que el backup NO cubre:** `auth.users` de Supabase Auth (ver «Auth» arriba) y las
+    variables de entorno/secretos.
 - **Storage (cuando haya fotos):** cliente S3-compatible detrás de una interfaz,
   con el bucket configurable por variables de entorno.
 - **Config:** todo por variables de entorno (`.env.example` al día), imágenes

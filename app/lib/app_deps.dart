@@ -11,6 +11,8 @@ import 'data/user_repository.dart';
 /// reemplazan solo lo que les importa, sin armar una red falsa.
 Future<void> _sinInvitacion(String codigo) async {}
 
+Future<void> _sinEnlaces(Uri url) async {}
+
 Future<InfoApp> _infoDePrueba() async =>
     const InfoApp(build: BuildInfo.actual, apiUrl: '-', ips: [], servidor: '-');
 
@@ -18,7 +20,9 @@ class AppDeps {
   const AppDeps({
     this.guardarInvitacion = _sinInvitacion,
     this.loadInfoApp = _infoDePrueba,
+    this.abrirEnlace = _sinEnlaces,
     this.cuentaBaja,
+    this.despertando,
     this.verificarCada,
     required this.loadMe,
     required this.loadProducto,
@@ -34,12 +38,19 @@ class AppDeps {
   /// Guarda el código de invitación que el usuario escribió (primer arranque).
   final Future<void> Function(String codigo) guardarInvitacion;
 
-  /// Versión, servidor e IP del celular, para mostrar en la pantalla principal.
+  /// Abre un enlace en el navegador (pantalla «Acerca de»).
+  final Future<void> Function(Uri url) abrirEnlace;
+
+  /// Versión, servidor e IP del celular, para la pantalla «Acerca de».
   final Future<InfoApp> Function() loadInfoApp;
 
   /// Pasa a `true` cuando el backend avisa que la cuenta fue dada de baja, desde
   /// cualquier pantalla: la app entera se reemplaza por la pantalla de baja.
   final ValueListenable<bool>? cuentaBaja;
+
+  /// `true` cuando un pedido tarda más de lo normal (el backend arranca en frío):
+  /// la app muestra «Despertando servidor…» sobre cualquier pantalla.
+  final ValueListenable<bool>? despertando;
 
   /// Cada cuánto la app consulta `/me` mientras está abierta, para enterarse de una
   /// baja (o un cambio de escalón) sin que la persona toque nada. `null` = no consulta
