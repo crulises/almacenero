@@ -762,3 +762,62 @@ Decisiones en `docs/04` §9.
 - **Enlaces:** `url_launcher` abre el navegador; en Android 11+ hace falta declarar el
   intent `VIEW https` en `<queries>` del `AndroidManifest.xml` (ya está). **Síntoma si
   falta:** tocar un enlace no hace nada.
+
+## Release y deploy (corte 10)
+
+Guía completa: `docs/06-deploy.md`. Acá, los tropiezos y por qué se decidió así.
+
+### El `applicationId` nuevo se instala como otra app
+- **Síntoma:** al instalar el APK de `dev.crulises.almacenero`, el celular conserva la app vieja
+  (`ar.almacenero.almacenero`) y la sesión guardada no aparece.
+- **Causa:** Android identifica la app por su `applicationId`: cambiarlo crea una app distinta.
+- **Solución:** desinstalar la vieja. El usuario anónimo se recrea. Es definitivo: no cambiarlo más.
+
+### `flutter build apk --release` «firmaba» con la clave de debug
+- **Síntoma:** el template de Flutter deja `signingConfig = debug` en release; el APK sale
+  «firmado» pero con una clave que cualquiera puede generar, y no sirve para actualizar apps.
+- **Solución:** `build.gradle.kts` lee `app/android/key.properties` y **falla** si no está
+  (`Falta app/android/key.properties`). Verificado con una keystore descartable: el release se firma
+  y sin el archivo el build corta antes de compilar.
+
+### `make apk-release` dice «no existe el tag» o «HEAD no está en el tag»
+- **Causa:** se compiló sin etiquetar el commit; el APK no se puede reconstruir desde un tag.
+- **Solución:** `git tag -a vX.Y.Z` en `main` (docs/06 §8) y compilar parado en el tag. Es un aviso,
+  no un error: para probar un release en local se puede ignorar.
+
+### El panel redirigía a `http://…:8080/admin/`
+- **Síntoma (probado en local):** `curl -i /admin` devolvía `Location: http://localhost:8080/admin/`
+  aunque se entrara por otro puerto/host; detrás de Fly habría sido `http://…:8080`, roto.
+- **Causa:** nginx arma redirects absolutos con su propio puerto interno y esquema.
+- **Solución:** `absolute_redirect off;` (redirects relativos) en `admin-web/nginx.conf.template`.
+
+### El panel sigue llamando a `localhost:8000` en producción
+- **Causa:** `config.js` con una URL fija. Ahora lo genera nginx al arrancar desde `API_URL`
+  (`admin-web/fly.toml [env]`); sin la variable usa «mismo host, puerto 8000» (desarrollo/LAN).
+- **Chequeo:** `curl https://almacenero.crulises.dev/admin/config.js`.
+
+### `docker-compose` y el puerto del panel
+- **Síntoma:** `make up` dejó de abrir el panel en `:8080`.
+- **Causa:** el panel ahora usa nginx **sin privilegios**, que escucha en 8080 (no en 80).
+  `docker-compose.yml` mapea `8080:8080`. La raíz `http://localhost:8080/` redirige a `/admin/`.
+
+### Qué `DATABASE_URL` de Supabase usar
+- **Pooler en modo transacción (6543):** no soporta *prepared statements*; `asyncpg` los usa →
+  errores intermitentes (`prepared statement … does not exist`). **Usar el *session pooler* (5432).**
+- **Conexión directa (`db.<ref>.supabase.co`):** en el plan gratis es solo IPv6.
+- Usuario del pooler: `postgres.<REF>` (no `postgres`); la contraseña con `@ # ? &` va codificada en
+  porcentaje. El host (`aws-<N>-<región>.pooler.supabase.com`) se copia del diálogo *Connect*.
+
+### El rate limit por IP cuenta mal detrás de Fly/Cloudflare
+- **Causa:** `PROXY_HOPS` no coincide con la cantidad de proxies (Fly = 1; Fly + Cloudflare naranja = 2).
+  Si es menor al real, todos parecen venir de la IP del proxy; si no hay suficientes entradas en
+  `X-Forwarded-For`, se cae a la IP del socket.
+- **Solución:** `PROXY_HOPS` en `backend/fly.toml`, ajustar al cambiar de nube gris a naranja.
+
+### `make backup ENV_FILE=.env.prod` vuelca la base local
+- **Causa:** si `.env.prod` no existe, el Makefile cae a `.env.example` (base local).
+- **Solución:** mirar los conteos que imprime y crear `.env.prod` (ignorado por git).
+
+### Imágenes de producción: lo que se probó en local
+- Backend como uid 10001, `PORT` respetado, `/v1/health` devuelve `version`; panel como usuario `nginx`.
+  El Dockerfile del backend no usa `curl` para el healthcheck (la imagen `slim` no lo trae).
