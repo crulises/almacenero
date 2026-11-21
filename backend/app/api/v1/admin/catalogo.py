@@ -15,7 +15,7 @@ from app.api.v1.admin.consulta import Consulta, escapar_like
 from app.api.v1.admin.paginas import Pagina
 from app.auth import Usuario
 from app.db import get_pool
-from app.services import auditoria
+from app.services import auditoria, calidad
 from app.services.permisos import exigir
 
 router = APIRouter(tags=["admin"])
@@ -31,6 +31,11 @@ class ProductoAdminOut(BaseModel):
     origen: str
     campos_bloqueados: list[str]
     conflictos_pendientes: int
+    pack_cantidad: int | None = None
+    presentacion: str | None = None
+    calidad: int | None = None
+    estado_calidad: str | None = None
+    calidad_motivos: list[str] = []
 
 
 class ProductoPatch(BaseModel):
@@ -98,7 +103,8 @@ class ResolverIn(BaseModel):
 
 _SELECT_PRODUCTO = """
     select p.id, p.ean, p.nombre, p.marca, p.tamano_valor, p.tamano_unidad, p.origen,
-           p.campos_bloqueados,
+           p.campos_bloqueados, p.pack_cantidad, p.presentacion, p.calidad,
+           p.estado_calidad, p.calidad_motivos,
            (select count(*) from conflictos_catalogo c
              where c.ean = p.ean and c.estado = 'pendiente') as conflictos_pendientes
     from productos_canonicos p
@@ -110,6 +116,9 @@ async def listar_productos(
     q: str | None = Query(None, max_length=100, description="nombre, marca o EAN"),
     origen: str | None = Query(None, pattern="^(off|sepa|manual)$"),
     con_conflictos: bool = False,
+    estado: str | None = Query(None, pattern="^(completo|parcial|dudoso|descartado|sin_evaluar)$"),
+    motivo: str | None = Query(None, max_length=40, pattern="^[a-z_]+$"),
+    orden: str = Query("nombre", pattern="^(nombre|calidad)$"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     _: Usuario = Depends(exigir("catalogo.editar")),
@@ -128,13 +137,56 @@ async def listar_productos(
             "exists (select 1 from conflictos_catalogo c "
             "where c.ean = p.ean and c.estado = 'pendiente')"
         )
+    if estado == "sin_evaluar":
+        c.condiciones.append("p.estado_calidad is null")
+    elif estado:
+        c.donde("p.estado_calidad = {}", estado)
+    if motivo:
+        c.donde("{} = any (p.calidad_motivos)", motivo)
+    # «Dudosos primero»: dudoso, descartado, parcial, completo; en cada uno, el de menor puntaje.
+    ordenar = (
+        "case p.estado_calidad when 'dudoso' then 0 when 'descartado' then 1 "
+        "when 'parcial' then 2 when 'completo' then 3 else 4 end, p.calidad nulls first, "
+        if orden == "calidad"
+        else ""
+    )
     total = await pool.fetchval(f"select count(*) from productos_canonicos p {c.where}", *c.args)
     lim, off = c.param(limit), c.param(offset)
     rows = await pool.fetch(
-        f"{_SELECT_PRODUCTO} {c.where} order by lower(p.nombre), p.id limit {lim} offset {off}",
+        f"{_SELECT_PRODUCTO} {c.where} "
+        f"order by {ordenar}lower(p.nombre), p.id limit {lim} offset {off}",
         *c.args,
     )
     return Pagina(total=total, items=[ProductoAdminOut(**dict(r)) for r in rows])
+
+
+class CalidadResumen(BaseModel):
+    total: int
+    por_estado: dict[str, int]  # incluye `sin_evaluar`
+    por_motivo: dict[str, int]  # motivo -> productos (solo completo/parcial/dudoso/descartado)
+
+
+@router.get("/catalogo/calidad", response_model=CalidadResumen)
+async def tablero_calidad(
+    _: Usuario = Depends(exigir("catalogo.editar")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> CalidadResumen:
+    """Tablero de control (Doc 7 §6): cuántos productos hay por estado y por motivo."""
+    estados = await pool.fetch(
+        "select coalesce(estado_calidad, 'sin_evaluar') as e, count(*) as n "
+        "from productos_canonicos group by 1"
+    )
+    motivos = await pool.fetch(
+        "select m, count(*) as n from productos_canonicos, unnest(calidad_motivos) m "
+        "group by m order by n desc"
+    )
+    por_estado = {e: 0 for e in (*calidad.ESTADOS, "sin_evaluar")}
+    por_estado.update({r["e"]: r["n"] for r in estados})
+    return CalidadResumen(
+        total=sum(por_estado.values()),
+        por_estado=por_estado,
+        por_motivo={r["m"]: r["n"] for r in motivos},
+    )
 
 
 @router.patch("/productos/{producto_id}", response_model=ProductoAdminOut)
@@ -187,6 +239,7 @@ async def corregir_producto(
             nuevos,
             nota="campos bloqueados: " + ", ".join(bloquear),
         )
+        await calidad.recalcular(conn, producto_id=producto_id)
         row = await conn.fetchrow(f"{_SELECT_PRODUCTO} where p.id = $1", producto_id)
     return ProductoAdminOut(**dict(row))
 
@@ -266,6 +319,7 @@ async def resolver_conflicto(
             c["ean"],
             campo,
         )
+        await calidad.recalcular(conn, ean=c["ean"])
         await conn.execute(
             "update conflictos_catalogo set estado = 'resuelto', elegido = $2, "
             "resuelto_por = $3, resuelto_en = now() where id = $1",
@@ -372,5 +426,6 @@ async def desbloquear_campos(
             {"campos_bloqueados": [c for c in antes if c not in body.campos]},
             nota=body.motivo,
         )
+        await calidad.recalcular(conn, producto_id=producto_id)
         row = await conn.fetchrow(f"{_SELECT_PRODUCTO} where p.id = $1", producto_id)
     return ProductoAdminOut(**dict(row))

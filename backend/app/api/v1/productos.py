@@ -22,6 +22,8 @@ class ProductoOut(BaseModel):
     tamano_valor: Decimal | None
     tamano_unidad: str | None
     imagen_url: str | None
+    pack_cantidad: int | None = None
+    presentacion: str | None = None
 
 
 class PrecioOut(BaseModel):
@@ -63,8 +65,10 @@ async def buscar_producto(
         raise HTTPException(422, "EAN de balanza: productos genéricos no habilitados")
     row = await pool.fetchrow(
         """
-        select id, ean, nombre, marca, tamano_valor, tamano_unidad, imagen_url
-        from productos_canonicos where ean = $1
+        select id, ean, nombre, marca, tamano_valor, tamano_unidad, imagen_url,
+               pack_cantidad, presentacion
+        from productos_canonicos
+        where ean = $1 and estado_calidad is distinct from 'descartado'
         """,
         ean,
     )

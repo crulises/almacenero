@@ -100,6 +100,8 @@ Toda la lógica operativa va en el Makefile. CI solo llama a estos targets.
 - `make test` — corre tests.
 - `make lint` — linter.
 - `make build` — build de imágenes.
+- `make catalogo-calidad` / `make catalogo-renormalizar [APLICAR=1]` — mide / aplica el
+  normalizador del catálogo (Doc 7).
 - `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel
   web (http://localhost:8080; `make admin-web` lo reconstruye).
 - `make apk` — APK debug para probar en un celular de la misma red (apunta a la

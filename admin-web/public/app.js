@@ -8,7 +8,7 @@ const SECCIONES = {
   locales: { ruta: "/admin/locales", filtros: { verificado: "", fuente: "", q: "", sin_precios: false, orden: "alta" } },
   usuarios: { ruta: "/admin/usuarios", filtros: { tipo: "", rol: "", estado: "", escalon: "", q: "", orden: "alta" } },
   precios: { ruta: "/admin/precios", filtros: { local_id: "", ean: "", user_id: "", desde: "", hasta: "" } },
-  productos: { ruta: "/admin/productos", filtros: { q: "", origen: "", con_conflictos: false } },
+  productos: { ruta: "/admin/productos", filtros: { q: "", origen: "", con_conflictos: false, estado: "", motivo: "", orden: "nombre" } },
   conflictos: { ruta: "/admin/conflictos", filtros: { estado: "pendiente" } },
   invitaciones: { ruta: "/admin/invitaciones", filtros: { estado: "", q: "" } },
   auditoria: { ruta: "/admin/auditoria", filtros: { entidad: "" } },
@@ -35,6 +35,7 @@ function panel() {
     subcatalogo: "productos",  // dentro de Catálogo: productos | conflictos
     login: { email: "", password: "", error: "", enviando: false },
     config: [],
+    calidad: null,  // tablero de calidad del catálogo (Doc 7)
     pendientes: 0,  // conflictos del catálogo sin resolver (globito de Catálogo)
     destino: "",
     // Generador de PINs de invitación (un solo uso). `nuevos` = los recién creados.
@@ -127,10 +128,18 @@ function panel() {
     cambiarVista(v) {
       this.vista = v;
       if (v === "config") this.cargarConfig(); else this.cargar(v === "catalogo" ? this.subcatalogo : v);
-      if (v === "catalogo") this.contarPendientes();
+      if (v === "catalogo") { this.contarPendientes(); this.cargarTablero(); }
     },
     async contarPendientes() {
       try { this.pendientes = (await this.api("/admin/conflictos?estado=pendiente&limit=1")).total; } catch {}
+    },
+    async cargarTablero() {
+      try { this.calidad = await this.api("/admin/catalogo/calidad"); } catch {}
+    },
+    // Un clic en el tablero filtra el listado: «dudosos primero» y a revisar.
+    verCalidad({ estado = "", motivo = "" } = {}) {
+      Object.assign(this.sec.productos.f, { estado, motivo, orden: estado || motivo ? "calidad" : "nombre" });
+      this.irCatalogo("productos");
     },
     irCatalogo(sub) { this.subcatalogo = sub; this.cambiarVista("catalogo"); },
     ir(vista, filtros) {
@@ -191,7 +200,7 @@ function panel() {
     },
     alias(u, valor) { return this.parchar(`/admin/usuarios/${u.id}`, u, { alias: valor }); },
     monto(p, valor) { return this.parchar(`/admin/precios/${p.id}`, p, { precio: valor }); },
-    producto(p, campos) { return this.parchar(`/admin/productos/${p.id}`, p, campos); },
+    producto(p, campos) { return this.parchar(`/admin/productos/${p.id}`, p, campos).then(() => this.cargarTablero()); },
 
     // -------------------------------------------------------- masivas
     async validarLocales(ids) {
@@ -316,7 +325,7 @@ function panel() {
       return {};
     },
     verPrecios(filtros) { this.ficha = null; this.ir('precios', filtros); },
-    cerrarFicha() { this.ficha = null; this.cargar(this.actual); },
+    cerrarFicha() { this.ficha = null; this.cargar(this.actual); if (this.vista === "catalogo") this.cargarTablero(); },
     // Cambia de ficha sin perder la lista de fondo (p. ej. del precio a su local).
     irFicha(tipo, id) { this.abrir(tipo, id); },
 

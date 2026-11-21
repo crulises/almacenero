@@ -288,3 +288,35 @@ Corrido sobre los mismos 134 505 productos, sin escribir nada:
   (antes: ≥ 2 y `parcial`). Se sacó `pro` de las ambiguas (falso positivo: «Oral B Pro»).
   Resultado: dudosos 2 727 (2,0 %): 923 de tamaño en conflicto + 1 818 abreviados
   (se solapan en parte).
+
+## 12. Integración en el catálogo (corte 14)
+
+- **Migración `20261124000001_calidad_catalogo.sql`:** `pack_cantidad`, `presentacion`,
+  `calidad`, `estado_calidad`, `calidad_motivos`, `normalizador_version` (checks de rango y
+  de estado; `calidad` y `estado_calidad` van juntos). `null` = todavía sin evaluar.
+- **Al cargar (`fusionar_lote`):** cada producto de la fuente pasa por el normalizador
+  ANTES de fusionar (así un `S/d` ya es NULL y no tapa la marca de otra fuente), y después
+  se recalcula la calidad de la fila FINAL (con lo que ganó cada fuente), respetando los
+  campos bloqueados. El dato crudo sigue en `producto_fuentes`.
+- **`make catalogo-renormalizar [APLICAR=1]`:** normaliza todo el catálogo ya cargado
+  (simulacro por defecto) y recalcula la calidad. No toca los campos bloqueados ni el
+  contenido de lo cargado a mano. Idempotente: la segunda corrida da 0 cambios. Se vuelve a
+  correr cuando sube `NORMALIZADOR_VERSION` o se edita un diccionario.
+- **Corrección a mano:** el backend recalcula la calidad (`backend/app/services/calidad.py`,
+  misma fórmula que `puntuar`; `etl/tests/test_calidad_paridad.py` los compara). Lo que la
+  persona corrigió y bloqueó ya no se juzga: salen `abreviado`, `marca_en_nombre` y
+  `tamano_en_conflicto` según el campo. Al desbloquear no se restauran: los vuelve a
+  calcular la próxima carga o `make catalogo-renormalizar`.
+- **API:** `GET /v1/productos/{ean}` responde 404 para los `descartado` (y no se les puede
+  cargar precio; el historial que ya tuvieran se sigue viendo); `ProductoOut` suma
+  `pack_cantidad` y `presentacion` (campos nuevos, compatibles).
+- **Panel:** tablero de calidad en Catálogo (conteo por estado y por motivo, un clic filtra),
+  columna de calidad, filtro por estado y orden «dudosos primero». Endpoint
+  `GET /v1/admin/catalogo/calidad`.
+- **Dos arreglos del normalizador que salieron de integrar:** «3u 90g» ahora es pack de 3
+  (el conteo sale del nombre, y si el campo ya es el total —270 g— no hay conflicto), y el
+  error de coma corrida se detecta con tolerancia del 2 % (1125 ml vs 1.13).
+
+**Resultado sobre el catálogo local (134 505):** completo 71 486 (53,1 %) · parcial 54 482
+(40,5 %) · dudoso 2 725 (2,0 %) · descartado 5 812 (4,3 %).
+

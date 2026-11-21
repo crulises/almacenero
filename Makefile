@@ -1,4 +1,4 @@
-.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad
+.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -190,6 +190,10 @@ conflictos: $(PY) ## Lista los conflictos de catálogo pendientes de revisión
 catalogo-calidad: $(PY) ## Mide la calidad del catálogo con el normalizador (no escribe): make catalogo-calidad [MUESTRA=20] [ESTADO=dudoso]
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m etl.calidad --muestra $(or $(MUESTRA),0) $(if $(ESTADO),--estado $(ESTADO))
+
+catalogo-renormalizar: $(PY) ## Normaliza TODO el catálogo y recalcula la calidad (Doc 7). Simulacro; con APLICAR=1 escribe
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.renormalizar $(if $(APLICAR),--aplicar)
 
 # --- app en un celular -----------------------------------------------------
 # API_TIMEOUT_S=40 make apk -> espera 40 s por intento (default de la app: 20 s).
