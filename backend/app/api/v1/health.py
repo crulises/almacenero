@@ -1,6 +1,7 @@
 import asyncpg
 from fastapi import APIRouter, Depends
 
+from app.config import get_settings
 from app.db import get_pool
 
 router = APIRouter(tags=["health"])
@@ -9,4 +10,4 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 async def health(pool: asyncpg.Pool = Depends(get_pool)) -> dict:
     await pool.fetchval("select 1")
-    return {"status": "ok"}
+    return {"status": "ok", "version": get_settings().app_version}

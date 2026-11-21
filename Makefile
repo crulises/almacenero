@@ -16,7 +16,7 @@ up: ## Levanta Supabase (Postgres/Auth/Storage) y el backend
 		echo "AUTH_API_KEY completada en .env"; \
 	fi
 	docker compose up -d --build backend admin-web
-	@echo "Panel de admin: http://localhost:8080  (crear el admin: make admin-crear EMAIL=vos@mail.com)"
+	@echo "Panel de admin: http://localhost:8080/admin/  (crear el admin: make admin-crear EMAIL=vos@mail.com)"
 
 down: ## Baja todo
 	docker compose down
@@ -65,9 +65,9 @@ admin-crear: $(PY) ## Crea/promueve un admin con email y contraseña para el pan
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m app.admin_cli "$(EMAIL)" $(if $(PASSWORD),"$(PASSWORD)")
 
-admin-web: ## Reconstruye y levanta solo el panel web (http://localhost:8080)
+admin-web: ## Reconstruye y levanta solo el panel web (http://localhost:8080/admin/)
 	docker compose up -d --build admin-web
-	@echo "Panel de admin: http://localhost:8080"
+	@echo "Panel de admin: http://localhost:8080/admin/"
 
 # --- backup y plan de escape (docs/04, «Plan de escape») -------------------
 # Tablas cuyo conteo se registra al hacer el backup y se verifica al restaurar.

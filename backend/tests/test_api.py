@@ -8,7 +8,8 @@ EAN_SEED = "7790070411112"
 def test_health(client):
     r = client.get("/v1/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    assert r.json()["status"] == "ok"
+    assert "version" in r.json()
 
 
 def test_requiere_token(client):

@@ -1,0 +1,37 @@
+# Backend (FastAPI) en Fly.io. Guía paso a paso: docs/06-deploy.md.
+# Lo que va acá NO es secreto. Los secretos (DATABASE_URL, AUTH_URL, AUTH_API_KEY,
+# JWKS_URL) se cargan con `fly secrets set` y nunca se commitean.
+app = "almacenero-api"          # el nombre es global en Fly: si está tomado, cambiarlo acá
+primary_region = "gru"          # São Paulo: la más cercana a Argentina y a Supabase (sa-east-1)
+
+[build]
+  dockerfile = "Dockerfile"     # APP_VERSION entra por `make deploy-api` (--build-arg)
+
+[env]
+  PORT = "8080"
+  LOG_LEVEL = "INFO"
+  # Orígenes web que pueden llamar a la API (CORS): el panel de admin.
+  CORS_ORIGINS = "https://almacenero.crulises.dev"
+  # Proxies delante del backend, para el rate limit por IP (docs/04 §6): Fly (1) +
+  # Cloudflare naranja (2). Con la nube gris (solo DNS) es 1. Ver docs/06-deploy.md §6.
+  PROXY_HOPS = "2"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Escala a cero: sin tráfico la máquina se apaga sola (no se paga CPU/RAM) y la primera
+  # petición la despierta (unos segundos; la app ya muestra «Despertando servidor…»).
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    timeout = "10s"
+    method = "GET"
+    path = "/v1/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"              # si el backend se queda sin memoria (OOM): "512mb"

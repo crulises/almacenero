@@ -34,6 +34,10 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # Versión de este despliegue (el tag de git: «0.1.0»). La inyecta el build de la imagen
+    # (docs/06-deploy.md, §8); en desarrollo queda «dev». Se ve en /docs y en /v1/health.
+    app_version: str = "dev"
+
 
 @lru_cache
 def get_settings() -> Settings:
