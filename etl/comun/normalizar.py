@@ -113,6 +113,12 @@ def _ambiguas() -> frozenset[str]:
     return frozenset(ln.strip() for ln in lineas if ln.strip() and not ln.startswith("#"))
 
 
+@lru_cache(maxsize=1)
+def _marcas_prioritarias() -> frozenset[str]:
+    lineas = (_DATOS / "marcas_prioritarias.txt").read_text(encoding="utf-8").splitlines()
+    return frozenset(ln.strip() for ln in lineas if ln.strip() and not ln.startswith("#"))
+
+
 # ------------------------------------------------------------------ expresiones
 _PLACEHOLDERS = {
     "sd", "sinmarca", "generico", "na", "ninguna", "ninguno", "varios", "marca",
@@ -491,9 +497,11 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
     motivos += mot_marca
     tokens = texto.split()
     confiable = marca is not None and marca in _claves_de_marca()
-    if marca is None:
+    if marca is None or not confiable:
         encontrada = _buscar_marca_en_nombre(tokens)
-        if encontrada:
+        # Una marca de la fuente que no está en el diccionario («Scj Aire») cede ante una
+        # marca prioritaria que el nombre trae entera («… lysoform …»).
+        if encontrada and (marca is None or encontrada in _marcas_prioritarias()):
             marca, confiable = encontrada, True
     # 7. Marca fuera del nombre (solo si es confiable o la fuente la trae entera).
     if marca is not None:
