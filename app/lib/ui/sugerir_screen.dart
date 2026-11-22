@@ -95,11 +95,13 @@ class _SugerirScreenState extends State<SugerirScreen> {
     }
 
     final packTexto = texto(_pack);
-    final pack = packTexto == null ? null : int.tryParse(packTexto);
-    if (packTexto != null && (pack == null || pack < 1)) {
-      _error = 'El pack tiene que ser un número entero desde 1.';
+    final packCargado = packTexto == null ? null : int.tryParse(packTexto);
+    if (packTexto != null && (packCargado == null || packCargado < 1)) {
+      _error = 'El pack tiene que ser un número entero desde 2 (o vacío).';
       return null;
     }
+    // «Pack de 1» no es un pack: es lo mismo que dejarlo vacío.
+    final pack = packCargado == 1 ? null : packCargado;
     if (pack != p?.packCantidad) cambios['pack_cantidad'] = pack;
 
     if (_esAlta && texto(_nombre) == null) {
@@ -218,7 +220,7 @@ class _SugerirScreenState extends State<SugerirScreen> {
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(
               labelText: 'Pack de',
-              helperText: 'Unidades del pack; el tamaño es el total.',
+              helperText: 'Desde 2 unidades; el tamaño es el total.',
             ),
           ),
           const SizedBox(height: 12),

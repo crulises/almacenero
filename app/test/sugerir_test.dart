@@ -270,6 +270,28 @@ void main() {
       },
     );
 
+    testWidgets('pack de 1 no se manda: es lo mismo que sin pack', (
+      tester,
+    ) async {
+      final b = _Backend();
+      await _abrir(tester, b);
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sugerir corrección'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, 'Pack de'), '1');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Marca'),
+        'Cañuelas',
+      );
+      await tester.ensureVisible(
+        find.text('Enviar sugerencia', skipOffstage: false),
+      );
+      await tester.tap(find.text('Enviar sugerencia', skipOffstage: false));
+      await tester.pumpAndSettle();
+      expect(b.enviadas.single.cambios, {'marca': 'Cañuelas'});
+    });
+
     testWidgets('tamaño y unidad van juntos', (tester) async {
       final b = _Backend(
         producto: const Producto(
