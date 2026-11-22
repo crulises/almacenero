@@ -1014,6 +1014,15 @@ mayúsculas mezcladas; solo 0,2 % tiene un nombre inservible (el único descarte
   formulario corto, marca con autocompletado, lo que dijo cada fuente al lado) y el rol
   `moderador` en la ficha de usuario.
 
+**App (corte 16, diseño acordado con el dueño):** la ficha muestra el **nombre limpio** arriba y
+debajo «marca · tamaño · presentación · pack de N». Solo los moderadores (y admins) ven la acción:
+**menú ⋮ de la barra → «Sugerir corrección»**, y en «no encontrado» el botón «Dar de alta este
+producto» (un descartado también da «no encontrado»: la sugerencia es una corrección). El
+formulario (nombre, marca, tamaño + unidad, pack, presentación, motivo opcional) viene precargado,
+manda **solo lo que cambió** y tiene el enlace «Ver estándares de carga» (`GET /v1/ayuda/estandares`).
+Un moderador restringido por karma no ve la acción. **Pendiente (decidido dejarlo para después):** la
+pantalla de avisos del usuario (`GET /v1/me/avisos` ya existe).
+
 ### Decisiones del dueño (2026-11-21)
 
 - **Descarte:** sí se descartan los muy incompletos (estado `descartado`: se guardan pero no
@@ -1034,7 +1043,7 @@ mayúsculas mezcladas; solo 0,2 % tiene un nombre inservible (el único descarte
 | 13 | **Normalizador + medidor** | `etl/comun/normalizar.py`, diccionarios (arranque a partir de la medición), tests con los casos reales, `make catalogo-calidad` (la tabla de §1 del Doc 7). Sin migración ni cambios en datos. | medio |
 | 14 | ✅ **Integración + calidad en la base + tablero** | Migración (columnas del Doc 7 §3 y estado `descartado`), el normalizador dentro de `fusionar_lote`, `make catalogo-renormalizar`, la búsqueda por EAN oculta los `descartado`, `ProductoOut` con campos nuevos (compatibles), panel: columna/filtro/orden por calidad y **tablero de control** (conteo por estado y motivo). | grande |
 | 15 | ✅ **Rol moderador + sugerencias + alta simple** | migración (rol, `sugerencias_catalogo`), capacidades, API; panel: solapa Sugerencias y formulario simple de alta/corrección por EAN (Doc 7 §5.1) con aplicación directa del admin. | grande |
-| 16 | **App: ficha normalizada y sugerir** (`app/`) | nombre limpio + marca · tamaño · presentación; acción «Sugerir / dar de alta» solo para moderadores. Se acuerda el diseño antes de tocar. | medio |
+| 16 | ✅ **App: ficha normalizada y sugerir** (`app/`) | nombre limpio + marca · tamaño · presentación; acción «Sugerir / dar de alta» solo para moderadores. Se acuerda el diseño antes de tocar. | medio |
 | 17 | **CSV curado por CLI** | `catalogo_lotes`, fuente `curado`, formato `catalogo_curado_v1`, `make catalogo-curado` (genera) y `make catalogo-importar` (valida en seco + importa), hashes. | medio |
 | 18 | **ETL desde el panel** | `etl_ejecuciones`, registro de definiciones, worker `web` y `local`, API `/v1/admin/etl`, sección ETL con formularios generados, cancelación, auditoría, subida del CSV por el panel. | grande |
 
