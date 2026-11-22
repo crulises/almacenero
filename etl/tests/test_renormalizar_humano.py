@@ -33,7 +33,9 @@ def test_el_nombre_de_una_persona_con_todo_adentro_se_limpia_y_completa():
 
 def test_nunca_pisa_un_campo_ya_cargado_por_la_persona():
     r = fila(
-        nombre="Aceite Cocinero Girasol 900 ml", marca="Cañuelas", campos_bloqueados=["nombre", "marca"]
+        nombre="Aceite Cocinero Girasol 900 ml",
+        marca="Cañuelas",
+        campos_bloqueados=["nombre", "marca"],
     )
     n = nueva_fila(r)
     assert n["marca"] == "Cañuelas"
@@ -56,7 +58,9 @@ def test_un_nombre_inservible_de_una_persona_no_se_reemplaza():
 
 
 def test_lo_que_no_es_humano_no_genera_aviso():
-    n = nueva_fila(fila(nombre="ACEITE COCINERO GIRASOL 900 ML", origen="sepa", campos_bloqueados=[]))
+    n = nueva_fila(
+        fila(nombre="ACEITE COCINERO GIRASOL 900 ML", origen="sepa", campos_bloqueados=[])
+    )
     assert n["_estandares"] == [] and n["nombre"] != "ACEITE COCINERO GIRASOL 900 ML"
 
 
