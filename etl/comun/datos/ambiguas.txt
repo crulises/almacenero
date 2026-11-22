@@ -2,9 +2,6 @@
 # trae 2 o más, queda con el motivo `abreviado`. Se completa con `make catalogo-abreviaturas`.
 desc
 ch
-amb
-desinf
-desinfect
 origin
 plast
 deslac

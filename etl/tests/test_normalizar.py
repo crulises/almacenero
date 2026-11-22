@@ -61,10 +61,11 @@ D = Decimal
         # Nombre solo números / fecha y hora de vencimiento: inservible.
         (Entrada("0238321840", "a|x"), "0238321840", None, None, DESCARTADO),
         (Entrada("06:39 VENC:27/12/24"), "06:39 VENC:27/12/24", None, None, DESCARTADO),
-        # Lysoform: marca truncada corregida; el nombre abreviado sin resolver queda `dudoso`.
+        # Lysoform: marca truncada corregida y abreviaturas resueltas; «origin» sigue sin
+        # resolverse, así que queda `dudoso`.
         (
             Entrada("Desinfect Amb Origin", "LYSOF", (D(380), "ml")),
-            "Desinfect Amb Origin",
+            "Desinfectante Ambiente Origin",
             "Lysoform",
             (D(380), "ml"),
             DUDOSO,
@@ -90,7 +91,68 @@ def test_pack_y_tamano_total():
 
 def test_lysoform_abreviado_y_marca():
     s = normalizar(Entrada("Desinfect Amb Origin", "LYSOF", (D(380), "ml")))
-    assert "abreviado" in s.motivos
+    assert s.marca == "Lysoform"
+    assert s.nombre == "Desinfectante Ambiente Origin"
+    assert "abreviado" in s.motivos  # «origin» sigue sin resolverse
+
+
+@pytest.mark.parametrize(
+    "marca_cruda",
+    [
+        "Lys",
+        "Limpiador Lysoform",
+        "Antigrasa Lysoform",
+        "Lysoform Antigrasa Ga",
+        "Limp.lysoform Bot",
+    ],
+)
+def test_variantes_de_lysoform(marca_cruda):
+    assert normalizar(Entrada("Limpiador Cocina 500 ml", marca_cruda)).marca == "Lysoform"
+
+
+@pytest.mark.parametrize(
+    "nombre,marca_cruda",
+    [
+        ("Desod amb lysoform Lavanda", "Scj Aire"),
+        ("Desod amb lysoform Citrica", "Prov.varios Limpieza"),
+        ("Desod amb lysoform Aires De M", "Scj Aire"),
+    ],
+)
+def test_lysoform_en_el_nombre_manda_sobre_una_marca_rara(nombre, marca_cruda):
+    s = normalizar(Entrada(nombre, marca_cruda))
+    assert s.marca == "Lysoform"
+    assert "ysoform" not in s.nombre
+    assert s.nombre.lower().startswith("desodorante ambiente")
+
+
+def test_una_marca_rara_sin_lysoform_en_el_nombre_se_respeta():
+    assert normalizar(Entrada("Desod amb Lavanda", "Scj Aire")).marca == "Scj Aire"
+
+
+@pytest.mark.parametrize(
+    "nombre,esperado",
+    [
+        ("Desod Amb Lavand", "Desodorante Ambiente Lavanda"),
+        ("Limp Pisos Liq Antibac", "Limpiador Pisos Líquido Antibacterial"),
+        ("Desinfec Baño", "Desinfectante Baño"),
+        ("Desinfectan Ropa", "Desinfectante Ropa"),
+        ("Desinfectant Ropa", "Desinfectante Ropa"),
+        ("Crem Hidratante", "Crema Hidratante"),
+        ("Adhes Universal", "Adhesivo Universal"),
+        ("Insecticida Aero.", "Insecticida Aerosol"),
+    ],
+)
+def test_abreviaturas_del_dueno(nombre, esperado):
+    s = normalizar(Entrada(nombre, "Marca X"))
+    assert s.nombre == esperado
+    assert "abreviado" not in s.motivos
+
+
+@pytest.mark.parametrize("nombre", ["Aero Desodorante 150 ml", "Desodorante Spray 150 ml"])
+def test_aero_y_spray_son_envase_aerosol(nombre):
+    s = normalizar(Entrada(nombre, "Marca X"))
+    assert s.presentacion == "aerosol"
+    assert s.nombre in ("Desodorante", "Desodorante Spray")  # sin tamaño no se quita
 
 
 def test_sufijo_de_envase_sepa():
@@ -252,7 +314,7 @@ def test_bot_con_cc_y_tamano():
 
 
 def test_abreviatura_sin_resolver_es_dudosa():
-    s = normalizar(Entrada("Limpiador Desinfect Pisos 900 ml", "Ayudin"))
+    s = normalizar(Entrada("Limpiador Plast Pisos 900 ml", "Ayudin"))
     assert "abreviado" in s.motivos
     assert s.estado == DUDOSO
 
