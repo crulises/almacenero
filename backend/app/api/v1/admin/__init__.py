@@ -20,6 +20,7 @@ from app.api.v1.admin import (
     invitaciones,
     locales,
     precios,
+    sugerencias,
     usuarios,
 )
 from app.api.v1.auth import Sesion, _pedir_sesion, get_http
@@ -87,5 +88,6 @@ router.include_router(locales.router, dependencies=_acceso)
 router.include_router(precios.router, dependencies=_acceso)
 router.include_router(config.router, dependencies=_acceso)
 router.include_router(catalogo.router, dependencies=_acceso)
+router.include_router(sugerencias.router, dependencies=_acceso)
 router.include_router(invitaciones.router, dependencies=_acceso)
 router.include_router(auditoria.router, dependencies=_acceso)

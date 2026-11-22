@@ -15,6 +15,7 @@ class MeOut(BaseModel):
     id: UUID
     alias: str
     karma: int
+    rol: str  # usuario | moderador | admin (la app muestra «Sugerir» solo al moderador)
     # Moderación (docs/04 §9): la app avisa al cruzar los umbrales.
     escalon: str  # normal | aviso | restringido
     umbral_restriccion: int
@@ -35,6 +36,7 @@ async def me(
         id=user.id,
         alias=user.alias,
         karma=user.karma,
+        rol=user.rol,
         escalon=user.escalon,
         umbral_restriccion=user.umbral_restriccion,
     )

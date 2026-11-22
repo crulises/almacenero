@@ -975,6 +975,45 @@ mayúsculas mezcladas; solo 0,2 % tiene un nombre inservible (el único descarte
 - **Alta de producto nuevo:** `producto_id` null y `cambios` con el EAN completo; al aprobarla
   se inserta con `origen = 'manual'` y campos bloqueados.
 
+**Implementado en el corte 15 (así quedó, con lo que se precisó):**
+
+- **Rol y capacidades.** `moderador` = `usuario` + `catalogo.sugerir` (capacidad de carga: un
+  moderador restringido por karma la pierde). `admin` suma `catalogo.sugerir`,
+  `catalogo.sugerencias.resolver` y `catalogo.crear` (alta directa). El moderador **no entra al
+  panel** (`admin.acceder` es del admin): propone desde la app (corte 16). El rol se asigna
+  desde la ficha del usuario en el panel (`POST /v1/admin/usuarios/{id}/rol`) y `GET /v1/me`
+  lo devuelve (`rol`) para que la app muestre «Sugerir» solo al moderador.
+- **Un solo camino de escritura.** `backend/app/services/catalogo.py` (`aplicar`, `crear`) lo usan
+  la corrección directa (`PATCH /admin/productos/{id}`), el alta simple (`POST /admin/productos`)
+  y la aprobación de una sugerencia: los tres bloquean contra el ETL, recalculan la calidad y
+  auditan igual. Campos que viajan: `nombre`, `marca`, `tamano_valor`, `tamano_unidad`,
+  `pack_cantidad`, `presentacion`.
+- **Bloqueo ampliado.** `campos_bloqueados` suma `presentacion` (el pack va con `tamano`); el
+  trigger y `_SQL_EXISTENTES` del ETL lo respetan. En un alta lo que se dejó vacío **no** se
+  bloquea (un ETL todavía puede completarlo).
+- **Sin descarte para lo humano.** Un producto con `origen = 'manual'` o con algún campo
+  bloqueado no se descarta por incompleto (el estado se calcula normal): `revisado` en
+  `puntuar` / `calidad.evaluar` (la prueba de paridad lo cubre).
+- **Moderador (app, `/v1/catalogo/sugerencias`).** `POST` propone: si el EAN existe (aunque esté
+  descartado) es una corrección y solo cuentan los campos que de verdad cambian; si no, un alta
+  (hace falta el nombre). Una sugerencia nueva marca `reemplazada` a la pendiente anterior del
+  mismo autor para ese EAN. `GET /mias` lista las propias.
+- **Admin (`/v1/admin/sugerencias`).** Listado con `actual` junto a `cambios`, `aprobar`,
+  `rechazar` (nota obligatoria) y `resolver` en masa (cada una en su transacción; las que fallan
+  se informan). Aprobar suma `karma_sugerencia_aprobada` (config, 3 por defecto) al autor;
+  rechazar no resta nada. La ficha del producto lista sus sugerencias.
+- **Lo que una persona carga fuera del estándar se corrige (Doc 8).** `make catalogo-renormalizar`
+  ahora también pasa el normalizador por el **nombre que puso una persona** (manual o
+  bloqueado): lo limpia (marca, tamaño y envase afuera, abreviaturas, mayúsculas) y completa
+  los campos **vacíos** con lo que traía adentro; nunca pisa un campo ya cargado. A quien
+  cargó se le deja un **aviso** (`avisos_catalogo`, `GET /v1/me/avisos`) con el porqué y los
+  estándares incumplidos; **no cambia el karma**. Los estándares viven en
+  `backend/app/services/estandares.py` (`GET /v1/ayuda/estandares`, panel → Ayuda,
+  `docs/08-estandares-de-carga.md`).
+- **Panel.** Catálogo → **Sugerencias** (con globito), **Alta / corrección por EAN** (buscar →
+  formulario corto, marca con autocompletado, lo que dijo cada fuente al lado) y el rol
+  `moderador` en la ficha de usuario.
+
 ### Decisiones del dueño (2026-11-21)
 
 - **Descarte:** sí se descartan los muy incompletos (estado `descartado`: se guardan pero no
@@ -994,7 +1033,7 @@ mayúsculas mezcladas; solo 0,2 % tiene un nombre inservible (el único descarte
 |---|-------|----------|--------|
 | 13 | **Normalizador + medidor** | `etl/comun/normalizar.py`, diccionarios (arranque a partir de la medición), tests con los casos reales, `make catalogo-calidad` (la tabla de §1 del Doc 7). Sin migración ni cambios en datos. | medio |
 | 14 | ✅ **Integración + calidad en la base + tablero** | Migración (columnas del Doc 7 §3 y estado `descartado`), el normalizador dentro de `fusionar_lote`, `make catalogo-renormalizar`, la búsqueda por EAN oculta los `descartado`, `ProductoOut` con campos nuevos (compatibles), panel: columna/filtro/orden por calidad y **tablero de control** (conteo por estado y motivo). | grande |
-| 15 | **Rol moderador + sugerencias + alta simple** | migración (rol, `sugerencias_catalogo`), capacidades, API; panel: solapa Sugerencias y formulario simple de alta/corrección por EAN (Doc 7 §5.1) con aplicación directa del admin. | grande |
+| 15 | ✅ **Rol moderador + sugerencias + alta simple** | migración (rol, `sugerencias_catalogo`), capacidades, API; panel: solapa Sugerencias y formulario simple de alta/corrección por EAN (Doc 7 §5.1) con aplicación directa del admin. | grande |
 | 16 | **App: ficha normalizada y sugerir** (`app/`) | nombre limpio + marca · tamaño · presentación; acción «Sugerir / dar de alta» solo para moderadores. Se acuerda el diseño antes de tocar. | medio |
 | 17 | **CSV curado por CLI** | `catalogo_lotes`, fuente `curado`, formato `catalogo_curado_v1`, `make catalogo-curado` (genera) y `make catalogo-importar` (valida en seco + importa), hashes. | medio |
 | 18 | **ETL desde el panel** | `etl_ejecuciones`, registro de definiciones, worker `web` y `local`, API `/v1/admin/etl`, sección ETL con formularios generados, cancelación, auditoría, subida del CSV por el panel. | grande |

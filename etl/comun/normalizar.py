@@ -382,8 +382,10 @@ def puntuar(
     tiene_imagen: bool,
     presentacion: str | None,
     motivos: list[str] | tuple[str, ...],
+    revisado: bool = False,
 ) -> tuple[int, str, tuple[str, ...]]:
-    """Puntaje 0–100, estado y motivos finales (Doc 7 §6). Pura: la usa `normalizar` y
+    """Puntaje 0–100, estado y motivos finales (Doc 7 §6). `revisado`: una persona lo
+    cargó o corrigió, así que no se descarta por incompleto. Pura: la usa `normalizar` y
     también quien recalcula tras una corrección a mano (sacando antes los motivos que la
     persona ya resolvió)."""
     motivos = list(motivos)
@@ -409,7 +411,7 @@ def puntuar(
         puntos -= 5
     calidad = max(0, min(100, puntos))
 
-    if marca is None and tamano is None and palabras <= 2:
+    if marca is None and tamano is None and palabras <= 2 and not revisado:
         estado = DESCARTADO
         motivos.append("muy_incompleto")
     elif calidad < UMBRAL_DUDOSO or {"tamano_en_conflicto", "abreviado"} & set(motivos):

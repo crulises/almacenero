@@ -10,13 +10,14 @@ const SECCIONES = {
   precios: { ruta: "/admin/precios", filtros: { local_id: "", ean: "", user_id: "", desde: "", hasta: "" } },
   productos: { ruta: "/admin/productos", filtros: { q: "", origen: "", con_conflictos: false, estado: "", motivo: "", orden: "nombre" } },
   conflictos: { ruta: "/admin/conflictos", filtros: { estado: "pendiente" } },
+  sugerencias: { ruta: "/admin/sugerencias", filtros: { estado: "pendiente", q: "" } },
   invitaciones: { ruta: "/admin/invitaciones", filtros: { estado: "", q: "" } },
   auditoria: { ruta: "/admin/auditoria", filtros: { entidad: "" } },
 };
 
 const TITULOS = {
   locales: "Locales", usuarios: "Usuarios", invitaciones: "Invitaciones", precios: "Precios", catalogo: "Catálogo",
-  config: "Configuración", auditoria: "Auditoría",
+  config: "Configuración", auditoria: "Auditoría", ayuda: "Ayuda",
 };
 
 function leerSesion() {
@@ -32,11 +33,16 @@ function panel() {
     API, TITULOS, sec,
     sesion: leerSesion(),
     vista: "locales",
-    subcatalogo: "productos",  // dentro de Catálogo: productos | conflictos
+    subcatalogo: "productos",  // dentro de Catálogo: productos | sugerencias | alta | conflictos
     login: { email: "", password: "", error: "", enviando: false },
     config: [],
+    estandares: [],  // ayuda: estándares de carga (Doc 8)
     calidad: null,  // tablero de calidad del catálogo (Doc 7)
-    pendientes: 0,  // conflictos del catálogo sin resolver (globito de Catálogo)
+    pendientes: 0,  // conflictos + sugerencias sin resolver (globito de Catálogo)
+    pendientesConflictos: 0,
+    pendientesSugerencias: 0,
+    // Alta / corrección simple por EAN (Doc 7 §5.1): buscar → formulario corto.
+    alta: { ean: "", buscado: false, d: null, b: {}, marcas: [], enviando: false },
     destino: "",
     // Generador de PINs de invitación (un solo uso). `nuevos` = los recién creados.
     pines: { cantidad: 1, nota: "", n: 24, unidad: "h", sinVencimiento: false, nuevos: [], enviando: false },
@@ -127,11 +133,19 @@ function panel() {
     get actual() { return this.vista === "catalogo" ? this.subcatalogo : this.vista; },
     cambiarVista(v) {
       this.vista = v;
-      if (v === "config") this.cargarConfig(); else this.cargar(v === "catalogo" ? this.subcatalogo : v);
+      if (v === "config") this.cargarConfig();
+      else if (v === "ayuda") this.cargarAyuda();
+      else if (!(v === "catalogo" && this.subcatalogo === "alta")) this.cargar(v === "catalogo" ? this.subcatalogo : v);
       if (v === "catalogo") { this.contarPendientes(); this.cargarTablero(); }
     },
+    async cargarAyuda() {
+      if (this.estandares.length) return;
+      await this.intentar(async () => { this.estandares = await this.api("/ayuda/estandares"); });
+    },
     async contarPendientes() {
-      try { this.pendientes = (await this.api("/admin/conflictos?estado=pendiente&limit=1")).total; } catch {}
+      try { this.pendientesConflictos = (await this.api("/admin/conflictos?estado=pendiente&limit=1")).total; } catch {}
+      try { this.pendientesSugerencias = (await this.api("/admin/sugerencias?estado=pendiente&limit=1")).total; } catch {}
+      this.pendientes = this.pendientesConflictos + this.pendientesSugerencias;
     },
     async cargarTablero() {
       try { this.calidad = await this.api("/admin/catalogo/calidad"); } catch {}
@@ -159,6 +173,7 @@ function panel() {
     },
     async cargar(nombre, reiniciar = false) {
       const s = this.sec[nombre];
+      if (!s) return;  // «alta» no es un listado
       if (reiniciar) s.offset = 0;
       s.cargando = true;
       await this.intentar(async () => {
@@ -246,6 +261,102 @@ function panel() {
       });
     },
 
+    // ---------------------------------------------------- sugerencias
+    CAMPOS_SUG: { nombre: "Nombre", marca: "Marca", tamano_valor: "Tamaño", tamano_unidad: "Unidad", pack_cantidad: "Pack de", presentacion: "Presentación" },
+    // «actual → sugerido» de cada campo que propone la sugerencia.
+    diffSug(sug) {
+      return Object.entries(sug.cambios).map(([k, nuevo]) => ({
+        campo: this.CAMPOS_SUG[k] || k,
+        actual: sug.actual ? sug.actual[k] : null,
+        nuevo,
+      }));
+    },
+    async resolverSug(sug, accion) {
+      let nota = null;
+      if (accion === "rechazar") {
+        nota = (prompt("Motivo del rechazo (le llega a quien sugirió):") || "").trim();
+        if (nota.length < 3) return this.avisar("El rechazo necesita un motivo", true);
+      }
+      await this.intentar(async () => {
+        await this.api(`/admin/sugerencias/${sug.id}/${accion === "aprobar" ? "aprobar" : "rechazar"}`, {
+          method: "POST", body: accion === "aprobar" ? {} : { nota },
+        });
+        this.avisar(accion === "aprobar" ? "Aprobada y aplicada" : "Rechazada");
+        this.quitar("sugerencias", [sug.id]);
+        this.contarPendientes(); this.cargarTablero();
+      });
+    },
+    async resolverSugEnMasa(accion) {
+      const ids = this.elegidos("sugerencias");
+      if (!ids.length) return;
+      let nota = null;
+      if (accion === "rechazar") {
+        nota = (prompt(`Motivo del rechazo de ${ids.length} sugerencia(s):`) || "").trim();
+        if (nota.length < 3) return this.avisar("El rechazo necesita un motivo", true);
+      } else if (!confirm(`¿Aprobar ${ids.length} sugerencia(s)? Se aplican al catálogo y se bloquean contra el ETL.`)) return;
+      await this.intentar(async () => {
+        const r = await this.api("/admin/sugerencias/resolver", { method: "POST", body: { ids, accion, nota } });
+        this.avisar(r.fallidas.length ? `${r.resueltas} resueltas, ${r.fallidas.length} con error: ${r.fallidas[0].error}` : `${r.resueltas} resueltas`, r.fallidas.length > 0);
+        await this.cargar("sugerencias");
+        this.contarPendientes(); this.cargarTablero();
+      });
+    },
+
+    // ------------------------------------------- alta / corrección simple
+    formVacio() { return { nombre: "", marca: "", tamano_valor: "", tamano_unidad: "", pack_cantidad: "", presentacion: "" }; },
+    async buscarEan() {
+      const a = this.alta, ean = a.ean.trim();
+      if (!/^[0-9]{8,14}$/.test(ean)) return this.avisar("El EAN son entre 8 y 14 dígitos", true);
+      a.buscado = false;
+      try {
+        const d = await this.api(`/admin/productos/por-ean/${ean}`);
+        a.d = d;
+        a.b = { nombre: d.nombre, marca: d.marca || "", tamano_valor: d.tamano_valor ?? "", tamano_unidad: d.tamano_unidad || "", pack_cantidad: d.pack_cantidad ?? "", presentacion: d.presentacion || "" };
+      } catch (e) {
+        if (e.status !== 404) return this.avisar(e.message, true);
+        a.d = null; a.b = this.formVacio();  // no existe: es un alta
+      }
+      a.ean = ean; a.buscado = true;
+    },
+    async marcasLike() {
+      const q = (this.alta.b.marca || "").trim();
+      if (q.length < 2) { this.alta.marcas = []; return; }
+      try { this.alta.marcas = await this.api(`/admin/catalogo/marcas?q=${encodeURIComponent(q)}`); } catch {}
+    },
+    cuerpoAlta() {
+      const b = this.alta.b, num = (v) => (v === "" || v == null ? null : Number(v));
+      const txt = (v) => (String(v ?? "").trim() || null);
+      return {
+        nombre: txt(b.nombre), marca: txt(b.marca),
+        tamano_valor: num(b.tamano_valor), tamano_unidad: b.tamano_unidad || null,
+        pack_cantidad: num(b.pack_cantidad), presentacion: txt(b.presentacion),
+      };
+    },
+    async guardarAlta() {
+      const a = this.alta;
+      a.enviando = true;
+      await this.intentar(async () => {
+        const cuerpo = this.cuerpoAlta();
+        if (a.d) {
+          const d = a.d, c = {};
+          for (const k of Object.keys(cuerpo)) {
+            const antes = d[k] == null ? null : (k === "tamano_valor" ? Number(d[k]) : d[k]);
+            if (cuerpo[k] !== antes) c[k] = cuerpo[k];
+          }
+          if (!Object.keys(c).length) return this.avisar("No hay cambios");
+          if ("tamano_valor" in c || "tamano_unidad" in c) { c.tamano_valor = cuerpo.tamano_valor; c.tamano_unidad = cuerpo.tamano_unidad; }
+          await this.api(`/admin/productos/${d.id}`, { method: "PATCH", body: c });
+          this.avisar("Corregido y bloqueado contra el ETL");
+        } else {
+          await this.api("/admin/productos", { method: "POST", body: { ean: a.ean, ...cuerpo } });
+          this.avisar("Producto dado de alta");
+        }
+        this.cargarTablero();
+        await this.buscarEan();
+      });
+      a.enviando = false;
+    },
+
     // ----------------------------------------------------- invitaciones
     async generarPines() {
       const p = this.pines;
@@ -317,11 +428,11 @@ function panel() {
       if (tipo === "local") return { nombre: d.nombre, direccion: d.direccion || "", lat: d.lat, lng: d.lng };
       if (tipo === "precio") return { precio: d.precio };
       if (tipo === "usuario") return { alias: d.alias };
-      return { nombre: d.nombre, marca: d.marca || "", tamano_valor: d.tamano_valor, tamano_unidad: d.tamano_unidad || "" };
+      return { nombre: d.nombre, marca: d.marca || "", tamano_valor: d.tamano_valor, tamano_unidad: d.tamano_unidad || "", pack_cantidad: d.pack_cantidad ?? "", presentacion: d.presentacion || "" };
     },
     extras(tipo, d) {
       if (tipo === "precio") return { motivo: "", revertir: false };
-      if (tipo === "usuario") return { rol: d.rol === "admin" ? "usuario" : "admin", motivoRol: "", delta: 1, motivoKarma: "", motivoBaja: "" };
+      if (tipo === "usuario") return { rol: d.rol === "usuario" ? "moderador" : "usuario", motivoRol: "", delta: 1, motivoKarma: "", motivoBaja: "" };
       return {};
     },
     verPrecios(filtros) { this.ficha = null; this.ir('precios', filtros); },
@@ -349,6 +460,8 @@ function panel() {
         if (num(b.tamano_valor) !== (d.tamano_valor == null ? null : Number(d.tamano_valor)) || (b.tamano_unidad || "") !== (d.tamano_unidad || "")) {
           c.tamano_valor = num(b.tamano_valor); c.tamano_unidad = b.tamano_unidad || null;
         }
+        if (num(b.pack_cantidad) !== (d.pack_cantidad ?? null)) c.pack_cantidad = num(b.pack_cantidad);
+        if ((b.presentacion || "").trim().toLowerCase() !== (d.presentacion || "")) c.presentacion = b.presentacion.trim() || null;
       }
       return c;
     },

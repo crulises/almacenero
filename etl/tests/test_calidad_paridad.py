@@ -13,9 +13,15 @@ MOTIVOS = [[], ["abreviado"], ["tamano_en_conflicto"], ["marca_en_nombre"], ["no
 
 
 def test_puntuar_y_evaluar_dan_lo_mismo():
-    for nombre, marca, tam, img, pres, motivos in itertools.product(
-        NOMBRES, [None, "Cañuelas"], [None, Decimal(500)], [False, True], [None, "botella"], MOTIVOS
+    for nombre, marca, tam, img, pres, motivos, rev in itertools.product(
+        NOMBRES,
+        [None, "Cañuelas"],
+        [None, Decimal(500)],
+        [False, True],
+        [None, "botella"],
+        MOTIVOS,
+        [False, True],
     ):
-        etl = puntuar(nombre, marca, (tam, "g") if tam else None, img, pres, motivos)
-        app = evaluar(nombre, marca, tam, "x" if img else None, pres, list(motivos), [])
+        etl = puntuar(nombre, marca, (tam, "g") if tam else None, img, pres, motivos, rev)
+        app = evaluar(nombre, marca, tam, "x" if img else None, pres, list(motivos), [], rev)
         assert (etl[0], etl[1], list(etl[2])) == app, (nombre, marca, tam, img, pres, motivos)

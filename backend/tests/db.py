@@ -21,13 +21,17 @@ def sql(query: str, *args):
 def hacer_admin(user_id: str) -> None:
     """Promueve a admin como lo hace `make admin`: habilitando la escritura del rol
     solo dentro de esa transacción."""
+    hacer_rol(user_id, "admin")
+
+
+def hacer_rol(user_id: str, rol: str) -> None:
 
     async def run():
         conn = await asyncpg.connect(get_settings().database_url)
         try:
             async with conn.transaction():
                 await conn.execute("select set_config('app.rol_write', 'on', true)")
-                await conn.execute("update usuarios set rol = 'admin' where id = $1::uuid", user_id)
+                await conn.execute("update usuarios set rol = $2 where id = $1::uuid", user_id, rol)
         finally:
             await conn.close()
 
