@@ -357,3 +357,11 @@ def test_casos_reales_de_idempotencia(nombre, marca, esperado):
     assert s.nombre.lower().startswith(esperado.lower()[:6]) or esperado.lower() in s.nombre.lower()
     otra = normalizar(Entrada(s.nombre, s.marca, s.tamano, False, s.presentacion))
     assert (otra.nombre, otra.marca, otra.tamano) == (s.nombre, s.marca, s.tamano)
+
+
+def test_gat_es_gatillo_y_envase():
+    con_tamano = normalizar(Entrada("Limpiador Vidrios Gat. 500 ml", "Marca X"))
+    assert con_tamano.presentacion == "gatillo"
+    assert "Gat" not in con_tamano.nombre
+    sin_tamano = normalizar(Entrada("Limpiador Vidrios Gat.", "Marca X"))
+    assert sin_tamano.nombre == "Limpiador Vidrios Gatillo"
