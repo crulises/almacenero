@@ -1014,7 +1014,6 @@ mayúsculas mezcladas; solo 0,2 % tiene un nombre inservible (el único descarte
   formulario corto, marca con autocompletado, lo que dijo cada fuente al lado) y el rol
   `moderador` en la ficha de usuario.
 
-<<<<<<< HEAD
 **App (corte 16, diseño acordado con el dueño):** la ficha muestra el **nombre limpio** arriba y
 debajo «marca · tamaño · presentación · pack de N». Solo los moderadores (y admins) ven la acción:
 **menú ⋮ de la barra → «Sugerir corrección»**, y en «no encontrado» el botón «Dar de alta este
@@ -1023,7 +1022,7 @@ formulario (nombre, marca, tamaño + unidad, pack, presentación, motivo opciona
 manda **solo lo que cambió** y tiene el enlace «Ver estándares de carga» (`GET /v1/ayuda/estandares`).
 Un moderador restringido por karma no ve la acción. **Pendiente (decidido dejarlo para después):** la
 pantalla de avisos del usuario (`GET /v1/me/avisos` ya existe).
-=======
+
 ### E. Errores que explican la regla (ajuste del corte 15, ✅)
 
 **Principio:** una operación que falla en el backend le dice a quien la hizo **qué regla se
@@ -1056,7 +1055,6 @@ reventó con un 500 mudo (`pack_cantidad_check`) y el panel solo mostraba «Fail
   muestra el `mensaje` del `detail`.
 - **No cubre (a propósito):** los valores de negocio configurables (umbrales, límites) siguen en
   su propia sección de Configuración; esto es solo el *texto* de los errores.
->>>>>>> origin/main
 
 ### Decisiones del dueño (2026-11-21)
 
