@@ -393,7 +393,7 @@ def test_gat_con_tamano_en_todas_sus_formas(nombre, tam):
             "AYUDIN ANTIHONGOS C/LAV.GAT.500",
             "AYUDIN ANTIHONG.GAT.",
             None,
-            "Antihongos con lav",
+            "Antihongos con Lavandina",
             500,
             "gatillo",
             "Ayudin",
