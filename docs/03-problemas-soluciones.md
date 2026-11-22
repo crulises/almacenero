@@ -830,3 +830,14 @@ Decisiones en `docs/04` §9.
   backend responda.
 - **Causa:** CORS: solo se permite `CORS_ORIGINS` (por defecto el panel en 8080).
 - **Solución:** levantar el backend de prueba con `CORS_ORIGINS=http://localhost:<puerto>`.
+
+### «Failed to fetch» al aprobar una sugerencia (pack de 1)
+
+- **Síntoma:** en el panel, aprobar una sugerencia muestra «Failed to fetch»; en el log del
+  backend, `productos_canonicos_pack_cantidad_check`.
+- **Causa:** el celular mandaba `pack_cantidad: 1` y la base exige `pack_cantidad > 1` («pack de
+  1» no es un pack). Al ser un 500 sin cabeceras CORS, el navegador lo muestra como «Failed to
+  fetch» y no como un error de la API.
+- **Solución:** `Cambios` guarda «pack de 1» como «sin pack», y un dato que la base rechaza al
+  aprobar responde 422 en vez de 500. Las sugerencias viejas ya guardadas con pack 1 también se
+  aprueban. Ante un «Failed to fetch» en el panel: `docker compose logs backend`.

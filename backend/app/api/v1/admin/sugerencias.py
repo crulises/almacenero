@@ -205,8 +205,13 @@ async def _una(
     pool: asyncpg.Pool, admin: Usuario, sugerencia_id: UUID, accion: str, nota: str | None
 ) -> SugerenciaAdminOut:
     async with pool.acquire() as conn:
-        async with conn.transaction():
-            await _resolver(conn, admin, sugerencia_id, accion, nota)
+        try:
+            async with conn.transaction():
+                await _resolver(conn, admin, sugerencia_id, accion, nota)
+        except asyncpg.CheckViolationError as e:  # un dato que la base no admite: 422, no 500
+            raise HTTPException(
+                422, f"la sugerencia tiene un dato inválido: {e.constraint_name}"
+            ) from e
         row = await conn.fetchrow(f"{SELECT} where s.id = $1", sugerencia_id)
     return salida(row)
 

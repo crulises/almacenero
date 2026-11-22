@@ -24,6 +24,7 @@ class Cambios(BaseModel):
     marca: str | None = Field(default=None, max_length=100)
     tamano_valor: Decimal | None = Field(default=None, gt=0)
     tamano_unidad: str | None = Field(default=None, pattern="^(g|kg|ml|l|u)$")
+    # La base exige > 1: «pack de 1» no es un pack, se guarda como «sin pack» (None).
     pack_cantidad: int | None = Field(default=None, ge=1, le=1000)
     presentacion: str | None = Field(default=None, max_length=40)
 
@@ -31,6 +32,8 @@ class Cambios(BaseModel):
     def _validar(self):
         if "nombre" in self.model_fields_set and (self.nombre is None or not self.nombre.strip()):
             raise ValueError("el nombre no puede estar vacío")
+        if self.pack_cantidad == 1:
+            self.pack_cantidad = None
         toca_tamano = {"tamano_valor", "tamano_unidad"} & self.model_fields_set
         if toca_tamano and (self.tamano_valor is None) != (self.tamano_unidad is None):
             raise ValueError("tamaño y unidad van juntos (o los dos vacíos)")
