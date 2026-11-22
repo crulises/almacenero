@@ -10,6 +10,7 @@ class Me {
     required this.karma,
     this.escalon = Escalon.normal,
     this.umbralRestriccion = -15,
+    this.rol = 'usuario',
   });
 
   final String id;
@@ -22,6 +23,12 @@ class Me {
   /// Karma desde el cual no se puede cargar (para explicarlo en el aviso).
   final int umbralRestriccion;
 
+  /// usuario | moderador | admin.
+  final String rol;
+
+  /// Los moderadores (y admins) proponen correcciones y altas del catálogo.
+  bool get puedeSugerir => rol == 'moderador' || rol == 'admin';
+
   factory Me.fromJson(Map<String, dynamic> json) => Me(
     id: json['id'] as String,
     alias: json['alias'] as String,
@@ -32,6 +39,7 @@ class Me {
       _ => Escalon.normal,
     },
     umbralRestriccion: json['umbral_restriccion'] as int? ?? -15,
+    rol: json['rol'] as String? ?? 'usuario',
   );
 }
 

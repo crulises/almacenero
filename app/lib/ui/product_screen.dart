@@ -10,6 +10,7 @@ import 'frescura.dart';
 import 'mapa_precios.dart';
 import 'moderacion.dart';
 import 'price_screen.dart';
+import 'sugerir_screen.dart';
 
 /// Ficha de un producto buscado por EAN: cuánto sale en cada local (mapa + lista
 /// con la frescura de cada precio) y su historial.
@@ -91,6 +92,53 @@ class _ProductScreenState extends State<ProductScreen> {
     if (mounted) _recargarPrecios();
   }
 
+  /// Menú ⋮ de la barra: «Sugerir corrección», solo para moderadores con el producto
+  /// cargado.
+  List<Widget> _acciones() => [
+    FutureBuilder<Producto>(
+      future: _producto,
+      builder: (context, prod) => FutureBuilder<Me?>(
+        future: _me,
+        builder: (context, me) {
+          final p = prod.data;
+          final usuario = me.data;
+          if (p == null ||
+              usuario == null ||
+              !usuario.puedeSugerir ||
+              usuario.escalon == Escalon.restringido) {
+            return const SizedBox.shrink();
+          }
+          return PopupMenuButton<String>(
+            tooltip: 'Más opciones',
+            onSelected: (_) => _sugerir(p),
+            itemBuilder: (_) => const [
+              PopupMenuItem<String>(
+                value: 'sugerir',
+                child: Text('Sugerir corrección'),
+              ),
+            ],
+          );
+        },
+      ),
+    ),
+  ];
+
+  Future<void> _sugerir(Producto? p) async {
+    final enviada = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) =>
+            SugerirScreen(ean: widget.ean, deps: widget.deps, producto: p),
+      ),
+    );
+    if (enviada == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sugerencia enviada. Un admin la va a revisar.'),
+        ),
+      );
+    }
+  }
+
   void _retry() {
     setState(() {
       _producto = widget.deps.loadProducto(widget.ean);
@@ -120,7 +168,7 @@ class _ProductScreenState extends State<ProductScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Producto')),
+      appBar: AppBar(title: const Text('Producto'), actions: _acciones()),
       body: FutureBuilder<Producto>(
         future: _producto,
         builder: (context, snapshot) {
@@ -141,10 +189,7 @@ class _ProductScreenState extends State<ProductScreen> {
 
   Widget _ficha(BuildContext context, Producto p) {
     final texto = Theme.of(context).textTheme;
-    final detalle = [
-      if (p.marca != null) p.marca!,
-      if (p.tamano != null) p.tamano!,
-    ].join(' · ');
+    final detalle = p.detalle;
     return Column(
       children: [
         Padding(
@@ -440,6 +485,25 @@ class _ProductScreenState extends State<ProductScreen> {
           const SizedBox(height: 12),
           FilledButton(onPressed: _retry, child: const Text('Reintentar')),
         ],
+        if (tipo == ProductoError.noEncontrado)
+          FutureBuilder<Me?>(
+            future: _me,
+            builder: (context, me) {
+              final usuario = me.data;
+              if (usuario == null ||
+                  !usuario.puedeSugerir ||
+                  usuario.escalon == Escalon.restringido) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: FilledButton(
+                  onPressed: () => _sugerir(null),
+                  child: const Text('Dar de alta este producto'),
+                ),
+              );
+            },
+          ),
       ],
     );
   }

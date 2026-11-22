@@ -5,6 +5,7 @@ import 'data/local_repository.dart';
 import 'data/location_service.dart';
 import 'data/price_repository.dart';
 import 'data/product_repository.dart';
+import 'data/sugerencia_repository.dart';
 import 'data/user_repository.dart';
 
 /// Lo que las pantallas necesitan del backend, como funciones. Así los tests
@@ -16,8 +17,18 @@ Future<void> _sinEnlaces(Uri url) async {}
 Future<InfoApp> _infoDePrueba() async =>
     const InfoApp(build: BuildInfo.actual, apiUrl: '-', ips: [], servidor: '-');
 
+Future<SugerenciaEnviada> _sinSugerir({
+  required String ean,
+  required Map<String, Object?> cambios,
+  String? motivo,
+}) async => SugerenciaEnviada(id: '-', tipo: 'correccion', estado: 'pendiente');
+
+Future<List<Estandar>> _sinEstandares() async => const [];
+
 class AppDeps {
   const AppDeps({
+    this.sugerir = _sinSugerir,
+    this.loadEstandares = _sinEstandares,
     this.guardarInvitacion = _sinInvitacion,
     this.loadInfoApp = _infoDePrueba,
     this.abrirEnlace = _sinEnlaces,
@@ -56,6 +67,17 @@ class AppDeps {
   /// baja (o un cambio de escalón) sin que la persona toque nada. `null` = no consulta
   /// (los tests).
   final Duration? verificarCada;
+
+  /// Propone una corrección o un alta del catálogo (solo moderadores).
+  final Future<SugerenciaEnviada> Function({
+    required String ean,
+    required Map<String, Object?> cambios,
+    String? motivo,
+  })
+  sugerir;
+
+  /// Los estándares de carga (ayuda para quien sugiere).
+  final Future<List<Estandar>> Function() loadEstandares;
   final Future<Me> Function() loadMe;
   final Future<Producto> Function(String ean) loadProducto;
   final Future<Ubicacion> Function() obtenerUbicacion;

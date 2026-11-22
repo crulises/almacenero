@@ -13,6 +13,7 @@ import 'data/location_service.dart';
 import 'data/price_repository.dart';
 import 'data/product_repository.dart';
 import 'data/session.dart';
+import 'data/sugerencia_repository.dart';
 import 'data/user_repository.dart';
 import 'ui/home_screen.dart';
 import 'ui/moderacion.dart';
@@ -54,6 +55,8 @@ void main() {
           ips: await ipsLocales(),
           servidor: await probarServidor(api),
         ),
+        sugerir: SugerenciaRepository(api: authed).enviar,
+        loadEstandares: SugerenciaRepository(api: authed).estandares,
         loadMe: UserRepository(api: authed).me,
         loadProducto: ProductRepository(api: authed).porEan,
         obtenerUbicacion: location.actual,

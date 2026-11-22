@@ -42,6 +42,22 @@ class ApiException implements Exception {
     return d is Map ? d['codigo'] as String? : null;
   }
 
+  /// Qué pasó y cómo resolverlo, tal como lo explica el backend (Doc 4 §10-E): el `mensaje` de
+  /// la regla violada más su guía; si el `detail` es un texto, ese texto; si no, [message].
+  String get explicacion {
+    final d = detail;
+    if (d is Map && d['mensaje'] is String) {
+      final guia = d['como_resolver'];
+      final campos = d['campos'];
+      final extra = campos is List && campos.isNotEmpty
+          ? ' (${campos.whereType<Map>().map((c) => '${c['campo']} ${c['problema']}').join('; ')})'
+          : '';
+      return '${d['mensaje']}$extra${guia is String ? ' $guia' : ''}';
+    }
+    if (d is String && d.isNotEmpty) return d;
+    return message;
+  }
+
   @override
   String toString() => 'ApiException($statusCode): $message';
 }

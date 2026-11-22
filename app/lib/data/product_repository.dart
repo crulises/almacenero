@@ -9,6 +9,8 @@ class Producto {
     this.marca,
     this.tamanoValor,
     this.tamanoUnidad,
+    this.packCantidad,
+    this.presentacion,
   });
 
   final String id;
@@ -17,6 +19,20 @@ class Producto {
   final String? marca;
   final num? tamanoValor;
   final String? tamanoUnidad;
+
+  /// Unidades del pack (24 en «24 x 275 ml»); el tamaño es el total.
+  final int? packCantidad;
+
+  /// Envase en minúscula: botella, lata, caja…
+  final String? presentacion;
+
+  /// «Marca · 900 ml · botella · pack de 6»: lo que va debajo del nombre limpio.
+  String get detalle => [
+    ?marca,
+    ?tamano,
+    ?presentacion,
+    if (packCantidad != null && packCantidad! > 1) 'pack de $packCantidad',
+  ].join(' · ');
 
   /// "900 ml", o null si el producto no tiene tamaño cargado.
   String? get tamano {
@@ -39,6 +55,8 @@ class Producto {
         ? null
         : num.parse(json['tamano_valor'].toString()),
     tamanoUnidad: json['tamano_unidad'] as String?,
+    packCantidad: json['pack_cantidad'] as int?,
+    presentacion: json['presentacion'] as String?,
   );
 }
 
