@@ -251,6 +251,17 @@ menos datos: queda `descartado` (`muy_incompleto`, §5) hasta que alguien lo com
 - `etl/comun/datos/envases.csv` — `codigo,presentacion,en_nombre` (`BOT,botella`).
   `en_nombre=2` (`pet`): además se saca si es la última palabra aunque no haya tamaño
   (`… Ext Virg PET`); `bid`/`bidon` → bidón.
+- `etl/comun/datos/marcas_prioritarias.txt` — marcas que, si el nombre las trae enteras, mandan
+  sobre una marca de la fuente que no está en `marcas.csv` («Scj Aire» → Lysoform si el nombre
+  dice «lysoform»). Una marca rara sin esa palabra en el nombre se respeta.
+- **Casos de SEPA que el normalizador resuelve** (agregados con el dueño, 2026-11-22):
+  - Un punto pegado a un tamaño separa palabras: `Gat.450ml`, `GAT.X500ML`, `D/P.450ml`.
+  - `Gat.500` (gatillo + número sin unidad) = 500 ml: un gatillo es de líquido. Suposición
+    deliberada y acotada a `gat` + 3 o 4 dígitos.
+  - Envases `gat`→gatillo, `aero`/`spray`→aerosol, `d/p`→doypack; `c/lav`→«con lavandina».
+  - **Límite conocido:** si la marca confirmada es una palabra del nombre y queda **una sola**
+    palabra («Cif Antibacterial»), el nombre no se achica: dejarlo en «Antibacterial» rompe
+    casos como «Fanta sin azúcar». Esos se corrigen a mano desde el panel.
 - **Herramienta de descubrimiento:** `make catalogo-abreviaturas` lista los tokens
   frecuentes que parecen truncados (prefijo de otra palabra más frecuente) para que el
   dueño apruebe o rechace; no aplica nada solo.

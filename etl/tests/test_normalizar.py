@@ -357,3 +357,62 @@ def test_casos_reales_de_idempotencia(nombre, marca, esperado):
     assert s.nombre.lower().startswith(esperado.lower()[:6]) or esperado.lower() in s.nombre.lower()
     otra = normalizar(Entrada(s.nombre, s.marca, s.tamano, False, s.presentacion))
     assert (otra.nombre, otra.marca, otra.tamano) == (s.nombre, s.marca, s.tamano)
+
+
+def test_gat_es_gatillo_y_envase():
+    con_tamano = normalizar(Entrada("Limpiador Vidrios Gat. 500 ml", "Marca X"))
+    assert con_tamano.presentacion == "gatillo"
+    assert "Gat" not in con_tamano.nombre
+    sin_tamano = normalizar(Entrada("Limpiador Vidrios Gat.", "Marca X"))
+    assert sin_tamano.nombre == "Limpiador Vidrios Gatillo"
+
+
+@pytest.mark.parametrize(
+    "nombre,tam",
+    [
+        ("LIMPIA VIDRIOS GAT. 500ML", 500),
+        ("Limpia Vidrios gat. 500cc", 500),
+        ("Limpia Vidrios GAT 450ml", 450),
+        ("Limpia Vidrios Gat.450ml", 450),
+        ("LIMPIA VIDRIOS GAT.500CC", 500),
+        ("Limpia Gat. Vidrios 500ml", 500),
+    ],
+)
+def test_gat_con_tamano_en_todas_sus_formas(nombre, tam):
+    s = normalizar(Entrada(nombre, "Marca X"))
+    assert s.nombre.lower() in ("limpia vidrios", "limpia vidrios")
+    assert s.tamano == (D(tam), "ml")
+    assert s.presentacion == "gatillo"
+
+
+@pytest.mark.parametrize(
+    "nombre,marca,campo,esperado,tam,pres,esperada_marca",
+    [
+        # Casos reales de SEPA que la renormalización dejaba sin limpiar.
+        (
+            "AYUDIN ANTIHONGOS C/LAV.GAT.500",
+            "AYUDIN ANTIHONG.GAT.",
+            None,
+            "Antihongos con Lavandina",
+            500,
+            "gatillo",
+            "Ayudin",
+        ),
+        ("ZORRO ANTIB.GAT.X500ML", None, (D(500), "ml"), "Antibacterial", 500, "gatillo", "Zorro"),
+        (
+            "CIF ANTIBACTERIAL D/P.450ml.",
+            "CIF 2EN1 GAT.REP.D/P",
+            None,
+            "Cif Antibacterial",
+            450,
+            "doypack",
+            "Cif",
+        ),
+    ],
+)
+def test_gat_pegado_sin_unidad_x_y_dp(nombre, marca, campo, esperado, tam, pres, esperada_marca):
+    s = normalizar(Entrada(nombre, marca, campo or (D(1), "u")))
+    assert s.nombre == esperado
+    assert s.tamano == (D(tam), "ml")
+    assert s.presentacion == pres
+    assert s.marca == esperada_marca
