@@ -204,4 +204,34 @@ void reintentosTests() {
       expect(avisos, 0);
     });
   });
+
+  group('ApiException.explicacion', () {
+    test('usa el mensaje de la regla, los campos y la guía del backend', () {
+      final e = ApiException(
+        'Error 422',
+        statusCode: 422,
+        detail: {
+          'codigo': 'dato_invalido',
+          'mensaje': 'Algún dato no cumple.',
+          'como_resolver': 'Revisá los datos.',
+          'campos': [
+            {'campo': 'tamano_valor', 'problema': 'tiene que ser mayor a 0'},
+          ],
+        },
+      );
+      expect(
+        e.explicacion,
+        'Algún dato no cumple. (tamano_valor tiene que ser mayor a 0) '
+        'Revisá los datos.',
+      );
+    });
+
+    test('con un detail de texto o sin detail', () {
+      expect(
+        ApiException('Error 400', detail: 'EAN inválido').explicacion,
+        'EAN inválido',
+      );
+      expect(ApiException('Error 500').explicacion, 'Error 500');
+    });
+  });
 }

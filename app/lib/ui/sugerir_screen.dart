@@ -143,7 +143,7 @@ class _SugerirScreenState extends State<SugerirScreen> {
             ? 'Tu karma está muy bajo: por ahora no podés sugerir.'
             : (e.statusCode == null
                   ? 'No pudimos conectar con el servidor.'
-                  : e.message);
+                  : e.explicacion);
       });
     }
   }
