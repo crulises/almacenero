@@ -762,3 +762,23 @@ Decisiones en `docs/04` §9.
 - **Enlaces:** `url_launcher` abre el navegador; en Android 11+ hace falta declarar el
   intent `VIEW https` en `<queries>` del `AndroidManifest.xml` (ya está). **Síntoma si
   falta:** tocar un enlace no hace nada.
+
+## Normalizador del catálogo (corte 13)
+
+- **Síntoma:** el medidor tardaba más de 2 minutos en 134 mil productos (y subía con el
+  tamaño del lookup de marcas). **Causa:** se reconstruían en cada llamada el conjunto de
+  claves de marca y la lista de alias de la marca (O(1 600) por producto). **Solución:**
+  `_claves_de_marca()` cacheada con `lru_cache`; ahora corre en ~10 s. En una función que se
+  llama millones de veces no se arma nada a partir del diccionario global.
+- **Síntoma:** `750 cm3` no se interpretaba como tamaño (ni en el campo de SEPA ni en el
+  nombre). **Causa:** el patrón de unidades de `tamano.py` era `[a-zA-Z]+` y `cm3` tiene un
+  dígito. **Solución:** `[a-zA-Z]+[0-9]?`.
+- **Síntoma:** nombres que quedaban en una palabra («Celeste», «Alfombra») o perdían «Pvc».
+  **Causa:** la «marca» de SEPA a veces trae la palabra del producto («Suavizante Vivere») y
+  `Pvc`/`Pet` también es un material. **Solución:** la marca no se saca del nombre si lo deja
+  en menos de 2 palabras, y las palabras de envase sueltas (`pet`, `bot`, `pvc`) solo se
+  sacan del nombre cuando ese nombre también trae un tamaño.
+- **Dato a tener en cuenta:** el campo de tamaño de SEPA miente más de lo esperado (coma
+  corrida: `1.5 g` con el nombre en `1.5 kg`; `1 g` imposible; `100 l` por `1 l`): ~1 000
+  casos. Si el campo y el nombre difieren por una potencia de diez, o el campo es ≤ 1 g/ml,
+  gana el nombre (`tamano_campo_corregido`); el resto de discrepancias queda `dudoso`.
