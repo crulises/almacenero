@@ -145,7 +145,11 @@ _TAMANO = re.compile(
 _UNIDADES_CUENTA = {
     "u", "un", "uni", "unid", "unids", "und", "unds", "ud", "uds", "unidad", "unidades",
 }  # fmt: skip
-_PUNTO_ENTRE_LETRAS = re.compile(r"(?<=[A-Za-zÁ-úñÑ]{2})\.(?=[A-Za-zÁ-úñÑ]{2})")
+# «Limp.lysoform» -> «Limp lysoform»; y «Gat.450ml» -> «Gat 450ml» (punto pegado a un tamaño).
+_PUNTO_ENTRE_LETRAS = re.compile(
+    r"(?<=[A-Za-zÁ-úñÑ]{2})\.(?=[A-Za-zÁ-úñÑ]{2}|\d+(?:[.,]\d+)?\s?(?:ml|cc|cm3|lts?|l|kgs?|gr?s?)\b)",
+    re.IGNORECASE,
+)
 _PARTICULAS = {
     "de", "la", "las", "el", "los", "con", "para", "y", "en", "del", "sin", "al", "por",
     "a", "o", "e", "un", "una",

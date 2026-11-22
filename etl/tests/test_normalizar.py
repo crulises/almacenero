@@ -365,3 +365,21 @@ def test_gat_es_gatillo_y_envase():
     assert "Gat" not in con_tamano.nombre
     sin_tamano = normalizar(Entrada("Limpiador Vidrios Gat.", "Marca X"))
     assert sin_tamano.nombre == "Limpiador Vidrios Gatillo"
+
+
+@pytest.mark.parametrize(
+    "nombre,tam",
+    [
+        ("LIMPIA VIDRIOS GAT. 500ML", 500),
+        ("Limpia Vidrios gat. 500cc", 500),
+        ("Limpia Vidrios GAT 450ml", 450),
+        ("Limpia Vidrios Gat.450ml", 450),
+        ("LIMPIA VIDRIOS GAT.500CC", 500),
+        ("Limpia Gat. Vidrios 500ml", 500),
+    ],
+)
+def test_gat_con_tamano_en_todas_sus_formas(nombre, tam):
+    s = normalizar(Entrada(nombre, "Marca X"))
+    assert s.nombre.lower() in ("limpia vidrios", "limpia vidrios")
+    assert s.tamano == (D(tam), "ml")
+    assert s.presentacion == "gatillo"
