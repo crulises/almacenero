@@ -782,3 +782,25 @@ Decisiones en `docs/04` §9.
   corrida: `1.5 g` con el nombre en `1.5 kg`; `1 g` imposible; `100 l` por `1 l`): ~1 000
   casos. Si el campo y el nombre difieren por una potencia de diez, o el campo es ≤ 1 g/ml,
   gana el nombre (`tamano_campo_corregido`); el resto de discrepancias queda `dudoso`.
+
+## Calidad del catálogo en la base (corte 14)
+
+- **Síntoma:** volver a pasar el normalizador por el catálogo ya normalizado cambiaba
+  cientos de filas (y marcas dudosas dejaban de serlo). **Causa:** el normalizador no era
+  idempotente en casos reales que los tests no cubrían: dos sufijos de SEPA
+  (`BOT-1000-cc. BOT-1000-ml.`), la marca repetida en el nombre (`… - Itambé - Itambé`),
+  `oBLEAS` (primera letra en minúscula), `c/c/a`, `S/E-40-un.`, la marca que deja
+  «X 591» o «Sin Azúcar» como nombre. Además, los motivos que salen de comparar el dato
+  crudo con el nombre (`tamano_en_conflicto`, `abreviado`) no se vuelven a ver en un nombre
+  ya limpio. **Solución:** se arreglaron esos casos y los motivos «pegajosos» viajan con la
+  fila (`_PEGAJOSOS` en `etl/comun/catalogo.py`). **Cómo chequearlo:** correr
+  `make catalogo-renormalizar` dos veces; la segunda debe decir «Cambiarían: 0». Y
+  comparar `normalizar(normalizar(x))` contra `normalizar(x)` sobre `producto_fuentes`.
+- **Síntoma:** `ruff format etl` reformateó 15 archivos que no eran míos. **Causa:** se
+  corrió el `ruff` del sistema, no el del venv, sin `--config backend/pyproject.toml` (el
+  Makefile sí lo pasa). **Solución:** usar siempre `make lint` (o
+  `backend/.venv/bin/ruff … --config backend/pyproject.toml`).
+- **Síntoma:** un producto `descartado` no se puede cargar ni buscar en la app. **Esto es a
+  propósito** (Doc 7 §5): hasta que alguien lo complete desde el panel (o una fuente lo
+  mejore), la app contesta «no encontrado». Se ve con el filtro «Descartado» del panel.
+

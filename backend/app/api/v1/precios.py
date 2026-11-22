@@ -101,7 +101,9 @@ async def cargar_precio(
         await conn.execute("select 1 from usuarios where id = $1 for update", user.id)
         await _exigir_bajo_limite(conn, user.id)
         producto_id = await conn.fetchval(
-            "select id from productos_canonicos where ean = $1", body.ean
+            "select id from productos_canonicos "
+            "where ean = $1 and estado_calidad is distinct from 'descartado'",
+            body.ean,
         )
         if producto_id is None:
             raise HTTPException(404, "producto no encontrado en el catálogo")

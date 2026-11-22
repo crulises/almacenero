@@ -206,15 +206,43 @@
 
       <!-- ======================================================= PRODUCTOS -->
       <section x-show="vista === 'catalogo' && subcatalogo === 'productos'">
+        <!-- Tablero de calidad: cuántos productos hay por estado y por motivo (clic = filtrar) -->
+        <div class="caja" x-show="calidad">
+          <h3>Calidad del catálogo <span class="suave" x-text="calidad ? calidad.total + ' productos' : ''"></span></h3>
+          <div class="filas">
+            <template x-for="e in ['dudoso', 'descartado', 'parcial', 'completo', 'sin_evaluar']" :key="e">
+              <button @click="verCalidad({estado: e})" :class="{primario: sec.productos.f.estado === e}">
+                <span x-text="e.replace('_', ' ')"></span> <b x-text="calidad ? calidad.por_estado[e] : 0"></b>
+              </button>
+            </template>
+            <button x-show="sec.productos.f.estado || sec.productos.f.motivo" @click="verCalidad()">Quitar filtro</button>
+          </div>
+          <div class="filas">
+            <span class="suave">Motivos:</span>
+            <template x-for="[m, n] in Object.entries(calidad ? calidad.por_motivo : {})" :key="m">
+              <button class="badge" :class="{primario: sec.productos.f.motivo === m}" @click="verCalidad({motivo: m})" :title="m">
+                <span x-text="m"></span> <b x-text="n"></b>
+              </button>
+            </template>
+          </div>
+          <p class="suave">Dudoso: abreviaturas sin resolver o tamaño en conflicto. Descartado: muy incompleto (la app lo trata como «no encontrado» hasta que se complete).</p>
+        </div>
         <div class="filtros">
           <input type="search" placeholder="Nombre, marca o EAN" x-model="sec.productos.f.q" @input.debounce.400ms="cargar('productos', true)">
           <select x-model="sec.productos.f.origen" @change="cargar('productos', true)">
             <option value="">Cualquier origen</option><option value="off">OFF</option><option value="sepa">SEPA</option><option value="manual">Manual</option>
           </select>
           <label><input type="checkbox" x-model="sec.productos.f.con_conflictos" @change="cargar('productos', true)"> Con conflictos</label>
+          <select x-model="sec.productos.f.estado" @change="cargar('productos', true)">
+            <option value="">Cualquier calidad</option><option value="dudoso">Dudoso</option><option value="descartado">Descartado</option>
+            <option value="parcial">Parcial</option><option value="completo">Completo</option><option value="sin_evaluar">Sin evaluar</option>
+          </select>
+          <select x-model="sec.productos.f.orden" @change="cargar('productos', true)">
+            <option value="nombre">Orden: nombre</option><option value="calidad">Orden: dudosos primero</option>
+          </select>
         </div>
         <div class="tabla"><table>
-          <thead><tr><th>EAN</th><th>Nombre</th><th>Marca</th><th>Tamaño</th><th>Unidad</th><th>Origen</th><th>Bloqueados</th><th>Conflictos</th><th></th></tr></thead>
+          <thead><tr><th>EAN</th><th>Nombre</th><th>Marca</th><th>Tamaño</th><th>Unidad</th><th>Origen</th><th>Calidad</th><th>Bloqueados</th><th>Conflictos</th><th></th></tr></thead>
           <tbody>
             <template x-for="p in sec.productos.items" :key="p.id">
               <tr>
@@ -228,6 +256,8 @@
                   </select>
                 </td>
                 <td x-text="p.origen"></td>
+                <td><span class="badge" :class="{ok: p.estado_calidad === 'completo', aviso: p.estado_calidad === 'parcial', baja: p.estado_calidad === 'dudoso' || p.estado_calidad === 'descartado'}"
+                      :title="p.calidad_motivos.join(', ')" x-text="p.estado_calidad ? p.estado_calidad + ' ' + p.calidad : 'sin evaluar'"></span></td>
                 <td class="suave" x-text="p.campos_bloqueados.join(', ')"></td>
                 <td><a href="#" x-show="p.conflictos_pendientes" @click.prevent="irCatalogo('conflictos')" x-text="p.conflictos_pendientes"></a></td>
                 <td><button class="primario" @click="abrir('producto', p.id)">Ficha</button></td>
@@ -614,6 +644,12 @@
             </div>
             <div class="filas"><button class="primario" :disabled="!hayCambios()" @click="guardarFicha()">Guardar cambios</button>
               <span class="suave">Lo que cambies a mano queda bloqueado contra el ETL.</span></div>
+            <p>Calidad: <span class="badge" :class="{ok: ficha.d.estado_calidad === 'completo', aviso: ficha.d.estado_calidad === 'parcial', baja: ['dudoso', 'descartado'].includes(ficha.d.estado_calidad)}"
+                x-text="ficha.d.estado_calidad ? ficha.d.estado_calidad + ' ' + ficha.d.calidad + '/100' : 'sin evaluar'"></span>
+              <span class="suave" x-text="ficha.d.calidad_motivos.join(', ')"></span></p>
+            <p class="suave" x-show="ficha.d.pack_cantidad || ficha.d.presentacion">
+              <span x-show="ficha.d.pack_cantidad" x-text="'Pack de ' + ficha.d.pack_cantidad"></span>
+              <span x-show="ficha.d.presentacion" x-text="'· ' + ficha.d.presentacion"></span></p>
             <p>En uso: <b x-text="ficha.d.precios"></b> precios en <b x-text="ficha.d.locales_con_precio"></b> locales</p>
           </section>
           <section class="caja">

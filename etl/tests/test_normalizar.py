@@ -260,3 +260,38 @@ def test_abreviatura_sin_resolver_es_dudosa():
 def test_cepillo_dental_con_contexto():
     s = normalizar(Entrada("Colgate Cep Dent Med", "Colgate"))
     assert s.nombre.startswith("Cepillo Dental")
+
+
+def test_la_marca_no_deja_un_nombre_vacio_de_significado():
+    s = normalizar(Entrada("Fanta x 591"))
+    assert "Fanta" in s.nombre or s.marca is None
+    assert s.estado != DESCARTADO or "nombre_inservible" not in s.motivos
+
+
+def test_conteo_mas_tamano_unitario_es_pack():
+    # «3u 90g» con 270 g en el campo: pack 3, el campo ya es el total, sin conflicto.
+    s = normalizar(Entrada("jabon LIMOL pureza cremosa 3u 90g PCK-270-gr.", "Limol", (D(270), "g")))
+    assert (s.tamano, s.pack_cantidad) == ((D(270), "g"), 3)
+    assert "tamano_en_conflicto" not in s.motivos
+    assert "3u" not in s.nombre.lower()
+
+
+@pytest.mark.parametrize(
+    "nombre,marca,esperado",
+    [
+        ("Vermouth MARTINI Blanco BOT-1000-cc. BOT-1000-ml.", "Martini", "Vermouth Blanco"),
+        ("Wafer Chocolate - Orquidea - Orquidea - Orquidea", "Orquídea", "Wafer Chocolate"),
+        (
+            "oBLEAS SABOR VAINILLA santa maria 90G BSA-90-gr.",
+            "Santa María",
+            "Obleas Sabor Vainilla",
+        ),
+        ("MENTHO PLUS MIEL S/E-29.4-gr.", "Mentho Plus", "Miel"),
+        ("FANTA X3L.S/AZUCAR", "Fanta", "Fanta sin azucar"),
+    ],
+)
+def test_casos_reales_de_idempotencia(nombre, marca, esperado):
+    s = normalizar(Entrada(nombre, marca))
+    assert s.nombre.lower().startswith(esperado.lower()[:6]) or esperado.lower() in s.nombre.lower()
+    otra = normalizar(Entrada(s.nombre, s.marca, s.tamano, False, s.presentacion))
+    assert (otra.nombre, otra.marca, otra.tamano) == (s.nombre, s.marca, s.tamano)

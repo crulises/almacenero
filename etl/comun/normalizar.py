@@ -34,6 +34,7 @@ class Entrada:
     marca: str | None = None
     tamano: Tamano | None = None  # el del campo de la fuente, ya parseado
     tiene_imagen: bool = False
+    presentacion: str | None = None  # la que ya tiene el catálogo (para no perder su +5)
 
 
 @dataclass(frozen=True)
@@ -122,7 +123,7 @@ _RAZON_SOCIAL = re.compile(
     re.IGNORECASE,
 )
 _SUFIJO_SEPA = re.compile(
-    r"\s+([A-Za-z]{2,4})-(\d+(?:\.\d+)?)-(gr|grs|ml|un|lt|lts|kg|cc)\.?$", re.IGNORECASE
+    r"\s+([A-Za-z]{2,4}|S/E)-(\d+(?:\.\d+)?)-(gr|grs|ml|un|lt|lts|kg|cc)\.?$", re.IGNORECASE
 )
 _CODIGO_LIDER = re.compile(r"^(?:0{2,}\d*|\d{6,})\s+(?=\S)")
 _INSERVIBLE = re.compile(r"venc|\bvto\b|\d{1,2}:\d{2}|\d{1,2}/\d{1,2}/\d{2,4}", re.IGNORECASE)
@@ -214,15 +215,48 @@ def _con_clave(tokens: list[str]) -> list[tuple[int, str]]:
     return [(i, k) for i, t in enumerate(tokens) if (k := clave(t))]
 
 
+def _tiene_palabra(tokens: list[str]) -> bool:
+    """Quedan al menos dos palabras de verdad (≥ 3 letras, no partículas): «X 591» o «sin
+    azúcar» sin la marca ya no describen nada."""
+    return (
+        sum(sum(c.isalpha() for c in t) >= 3 and clave(t) not in _PARTICULAS for t in tokens) >= 2
+    )
+
+
+def _quitar_sufijos(texto: str) -> tuple[str, str | None, Tamano | None]:
+    """Saca los sufijos de envase de SEPA («BOT-1000-cc. BOT-1000-ml.» trae dos). Manda el
+    último: -> (texto, presentación, tamaño)."""
+    presentacion, tamano = None, None
+    todos, _, _ = _envases()
+    while m := _SUFIJO_SEPA.search(texto):
+        if presentacion is None and tamano is None:
+            presentacion = todos.get(m.group(1).lower())
+            tamano = parsear_tamano(f"{m.group(2)} {m.group(3).lower()}")
+            if tamano == (Decimal(1), "u"):
+                tamano = None
+        texto = texto[: m.start()]
+    return texto, presentacion, tamano
+
+
 def _quitar_secuencia(tokens: list[str], claves_objetivo: set[str]) -> list[str]:
     """Quita del nombre la secuencia de palabras cuya clave coincide con alguna de las
     marcas (la más larga primero). Compara por palabras, no por subcadenas."""
-    ks = _con_clave(tokens)
-    for n in range(min(4, len(ks)), 0, -1):
-        for j in range(len(ks) - n + 1):
-            if "".join(k for _, k in ks[j : j + n]) in claves_objetivo:
-                a, b = ks[j][0], ks[j + n - 1][0]
-                return tokens[:a] + tokens[b + 1 :]
+    for _ in range(10):  # «Caramelos Clight Naranja, Clight»: la marca puede aparecer repetida
+        ks = _con_clave(tokens)
+        for n in range(min(4, len(ks)), 0, -1):
+            hallada = next(
+                (
+                    (ks[j][0], ks[j + n - 1][0])
+                    for j in range(len(ks) - n + 1)
+                    if "".join(k for _, k in ks[j : j + n]) in claves_objetivo
+                ),
+                None,
+            )
+            if hallada:
+                tokens = tokens[: hallada[0]] + tokens[hallada[1] + 1 :]
+                break
+        else:
+            return tokens
     return tokens
 
 
@@ -299,7 +333,8 @@ def _error_de_decimal(campo: Tamano, nombre: Tamano) -> bool:
         return False
     factor = {"g": 1, "ml": 1, "kg": 1000, "l": 1000}
     a, b = campo[0] * factor[campo[1]], nombre[0] * factor[nombre[1]]
-    return max(a, b) / min(a, b) in (10, 100, 1000, 10000)
+    razon = max(a, b) / min(a, b)
+    return any(abs(razon - k) <= k * Decimal("0.02") for k in (10, 100, 1000, 10000))
 
 
 def _inverosimil(t: Tamano) -> bool:
@@ -325,14 +360,65 @@ def _extraer_tamano(texto: str) -> tuple[str, Tamano | None, int | None, bool]:
     valores = {c[1] for c in elegidos}
     if len(valores) > 1:
         return texto, None, None, True
+    # «3u 90g»: el conteo es el pack, no un segundo tamaño; sale del nombre igual que el resto.
+    pack_conteo = None
+    if reales and conteo and len({c[1] for c in conteo}) == 1:
+        pack_conteo = int(conteo[0][1][0])
+        elegidos = elegidos + conteo
     quitar = [c[0].span() for c in elegidos + ruido]
     for a, b in sorted(quitar, reverse=True):
         texto = texto[:a] + " " + texto[b:]
     if not elegidos:
         return texto, None, None, False
     tam = elegidos[0][1]
-    pack = elegidos[0][3] or (int(tam[0]) if elegidos[0][2] else None)
+    pack = elegidos[0][3] or pack_conteo or (int(tam[0]) if elegidos[0][2] else None)
     return texto, tam, pack, False
+
+
+def puntuar(
+    nombre: str,
+    marca: str | None,
+    tamano: Tamano | None,
+    tiene_imagen: bool,
+    presentacion: str | None,
+    motivos: list[str] | tuple[str, ...],
+) -> tuple[int, str, tuple[str, ...]]:
+    """Puntaje 0–100, estado y motivos finales (Doc 7 §6). Pura: la usa `normalizar` y
+    también quien recalcula tras una corrección a mano (sacando antes los motivos que la
+    persona ya resolvió)."""
+    motivos = list(motivos)
+    palabras = len(nombre.split())
+    for m, falta in (
+        ("nombre_corto", palabras < 2),
+        ("sin_marca", marca is None),
+        ("sin_tamano", tamano is None),
+    ):
+        if falta:
+            motivos.append(m)
+    puntos = 40
+    puntos += 10 if palabras >= 2 else 0
+    puntos += 20 if marca else 0
+    puntos += 20 if tamano else 0
+    puntos += 5 if tiene_imagen else 0
+    puntos += 5 if presentacion else 0
+    if "tamano_en_conflicto" in motivos:
+        puntos -= 20
+    if "abreviado" in motivos:
+        puntos -= 10
+    if "marca_en_nombre" in motivos:
+        puntos -= 5
+    calidad = max(0, min(100, puntos))
+
+    if marca is None and tamano is None and palabras <= 2:
+        estado = DESCARTADO
+        motivos.append("muy_incompleto")
+    elif calidad < UMBRAL_DUDOSO or {"tamano_en_conflicto", "abreviado"} & set(motivos):
+        estado = DUDOSO
+    elif calidad >= UMBRAL_COMPLETO:
+        estado = COMPLETO
+    else:
+        estado = PARCIAL
+    return calidad, estado, tuple(dict.fromkeys(motivos))
 
 
 # --------------------------------------------------------------------- principal
@@ -343,16 +429,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
 
     # 1-3. Códigos de ERP al principio y sufijo de envase de SEPA («BOT-750-ml.»).
     texto = _CODIGO_LIDER.sub("", texto)
-    presentacion = None
-    tam_sufijo = None
-    m = _SUFIJO_SEPA.search(texto)
-    if m:
-        todos, _, _ = _envases()
-        presentacion = todos.get(m.group(1).lower())
-        tam_sufijo = parsear_tamano(f"{m.group(2)} {m.group(3).lower()}")
-        if tam_sufijo == (Decimal(1), "u"):
-            tam_sufijo = None
-        texto = texto[: m.start()]
+    texto, presentacion, tam_sufijo = _quitar_sufijos(texto)
     texto = _PUNTO_ENTRE_LETRAS.sub(" ", texto)
 
     # Nombre inservible: sin letras, con fecha/hora de vencimiento o demasiado corto.
@@ -385,6 +462,12 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
         tamano = campo
     elif _equivalentes(campo, tam_nombre):
         tamano = campo
+    elif (
+        pack
+        and tam_nombre[1] != "u"
+        and _equivalentes(campo, (tam_nombre[0] * pack, tam_nombre[1]))
+    ):
+        tamano = campo  # «3u 90g» con 270 g en el campo: el campo ya es el total
     elif campo[1] == "u" and tam_nombre[1] != "u":
         tamano = tam_nombre
         pack = pack or int(campo[0])
@@ -397,9 +480,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
         motivos.append("tamano_en_conflicto")
     if not quitar_del_nombre:
         texto = original
-        texto = _CODIGO_LIDER.sub("", texto)
-        if m:
-            texto = texto[: m.start()]
+        texto = _quitar_sufijos(_CODIGO_LIDER.sub("", texto))[0]
         texto = _PUNTO_ENTRE_LETRAS.sub(" ", texto)
         pack = None
 
@@ -418,7 +499,11 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
             a for a in _claves_de_marca().get(marca, frozenset()) | {clave(marca)} if len(a) >= 4
         }
         restante = _quitar_secuencia(tokens, alias) if alias else tokens
-        if len(restante) < len(tokens) and (len(restante) >= 2 or len(tokens) < 2):
+        if (
+            len(restante) < len(tokens)
+            and (len(restante) >= 2 or len(tokens) < 2)
+            and _tiene_palabra(restante)
+        ):
             tokens = restante
         elif confiable is False and alias and any(a in clave(texto) for a in alias):
             motivos.append("marca_en_nombre")
@@ -433,7 +518,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
             nombre = " ".join(
                 titulo(p)
                 if len(p) >= 3
-                and p == p.upper()
+                and (p == p.upper() or (p[0].islower() and p[1:] == p[1:].upper()))
                 and (q := p.strip(",;.:()")).isalpha()
                 and len(q) >= 3
                 and q.lower() not in _MAYUSCULAS_FIJAS
@@ -467,7 +552,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
             bajo in envase_nombre
             and bajo == (presentacion or "")
             and len(tokens) > 1
-            and tam_nombre
+            and (tam_nombre or suelto_al_final)
         ):
             continue
         if bajo in abrev:
@@ -491,7 +576,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
                     )
                 )
                 continue
-        mm = re.match(r"^([pcs])/(\S+)$", bajo)
+        mm = re.match(r"^([pcs])/([^\s/]+)$", bajo)
         if mm:
             nuevos += [_expandir(abrev[mm.group(1) + "/"], t), mm.group(2)]
             continue
@@ -503,36 +588,10 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
         motivos.append("abreviado")
 
     # 10. Puntaje y estado.
-    palabras = len(nombre.split())
-    if palabras < 2:
-        motivos.append("nombre_corto")
-    if marca is None:
-        motivos.append("sin_marca")
-    if tamano is None:
-        motivos.append("sin_tamano")
-    puntos = 40
-    puntos += 10 if palabras >= 2 else 0
-    puntos += 20 if marca else 0
-    puntos += 20 if tamano else 0
-    puntos += 5 if e.tiene_imagen else 0
-    puntos += 5 if presentacion else 0
-    if "tamano_en_conflicto" in motivos:
-        puntos -= 20
-    if "abreviado" in motivos:
-        puntos -= 10
-    if "marca_en_nombre" in motivos:
-        puntos -= 5
-    calidad = max(0, min(100, puntos))
-
-    if marca is None and tamano is None and palabras <= 2:
-        estado = DESCARTADO
-        motivos.append("muy_incompleto")
-    elif calidad < UMBRAL_DUDOSO or {"tamano_en_conflicto", "abreviado"} & set(motivos):
-        estado = DUDOSO
-    elif calidad >= UMBRAL_COMPLETO and "abreviado" not in motivos:
-        estado = COMPLETO
-    else:
-        estado = PARCIAL
+    presentacion = presentacion or e.presentacion
+    calidad, estado, motivos = puntuar(
+        nombre, marca, tamano, bool(e.tiene_imagen), presentacion, motivos
+    )
 
     return Salida(
         nombre=nombre[:200],
@@ -543,5 +602,5 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
         presentacion=presentacion,
         calidad=calidad,
         estado=estado,
-        motivos=tuple(dict.fromkeys(motivos)),
+        motivos=motivos,
     )
