@@ -293,3 +293,22 @@ def test_corregir_la_presentacion_la_bloquea_contra_el_etl(client, admin):
         f"/v1/admin/productos/{pid}/desbloquear", headers=admin, json={"campos": ["presentacion"]}
     )
     assert r.status_code == 200 and "presentacion" not in _producto()["campos_bloqueados"]
+
+
+def test_un_pack_de_uno_no_es_un_pack(client, moderador, admin):
+    """Regresión: el celular mandaba `pack_cantidad: 1` y la aprobación fallaba con un 500
+    (la base exige pack > 1). Ahora «pack de 1» se guarda como «sin pack»."""
+    s = _sugerir(client, moderador, nombre="Desinfectante Ambiental", pack_cantidad=1)
+    assert s.status_code == 201 and "pack_cantidad" not in s.json()["cambios"]
+    # una sugerencia vieja ya guardada con pack 1 también se aprueba
+    sql(
+        "update sugerencias_catalogo set cambios = cambios || '{\"pack_cantidad\": 1}' "
+        "where id = $1::uuid",
+        s.json()["id"],
+    )
+    r = client.post(f"/v1/admin/sugerencias/{s.json()['id']}/aprobar", headers=admin)
+    assert r.status_code == 200, r.text
+    assert _producto()["pack_cantidad"] is None
+    pid = str(_producto()["id"])
+    r = client.patch(f"/v1/admin/productos/{pid}", headers=admin, json={"pack_cantidad": 1})
+    assert r.status_code == 200

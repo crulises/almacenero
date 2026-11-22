@@ -36,6 +36,7 @@ function panel() {
     subcatalogo: "productos",  // dentro de Catálogo: productos | sugerencias | alta | conflictos
     login: { email: "", password: "", error: "", enviando: false },
     config: [],
+    reglas: [],  // mensajes de error editables (docs/04 §10-E)
     estandares: [],  // ayuda: estándares de carga (Doc 8)
     calidad: null,  // tablero de calidad del catálogo (Doc 7)
     pendientes: 0,  // conflictos + sugerencias sin resolver (globito de Catálogo)
@@ -54,14 +55,20 @@ function panel() {
 
     // ------------------------------------------------------------- red
     async api(path, { method = "GET", body } = {}, reintento = true) {
-      const r = await fetch(API + "/v1" + path, {
-        method,
-        headers: {
-          Authorization: "Bearer " + this.sesion.access_token,
-          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-        },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
+      let r;
+      try {
+        r = await fetch(API + "/v1" + path, {
+          method,
+          headers: {
+            Authorization: "Bearer " + this.sesion.access_token,
+            ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+      } catch {
+        // El navegador no distingue «sin red» de «el backend se cayó»: se lo decimos nosotros.
+        throw new Error(`No hay respuesta del backend (${API}). Puede estar caído o sin red; si recién hiciste una acción, revisá los logs del backend antes de reintentar.`);
+      }
       if (r.status === 401 && reintento && (await this.renovar())) return this.api(path, { method, body }, false);
       if (r.status === 401) { this.salir(); throw new Error("La sesión venció: entrá de nuevo"); }
       if (r.status === 204) return null;
@@ -77,7 +84,13 @@ function panel() {
       if (!d) return "";
       if (typeof d === "string") return d;
       if (Array.isArray(d)) return d.map((e) => `${(e.loc || []).slice(1).join(".")}: ${e.msg}`).join("; ");
-      return d.mensaje || JSON.stringify(d);
+      if (!d.mensaje) return JSON.stringify(d);
+      // Regla de negocio (backend/app/services/reglas.py): qué pasó, por qué y qué hacer.
+      let t = d.mensaje;
+      if (d.campos && d.campos.length) t += " (" + d.campos.map((c) => `${c.campo} ${c.problema}`).join("; ") + ")";
+      if (d.como_resolver) t += " → " + d.como_resolver;
+      if (d.codigo) t += ` [${d.codigo}${d.referencia ? " · ref " + d.referencia : ""}]`;
+      return t;
     },
     async renovar() {
       try {
@@ -133,7 +146,7 @@ function panel() {
     get actual() { return this.vista === "catalogo" ? this.subcatalogo : this.vista; },
     cambiarVista(v) {
       this.vista = v;
-      if (v === "config") this.cargarConfig();
+      if (v === "config") { this.cargarConfig(); this.cargarReglas(); }
       else if (v === "ayuda") this.cargarAyuda();
       else if (!(v === "catalogo" && this.subcatalogo === "alta")) this.cargar(v === "catalogo" ? this.subcatalogo : v);
       if (v === "catalogo") { this.contarPendientes(); this.cargarTablero(); }
@@ -393,6 +406,18 @@ function panel() {
     async cargarConfig() {
       await this.intentar(async () => { this.config = await this.api("/admin/config"); });
     },
+    async cargarReglas() {
+      await this.intentar(async () => { this.reglas = await this.api("/admin/reglas"); });
+    },
+    async guardarMensaje(r, texto = r.nuevo) {
+      if (texto === undefined) return;
+      await this.intentar(async () => {
+        const n = await this.api(`/admin/reglas/${r.codigo}`, { method: "PUT", body: { mensaje: texto } });
+        Object.assign(r, n, { nuevo: undefined });
+        this.avisar(`Mensaje de «${r.titulo}» guardado`);
+      });
+    },
+    async restaurarMensaje(r) { await this.guardarMensaje(r, ""); },
     async cambiarConfig(c, valor) {
       let v = valor;
       if (typeof c.valor === "number") v = Number(valor);

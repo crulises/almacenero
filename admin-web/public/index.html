@@ -510,6 +510,29 @@
             </template>
           </tbody>
         </table></div>
+
+        <h3 style="margin-top:24px">Mensajes de error</h3>
+        <p class="suave">Cuando una acción no se puede aplicar, la app y el panel muestran el código de la regla y este texto,
+          más la guía para resolverlo. Acá podés reescribir el texto (el código y la regla no cambian); vacío = el original.</p>
+        <div class="tabla"><table>
+          <thead><tr><th>Regla</th><th>Mensaje que ve la persona</th><th>Cómo resolverlo</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="r in reglas" :key="r.codigo">
+              <tr>
+                <td><b x-text="r.titulo"></b><br><span class="mono suave" x-text="r.codigo + ' · ' + r.status"></span></td>
+                <td>
+                  <textarea rows="2" style="width:100%" maxlength="400" :value="r.mensaje" @input="r.nuevo = $event.target.value"></textarea>
+                  <span x-show="r.editado" class="badge mal">editado</span>
+                </td>
+                <td class="suave" x-text="r.como_resolver"></td>
+                <td>
+                  <button class="primario" @click="guardarMensaje(r)">Guardar</button>
+                  <button x-show="r.editado" @click="restaurarMensaje(r)">Restaurar</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
       </section>
 
       <!-- ====================================================== AUDITORÍA -->
