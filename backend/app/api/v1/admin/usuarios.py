@@ -78,7 +78,7 @@ class UsuarioDetalle(UsuarioAdminOut):
 
 
 class RolIn(BaseModel):
-    rol: str = Field(pattern="^(usuario|admin)$")
+    rol: str = Field(pattern="^(usuario|moderador|admin)$")
     motivo: str | None = Field(default=None, max_length=300)
 
 
@@ -117,7 +117,7 @@ async def _salida(pool: asyncpg.Pool | asyncpg.Connection, row) -> UsuarioAdminO
 @router.get("/usuarios", response_model=Pagina[UsuarioAdminOut])
 async def listar_usuarios(
     tipo: str | None = Query(None, pattern="^(anonimo|registrado)$"),
-    rol: str | None = Query(None, pattern="^(usuario|admin)$"),
+    rol: str | None = Query(None, pattern="^(usuario|moderador|admin)$"),
     estado: str | None = Query(None, pattern="^(activo|baja)$"),
     escalon: str | None = Query(None, pattern="^(normal|aviso|restringido)$"),
     q: str | None = Query(None, max_length=100, description="alias, email o id"),

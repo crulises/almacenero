@@ -7,15 +7,18 @@ from decimal import Decimal
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.v1.admin.auditoria import AuditoriaOut, historial
 from app.api.v1.admin.consulta import Consulta, escapar_like
 from app.api.v1.admin.paginas import Pagina
+from app.api.v1.admin.sugerencias import SugerenciaAdminOut, de_producto
 from app.auth import Usuario
 from app.db import get_pool
 from app.services import auditoria, calidad
+from app.services import catalogo as escritura
+from app.services.catalogo import Cambios
 from app.services.permisos import exigir
 
 router = APIRouter(tags=["admin"])
@@ -38,19 +41,18 @@ class ProductoAdminOut(BaseModel):
     calidad_motivos: list[str] = []
 
 
-class ProductoPatch(BaseModel):
-    nombre: str | None = Field(default=None, min_length=1, max_length=200)
-    marca: str | None = Field(default=None, max_length=100)
-    tamano_valor: Decimal | None = Field(default=None, gt=0)
-    tamano_unidad: str | None = Field(default=None, pattern="^(g|kg|ml|l|u)$")
+ProductoPatch = Cambios  # la corrección directa y la sugerencia dicen lo mismo
+
+
+class ProductoNuevo(Cambios):
+    """Alta simple (Doc 7 §5.1): el EAN y, como mínimo, el nombre."""
+
+    ean: str = Field(pattern="^[0-9]{8,14}$")
 
     @model_validator(mode="after")
-    def _validar(self):
-        if "nombre" in self.model_fields_set and (self.nombre is None or not self.nombre.strip()):
-            raise ValueError("el nombre no puede estar vacío")
-        toca_tamano = {"tamano_valor", "tamano_unidad"} & self.model_fields_set
-        if toca_tamano and (self.tamano_valor is None) != (self.tamano_unidad is None):
-            raise ValueError("tamaño y unidad van juntos (o los dos vacíos)")
+    def _nombre(self):
+        if "nombre" not in self.model_fields_set:
+            raise ValueError("el nombre es obligatorio")
         return self
 
 
@@ -83,6 +85,7 @@ class ProductoDetalle(ProductoAdminOut):
     precios: int
     locales_con_precio: int
     historial: list[AuditoriaOut]
+    sugerencias: list[SugerenciaAdminOut] = []
 
 
 class DesbloquearIn(BaseModel):
@@ -91,7 +94,7 @@ class DesbloquearIn(BaseModel):
 
     @model_validator(mode="after")
     def _validar(self):
-        malos = set(self.campos) - {"nombre", "marca", "tamano"}
+        malos = set(self.campos) - {"nombre", "marca", "tamano", "presentacion"}
         if malos:
             raise ValueError(f"campos inválidos: {sorted(malos)}")
         return self
@@ -198,50 +201,67 @@ async def corregir_producto(
 ) -> ProductoAdminOut:
     """Corrige a mano nombre, marca y/o tamaño. Lo corregido queda **bloqueado**: ningún
     ETL lo vuelve a tocar."""
+    nuevos = body.a_dict()
+    if not nuevos:
+        raise HTTPException(422, "no hay nada para cambiar")
     async with pool.acquire() as conn, conn.transaction():
-        antes = await conn.fetchrow(
-            "select nombre, marca, tamano_valor, tamano_unidad from productos_canonicos "
-            "where id = $1 for update",
-            producto_id,
-        )
-        if antes is None:
+        antes, despues = await escritura.aplicar(conn, producto_id, nuevos)
+        if not antes and not despues:
             raise HTTPException(404, "producto no encontrado")
-        nuevos: dict = {}
-        bloquear: list[str] = []
-        for campo in ("nombre", "marca"):
-            if campo in body.model_fields_set:
-                v = getattr(body, campo)
-                nuevos[campo] = v.strip() if v and v.strip() else None
-                bloquear.append(campo)
-        if {"tamano_valor", "tamano_unidad"} & body.model_fields_set:
-            nuevos["tamano_valor"] = body.tamano_valor
-            nuevos["tamano_unidad"] = body.tamano_unidad
-            bloquear.append("tamano")
-        if not nuevos:
-            raise HTTPException(422, "no hay nada para cambiar")
-        await conn.execute("select set_config('app.catalogo_write', 'on', true)")
-        sets = [f"{k} = ${i + 2}" for i, k in enumerate(nuevos)]
-        await conn.execute(
-            f"update productos_canonicos set {', '.join(sets)}, campos_bloqueados = "
-            f"array(select distinct unnest(campos_bloqueados || ${len(nuevos) + 2}::text[])) "
-            "where id = $1",
-            producto_id,
-            *nuevos.values(),
-            bloquear,
-        )
         await auditoria.registrar(
             conn,
             admin.id,
             "producto.corregir",
             "producto",
             producto_id,
-            {k: antes[k] for k in nuevos},
-            nuevos,
-            nota="campos bloqueados: " + ", ".join(bloquear),
+            antes,
+            despues,
+            nota="campos bloqueados: " + ", ".join(escritura.bloqueos(nuevos)),
         )
-        await calidad.recalcular(conn, producto_id=producto_id)
         row = await conn.fetchrow(f"{_SELECT_PRODUCTO} where p.id = $1", producto_id)
     return ProductoAdminOut(**dict(row))
+
+
+@router.post("/productos", response_model=ProductoAdminOut, status_code=201)
+async def crear_producto(
+    body: ProductoNuevo,
+    admin: Usuario = Depends(exigir("catalogo.crear")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ProductoAdminOut:
+    """Alta simple de un producto que ningún ETL trajo (origen `manual`, todo bloqueado).
+    Si el EAN ya existe —aunque esté descartado— se corrige con `PATCH`, no se da de alta."""
+    nuevos = body.a_dict()
+    async with pool.acquire() as conn, conn.transaction():
+        if await conn.fetchval("select 1 from productos_canonicos where ean = $1", body.ean):
+            raise HTTPException(409, "ese EAN ya existe: corregilo en vez de darlo de alta")
+        producto_id = await escritura.crear(conn, body.ean, nuevos)
+        await auditoria.registrar(
+            conn,
+            admin.id,
+            "producto.crear",
+            "producto",
+            producto_id,
+            None,
+            {"ean": body.ean, **nuevos},
+            nota="alta manual",
+        )
+        row = await conn.fetchrow(f"{_SELECT_PRODUCTO} where p.id = $1", producto_id)
+    return ProductoAdminOut(**dict(row))
+
+
+@router.get("/catalogo/marcas", response_model=list[str])
+async def marcas(
+    q: str = Query(..., min_length=1, max_length=50),
+    _: Usuario = Depends(exigir("catalogo.editar")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> list[str]:
+    """Autocompletado de marca para el formulario: las más usadas que empiezan así."""
+    rows = await pool.fetch(
+        "select marca from productos_canonicos where lower(marca) like $1 "
+        "group by marca order by count(*) desc, marca limit 10",
+        f"{escapar_like(q.strip().lower())}%",
+    )
+    return [r["marca"] for r in rows]
 
 
 @router.get("/conflictos", response_model=Pagina[ConflictoOut])
@@ -348,21 +368,16 @@ async def resolver_conflicto(
     return ConflictoOut(**dict(row))
 
 
-@router.get("/productos/{producto_id}", response_model=ProductoDetalle)
-async def ficha_producto(
-    producto_id: UUID,
-    _: Usuario = Depends(exigir("catalogo.editar")),
-    pool: asyncpg.Pool = Depends(get_pool),
-) -> ProductoDetalle:
+async def _detalle(pool: asyncpg.Pool, donde: str, valor) -> ProductoDetalle:
     row = await pool.fetchrow(
         f"""
         select x.*, p.imagen_url,
                (select count(*) from precios r where r.producto_canonico_id = x.id) as precios,
                (select count(distinct r.local_id) from precios r
                  where r.producto_canonico_id = x.id) as locales_con_precio
-        from ({_SELECT_PRODUCTO} where p.id = $1) x join productos_canonicos p on p.id = x.id
+        from ({_SELECT_PRODUCTO} where {donde}) x join productos_canonicos p on p.id = x.id
         """,
-        producto_id,
+        valor,
     )
     if row is None:
         raise HTTPException(404, "producto no encontrado")
@@ -386,8 +401,28 @@ async def ficha_producto(
             FuenteProductoOut(**{**dict(f), "datos": json.loads(f["datos"])}) for f in fuentes
         ],
         conflictos=[ConflictoOut(**dict(c)) for c in conflictos],
-        historial=await historial(pool, "producto", producto_id),
+        historial=await historial(pool, "producto", row["id"]),
+        sugerencias=await de_producto(pool, row["ean"]),
     )
+
+
+@router.get("/productos/por-ean/{ean}", response_model=ProductoDetalle)
+async def ficha_por_ean(
+    ean: str = Path(pattern="^[0-9]{8,14}$"),
+    _: Usuario = Depends(exigir("catalogo.editar")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ProductoDetalle:
+    """«Buscar por EAN» del formulario simple: la ficha, descartado o no. 404 = es un alta."""
+    return await _detalle(pool, "p.ean = $1", ean)
+
+
+@router.get("/productos/{producto_id}", response_model=ProductoDetalle)
+async def ficha_producto(
+    producto_id: UUID,
+    _: Usuario = Depends(exigir("catalogo.editar")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ProductoDetalle:
+    return await _detalle(pool, "p.id = $1", producto_id)
 
 
 @router.post("/productos/{producto_id}/desbloquear", response_model=ProductoAdminOut)

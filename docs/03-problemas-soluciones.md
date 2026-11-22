@@ -804,3 +804,29 @@ Decisiones en `docs/04` §9.
   propósito** (Doc 7 §5): hasta que alguien lo complete desde el panel (o una fuente lo
   mejore), la app contesta «no encontrado». Se ve con el filtro «Descartado» del panel.
 
+---
+
+## Rol moderador y sugerencias (corte 15)
+
+### Error en consola al buscar un EAN que no existe en «Alta / corrección»
+
+- **Síntoma:** `Cannot read properties of null (reading 'estado_calidad')` al buscar un EAN
+  nuevo; el formulario igual se ve.
+- **Causa:** `x-show` **evalúa** su expresión y las de sus hijos aunque oculte el bloque, así
+  que `alta.d.estado_calidad` revienta cuando `alta.d` es `null` (el alta).
+- **Solución:** envolver lo que depende de datos que pueden faltar en `<template x-if="...">`
+  (que no renderiza ni evalúa) o usar `?.`.
+
+### `auditoria_admin` rechaza la entidad `sugerencia`
+
+- **Síntoma:** `CheckViolationError ... auditoria_admin_entidad_check` al aprobar una sugerencia.
+- **Causa:** la entidad auditable es una lista cerrada en un `check`; cada entidad nueva
+  necesita ampliarla en su migración (pasó con `invitacion` y ahora con `sugerencia`).
+- **Solución:** `drop constraint` + `add constraint` con la lista ampliada, en la migración.
+
+### El panel de prueba en otro puerto dice «No puedo conectar con el backend»
+
+- **Síntoma:** al probar el panel en un puerto distinto de 8080, el login falla aunque el
+  backend responda.
+- **Causa:** CORS: solo se permite `CORS_ORIGINS` (por defecto el panel en 8080).
+- **Solución:** levantar el backend de prueba con `CORS_ORIGINS=http://localhost:<puerto>`.

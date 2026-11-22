@@ -207,3 +207,35 @@ def test_campos_bloqueados_no_se_pisan_y_su_calidad_se_recalcula(tmp_path):
     p = producto(e)
     assert p["nombre"] == "Desinfectante Ambiental Original"  # el ETL no lo pisó
     assert p["estado_calidad"] != "dudoso"  # una persona lo corrigió: ya no resta
+
+
+def test_presentacion_y_pack_bloqueados_no_se_pisan_y_lo_manual_no_se_descarta(tmp_path):
+    e = ean(1)
+    fila_e = fila_sepa(e, "ACEITE NUCETE OLIVA BOT-250-ml.", "250", "ml", "NUCETE")
+    asyncio.run(cargar([zip_sepa(tmp_path, fila_e)]))
+    assert producto(e)["presentacion"] == "botella"
+
+    async def corregir(c):
+        async with c.transaction():
+            await c.execute("select set_config('app.catalogo_write', 'on', true)")
+            await c.execute(
+                "update productos_canonicos set presentacion = 'lata', pack_cantidad = 6, "
+                "campos_bloqueados = '{presentacion,tamano}' where ean = $1",
+                e,
+            )
+
+    db(corregir)
+    asyncio.run(cargar([zip_sepa(tmp_path, fila_e)]))
+    p = producto(e)
+    assert (p["presentacion"], p["pack_cantidad"]) == ("lata", 6)  # el ETL no lo pisó
+
+    # un producto cargado a mano, de una palabra y sin marca ni tamaño, no se descarta
+    m = ean(2)
+    db(
+        lambda c: c.execute(
+            "insert into productos_canonicos (ean, nombre, origen) values ($1, 'Fanta', 'manual')",
+            m,
+        )
+    )
+    asyncio.run(cargar([zip_sepa(tmp_path, fila_sepa(m, "FANTA", "", "", ""))]))
+    assert producto(m)["estado_calidad"] != "descartado"

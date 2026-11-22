@@ -38,8 +38,12 @@
       <h1 x-text="TITULOS[vista]"></h1>
       <div class="filtros" x-show="vista === 'catalogo'">
         <button :class="{primario: subcatalogo === 'productos'}" @click="irCatalogo('productos')">Productos</button>
+        <button :class="{primario: subcatalogo === 'sugerencias'}" @click="irCatalogo('sugerencias')">
+          Sugerencias <span class="badge mal" x-show="pendientesSugerencias > 0" x-text="pendientesSugerencias + ' pendientes'"></span>
+        </button>
+        <button :class="{primario: subcatalogo === 'alta'}" @click="irCatalogo('alta')">Alta / corrección por EAN</button>
         <button :class="{primario: subcatalogo === 'conflictos'}" @click="irCatalogo('conflictos')">
-          Conflictos del ETL <span class="badge mal" x-show="pendientes > 0" x-text="pendientes + ' pendientes'"></span>
+          Conflictos del ETL <span class="badge mal" x-show="pendientesConflictos > 0" x-text="pendientesConflictos + ' pendientes'"></span>
         </button>
       </div>
 
@@ -117,7 +121,7 @@
             <option value="">Anónimos y registrados</option><option value="anonimo">Anónimos</option><option value="registrado">Registrados</option>
           </select>
           <select x-model="sec.usuarios.f.rol" @change="cargar('usuarios', true)">
-            <option value="">Cualquier rol</option><option value="usuario">usuario</option><option value="admin">admin</option>
+            <option value="">Cualquier rol</option><option value="usuario">usuario</option><option value="moderador">moderador</option><option value="admin">admin</option>
           </select>
           <select x-model="sec.usuarios.f.estado" @change="cargar('usuarios', true)">
             <option value="">Activos y de baja</option><option value="activo">Activos</option><option value="baja">De baja</option>
@@ -271,6 +275,98 @@
           <button @click="pagina('productos', 1)" :disabled="sec.productos.offset + sec.productos.limit >= sec.productos.total">→</button>
         </div>
         <p class="suave">Lo que corregís acá queda bloqueado: ningún ETL lo vuelve a pisar.</p>
+      </section>
+
+      <!-- ===================================================== SUGERENCIAS -->
+      <section x-show="vista === 'catalogo' && subcatalogo === 'sugerencias'">
+        <div class="filtros">
+          <select x-model="sec.sugerencias.f.estado" @change="cargar('sugerencias', true)">
+            <option value="pendiente">Pendientes</option><option value="aprobada">Aprobadas</option>
+            <option value="rechazada">Rechazadas</option><option value="reemplazada">Reemplazadas</option>
+          </select>
+          <input type="search" placeholder="EAN, producto o autor" x-model.debounce.400ms="sec.sugerencias.f.q" @input="cargar('sugerencias', true)">
+          <span class="suave" x-text="rango('sugerencias')"></span>
+          <template x-if="sec.sugerencias.f.estado === 'pendiente' && elegidos('sugerencias').length">
+            <span>
+              <button class="primario" @click="resolverSugEnMasa('aprobar')" x-text="'Aprobar ' + elegidos('sugerencias').length"></button>
+              <button class="peligro" @click="resolverSugEnMasa('rechazar')" x-text="'Rechazar ' + elegidos('sugerencias').length"></button>
+            </span>
+          </template>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr><th><input type="checkbox" @change="marcarTodos('sugerencias', $event.target.checked)"></th><th>EAN</th><th>Tipo</th><th>Autor</th><th>Qué cambia (actual → sugerido)</th><th>Motivo</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="s in sec.sugerencias.items" :key="s.id">
+              <tr>
+                <td><input type="checkbox" x-model="sec.sugerencias.sel[s.id]" x-show="s.estado === 'pendiente'"></td>
+                <td class="mono" x-text="s.ean"></td>
+                <td><span class="badge" :class="s.tipo === 'alta' ? 'aviso' : ''" x-text="s.tipo === 'alta' ? 'alta' : 'corrección'"></span>
+                  <div class="suave" x-text="s.producto_nombre"></div></td>
+                <td x-text="s.usuario_alias"></td>
+                <td>
+                  <template x-for="c in diffSug(s)" :key="c.campo">
+                    <div><b x-text="c.campo"></b>: <span class="suave" x-show="s.tipo !== 'alta'" x-text="(c.actual ?? '—') + ' →'"></span> <span x-text="c.nuevo ?? '—'"></span></div>
+                  </template>
+                </td>
+                <td><span x-text="s.motivo"></span>
+                  <div class="suave" x-show="s.estado !== 'pendiente'" x-text="s.estado + (s.resuelto_por_alias ? ' por ' + s.resuelto_por_alias : '') + (s.nota_resolucion ? ': ' + s.nota_resolucion : '')"></div></td>
+                <td>
+                  <template x-if="s.estado === 'pendiente'">
+                    <span><button class="primario" @click="resolverSug(s, 'aprobar')">Aprobar</button> <button @click="resolverSug(s, 'rechazar')">Rechazar</button></span>
+                  </template>
+                  <button x-show="s.producto_id" @click="irFicha('producto', s.producto_id)">Ficha</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('sugerencias', -1)" :disabled="sec.sugerencias.offset === 0">←</button>
+          <button @click="pagina('sugerencias', 1)" :disabled="sec.sugerencias.offset + sec.sugerencias.limit >= sec.sugerencias.total">→</button>
+        </div>
+        <p class="suave">Aprobar aplica los cambios, los bloquea contra el ETL y suma karma a quien los sugirió. Rechazar pide un motivo y no castiga.</p>
+      </section>
+
+      <!-- ================================================ ALTA / CORRECCIÓN -->
+      <section x-show="vista === 'catalogo' && subcatalogo === 'alta'">
+        <form class="filtros" @submit.prevent="buscarEan()">
+          <input type="text" inputmode="numeric" placeholder="EAN (8 a 14 dígitos)" x-model="alta.ean" @input="alta.buscado = false">
+          <button class="primario" type="submit">Buscar</button>
+          <span class="suave">Si existe (también un descartado) lo corregís; si no, lo das de alta.</span>
+        </form>
+        <template x-if="alta.buscado">
+          <div class="cuerpo">
+            <section class="caja">
+              <h3><span x-text="alta.d ? 'Corregir producto' : 'Alta de producto nuevo'"></span> <span class="mono suave" x-text="alta.ean"></span></h3>
+              <template x-if="alta.d">
+                <p>Calidad: <span class="badge" :class="{ok: alta.d.estado_calidad === 'completo', aviso: alta.d.estado_calidad === 'parcial', baja: ['dudoso', 'descartado'].includes(alta.d.estado_calidad)}"
+                    x-text="alta.d.estado_calidad ? alta.d.estado_calidad + ' ' + alta.d.calidad + '/100' : 'sin evaluar'"></span>
+                  <span class="suave" x-text="alta.d.calidad_motivos.join(', ')"></span></p>
+              </template>
+              <div class="form">
+                <label>Nombre <input type="text" x-model="alta.b.nombre"></label>
+                <label>Marca <input type="text" list="marcas-sug" x-model="alta.b.marca" @input.debounce.300ms="marcasLike()"></label>
+                <datalist id="marcas-sug"><template x-for="m in alta.marcas" :key="m"><option :value="m"></option></template></datalist>
+                <label>Tamaño <input type="number" step="any" x-model="alta.b.tamano_valor"></label>
+                <label>Unidad <select x-model="alta.b.tamano_unidad"><option value="">—</option><option>g</option><option>kg</option><option>ml</option><option>l</option><option>u</option></select></label>
+                <label>Pack de <input type="number" min="1" step="1" x-model="alta.b.pack_cantidad"></label>
+                <label>Presentación <input type="text" x-model="alta.b.presentacion" placeholder="botella, lata, caja…"></label>
+              </div>
+              <div class="filas">
+                <button class="primario" :disabled="alta.enviando || !(alta.b.nombre || '').trim()" @click="guardarAlta()" x-text="alta.d ? 'Guardar corrección' : 'Dar de alta'"></button>
+                <span class="suave">Lo que cargues acá queda bloqueado contra el ETL y no se descarta.</span>
+              </div>
+            </section>
+            <section class="caja" x-show="alta.d">
+              <h3>Lo que dijo cada fuente</h3>
+              <p class="suave" x-show="!alta.d?.fuentes.length">Ninguna fuente (carga manual).</p>
+              <template x-for="f in (alta.d?.fuentes || [])" :key="f.fuente">
+                <div><b x-text="f.fuente"></b> <span class="suave mono" x-text="json(f.datos)"></span></div>
+              </template>
+              <p x-show="alta.d" class="suave">Campos bloqueados: <span x-text="(alta.d?.campos_bloqueados || []).join(', ') || 'ninguno'"></span></p>
+            </section>
+          </div>
+        </template>
       </section>
 
       <!-- ====================================================== CONFLICTOS -->
@@ -583,7 +679,7 @@
           <section class="caja">
             <h3>Rol</h3>
             <div class="form">
-              <label>Nuevo rol <select x-model="ficha.x.rol"><option value="usuario">usuario</option><option value="admin">admin</option></select></label>
+              <label>Nuevo rol <select x-model="ficha.x.rol"><option value="usuario">usuario</option><option value="moderador">moderador (sugiere cambios al catálogo)</option><option value="admin">admin</option></select></label>
               <label>Motivo <input type="text" x-model="ficha.x.motivoRol"></label>
             </div>
             <div class="filas"><button :disabled="ficha.x.rol === ficha.d.rol" @click="cambiarRolFicha()">Cambiar rol</button>
@@ -641,6 +737,8 @@
               <label>Marca <input type="text" x-model="ficha.b.marca"></label>
               <label>Tamaño <input type="number" step="any" x-model="ficha.b.tamano_valor"></label>
               <label>Unidad <select x-model="ficha.b.tamano_unidad"><option value="">—</option><option>g</option><option>kg</option><option>ml</option><option>l</option><option>u</option></select></label>
+              <label>Pack de <input type="number" min="1" step="1" x-model="ficha.b.pack_cantidad"></label>
+              <label>Presentación <input type="text" x-model="ficha.b.presentacion" placeholder="botella, lata, caja…"></label>
             </div>
             <div class="filas"><button class="primario" :disabled="!hayCambios()" @click="guardarFicha()">Guardar cambios</button>
               <span class="suave">Lo que cambies a mano queda bloqueado contra el ETL.</span></div>
@@ -651,6 +749,16 @@
               <span x-show="ficha.d.pack_cantidad" x-text="'Pack de ' + ficha.d.pack_cantidad"></span>
               <span x-show="ficha.d.presentacion" x-text="'· ' + ficha.d.presentacion"></span></p>
             <p>En uso: <b x-text="ficha.d.precios"></b> precios en <b x-text="ficha.d.locales_con_precio"></b> locales</p>
+          </section>
+          <section class="caja" x-show="ficha.d.sugerencias.length">
+            <h3>Sugerencias de este producto</h3>
+            <table><tbody>
+              <template x-for="s in ficha.d.sugerencias" :key="s.id">
+                <tr><td class="suave" x-text="fecha(s.created_at)"></td><td x-text="s.usuario_alias"></td>
+                  <td><template x-for="c in diffSug(s)" :key="c.campo"><div><b x-text="c.campo"></b>: <span x-text="c.nuevo ?? '—'"></span></div></template></td>
+                  <td><span class="badge" :class="{ok: s.estado === 'aprobada', mal: s.estado === 'rechazada'}" x-text="s.estado"></span></td></tr>
+              </template>
+            </tbody></table>
           </section>
           <section class="caja">
             <h3>Campos bloqueados</h3>

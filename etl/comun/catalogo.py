@@ -105,7 +105,7 @@ create temp table if not exists etl_cal (
 # Columnas con las que se evalúa la calidad de la fila FINAL del catálogo.
 _SQL_FILAS = """
 select ean, nombre, marca, tamano_valor, tamano_unidad, imagen_url, presentacion,
-       campos_bloqueados, calidad_motivos
+       campos_bloqueados, calidad_motivos, origen
   from productos_canonicos where ean = any ($1::text[])
 """
 
@@ -179,9 +179,11 @@ nuevo as (
              else coalesce(tu0, tu1) end as tu,
         case when (propio or gana) and i1 is not null then i1
              else coalesce(i0, i1) end as i,
-        case when (propio or gana) and pk1 is not null then pk1
+        case when 'tamano' = any (bl) then pk0
+             when (propio or gana) and pk1 is not null then pk1
              else coalesce(pk0, pk1) end as pk,
-        case when (propio or gana) and pr1 is not null then pr1
+        case when 'presentacion' = any (bl) then pr0
+             when (propio or gana) and pr1 is not null then pr1
              else coalesce(pr0, pr1) end as pr,
         case when gana then $1::text else origen end as o,
         n0, m0, tv0, tu0, i0, origen as o0, pk0, pr0
@@ -269,6 +271,7 @@ _RESUELTOS_POR = {
     "nombre": {"abreviado", "marca_en_nombre", "tamano_en_conflicto", "nombre_corto"},
     "marca": {"marca_en_nombre", "fabricante_como_marca"},
     "tamano": {"tamano_en_conflicto"},
+    "presentacion": set(),
 }
 _ESTRUCTURALES = {"sin_marca", "sin_tamano", "nombre_corto", "muy_incompleto"}
 
@@ -288,8 +291,10 @@ def evaluar_fila(r, pegajosos: frozenset[str] = frozenset()) -> tuple[int, str, 
         for m in (*s.motivos, *pegajosos)
         if m not in _ESTRUCTURALES | resueltos | {"nombre_inservible"}
     ]
+    # Lo que una persona cargó o corrigió no se descarta (Doc 7 §5.1).
+    revisado = bool(bloqueados) or r["origen"] == "manual"
     calidad, estado, motivos_finales = puntuar(
-        r["nombre"], r["marca"], tam, bool(r["imagen_url"]), r["presentacion"], motivos
+        r["nombre"], r["marca"], tam, bool(r["imagen_url"]), r["presentacion"], motivos, revisado
     )
     return calidad, estado, list(motivos_finales), NORMALIZADOR_VERSION
 

@@ -20,6 +20,8 @@ class _ConRol(Protocol):
 
 CAPACIDADES: dict[str, frozenset[str]] = {
     "usuario": frozenset({"precio.cargar", "local.proponer"}),
+    # Moderador (docs/04 §10-D): como un usuario, y además propone cambios al catálogo.
+    "moderador": frozenset({"precio.cargar", "local.proponer", "catalogo.sugerir"}),
     "admin": frozenset(
         {
             "precio.cargar",
@@ -41,6 +43,9 @@ CAPACIDADES: dict[str, frozenset[str]] = {
             "config.editar",
             "catalogo.editar",
             "catalogo.resolver",
+            "catalogo.crear",
+            "catalogo.sugerir",
+            "catalogo.sugerencias.resolver",
             "auditoria.ver",
             # Invitaciones / PINs (corte 9)
             "invitacion.ver",
@@ -52,7 +57,9 @@ CAPACIDADES: dict[str, frozenset[str]] = {
 
 # Lo que ESCRIBE información (docs/04 §9): un usuario restringido por karma no puede.
 # Leer / consultar no está acá: sigue andando.
-CAPACIDADES_DE_CARGA = frozenset({"precio.cargar", "local.proponer", "local.crear"})
+CAPACIDADES_DE_CARGA = frozenset(
+    {"precio.cargar", "local.proponer", "local.crear", "catalogo.sugerir"}
+)
 
 CUENTA_RESTRINGIDA = {
     "codigo": "cuenta_restringida",
