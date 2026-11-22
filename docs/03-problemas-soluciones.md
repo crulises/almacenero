@@ -841,3 +841,16 @@ Decisiones en `docs/04` §9.
 - **Solución:** `Cambios` guarda «pack de 1» como «sin pack», y un dato que la base rechaza al
   aprobar responde 422 en vez de 500. Las sugerencias viejas ya guardadas con pack 1 también se
   aprueban. Ante un «Failed to fetch» en el panel: `docker compose logs backend`.
+  **Seguimiento:** ya no hay 500 mudos (Doc 4 §10-E): un error inesperado responde con CORS y una
+  `referencia` que se busca en esos logs, y las violaciones de la base explican la regla.
+
+### Un error del backend no dice qué regla se violó
+
+- **Síntoma:** una acción falla con «Error 500», «Failed to fetch» o un mensaje técnico, y quien
+  la hizo no sabe qué corregir.
+- **Causa:** una violación de integridad (check, unique, trigger) o un dato viejo que el modelo ya
+  no acepta subía sin manejar.
+- **Solución:** Doc 4 §10-E. Cada regla tiene un código, un mensaje y una guía; el mensaje se
+  edita en Configuración → «Mensajes de error». Si falta una regla para un constraint nuevo, cae
+  en `dato_invalido` mostrando el nombre de la restricción: agregalo a `POR_CONSTRAINT` y a
+  `REGLAS` en `backend/app/services/reglas.py`.

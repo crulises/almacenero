@@ -20,6 +20,7 @@ from app.api.v1.admin import (
     invitaciones,
     locales,
     precios,
+    reglas,
     sugerencias,
     usuarios,
 )
@@ -87,6 +88,7 @@ router.include_router(usuarios.router, dependencies=_acceso)
 router.include_router(locales.router, dependencies=_acceso)
 router.include_router(precios.router, dependencies=_acceso)
 router.include_router(config.router, dependencies=_acceso)
+router.include_router(reglas.router, dependencies=_acceso)
 router.include_router(catalogo.router, dependencies=_acceso)
 router.include_router(sugerencias.router, dependencies=_acceso)
 router.include_router(invitaciones.router, dependencies=_acceso)

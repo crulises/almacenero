@@ -10,6 +10,7 @@ from datetime import datetime
 from uuid import UUID
 
 import asyncpg
+import pydantic_core
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -17,7 +18,7 @@ from app.api.v1.admin.consulta import Consulta, escapar_like
 from app.api.v1.admin.paginas import Pagina
 from app.auth import Usuario
 from app.db import get_pool
-from app.services import auditoria, karma
+from app.services import auditoria, karma, reglas
 from app.services import catalogo as escritura
 from app.services import config as tunables
 from app.services.catalogo import Cambios
@@ -205,13 +206,8 @@ async def _una(
     pool: asyncpg.Pool, admin: Usuario, sugerencia_id: UUID, accion: str, nota: str | None
 ) -> SugerenciaAdminOut:
     async with pool.acquire() as conn:
-        try:
-            async with conn.transaction():
-                await _resolver(conn, admin, sugerencia_id, accion, nota)
-        except asyncpg.CheckViolationError as e:  # un dato que la base no admite: 422, no 500
-            raise HTTPException(
-                422, f"la sugerencia tiene un dato inválido: {e.constraint_name}"
-            ) from e
+        async with conn.transaction():
+            await _resolver(conn, admin, sugerencia_id, accion, nota)
         row = await conn.fetchrow(f"{SELECT} where s.id = $1", sugerencia_id)
     return salida(row)
 
@@ -253,6 +249,7 @@ async def resolver_en_masa(
             resueltas += 1
         except HTTPException as e:
             fallidas.append(FallaOut(id=sid, error=str(e.detail)))
-        except asyncpg.PostgresError as e:
-            fallidas.append(FallaOut(id=sid, error=f"no se pudo aplicar: {e}"))
+        except (asyncpg.PostgresError, pydantic_core.ValidationError) as e:
+            texto = await reglas.explicar(pool, e)
+            fallidas.append(FallaOut(id=sid, error=texto))
     return MasaOut(resueltas=resueltas, fallidas=fallidas)

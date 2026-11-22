@@ -5,6 +5,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import errores
 from app.api.v1 import router as v1_router
 from app.config import get_settings
 from app.db import create_pool
@@ -34,3 +35,4 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(v1_router)
+errores.registrar(app)
