@@ -19,6 +19,8 @@ gana el Doc 1. Ante una duda técnica, gana el Doc 2.
 
 Además:
 
+- `docs/08-estandares-de-carga.md` — estándares de carga del catálogo (los que cita el sistema
+  cuando ajusta lo que cargó una persona; espejo de `backend/app/services/estandares.py`).
 - `docs/03-problemas-soluciones.md` — cómo armar el entorno desde cero y los
   problemas ya vividos (con su solución). **Leelo antes de debuggear un problema
   de entorno, de build o de auth**, y agregale lo nuevo que aparezca (formato

@@ -1002,6 +1002,14 @@ mayúsculas mezcladas; solo 0,2 % tiene un nombre inservible (el único descarte
   `rechazar` (nota obligatoria) y `resolver` en masa (cada una en su transacción; las que fallan
   se informan). Aprobar suma `karma_sugerencia_aprobada` (config, 3 por defecto) al autor;
   rechazar no resta nada. La ficha del producto lista sus sugerencias.
+- **Lo que una persona carga fuera del estándar se corrige (Doc 8).** `make catalogo-renormalizar`
+  ahora también pasa el normalizador por el **nombre que puso una persona** (manual o
+  bloqueado): lo limpia (marca, tamaño y envase afuera, abreviaturas, mayúsculas) y completa
+  los campos **vacíos** con lo que traía adentro; nunca pisa un campo ya cargado. A quien
+  cargó se le deja un **aviso** (`avisos_catalogo`, `GET /v1/me/avisos`) con el porqué y los
+  estándares incumplidos; **no cambia el karma**. Los estándares viven en
+  `backend/app/services/estandares.py` (`GET /v1/ayuda/estandares`, panel → Ayuda,
+  `docs/08-estandares-de-carga.md`).
 - **Panel.** Catálogo → **Sugerencias** (con globito), **Alta / corrección por EAN** (buscar →
   formulario corto, marca con autocompletado, lo que dijo cada fuente al lado) y el rol
   `moderador` en la ficha de usuario.

@@ -3,6 +3,7 @@
 # cuando el nombre trae un tamaño. en_nombre=2: igual, y además si es la ÚLTIMA palabra del
 # nombre aunque no haya tamaño («… Oliva Ext Virg PET»).
 bot,botella,1
+botella,botella,1
 paq,paquete,1
 cja,caja,0
 bsa,bolsa,0

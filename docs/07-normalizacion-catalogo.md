@@ -169,7 +169,7 @@ reclasifica sin tocar las fuentes.
 
 ### 5.1 Completar lo que falta: alta y edición simple
 
-*(Implementado en el corte 15: panel → Catálogo → «Alta / corrección por EAN» y cola de sugerencias; ver Doc 4 §10-D.)*
+*(Lo cargado a mano fuera del estándar se corrige después: ver Doc 8. Implementado en el corte 15: panel → Catálogo → «Alta / corrección por EAN» y cola de sugerencias; ver Doc 4 §10-D.)*
 
 Lo descartado y lo dudoso se arreglan con una **interfaz simple para admins y moderadores**
 (dos pasos: «buscar por EAN» → formulario corto):

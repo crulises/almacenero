@@ -369,6 +369,20 @@
         </template>
       </section>
 
+      <!-- =========================================================== AYUDA -->
+      <section x-show="vista === 'ayuda'">
+        <p>Qué se le pide a quien carga o corrige un producto. Cuando el sistema ajusta algo de lo que se cargó, el aviso cita estos estándares. <b>Un aviso es solo informativo: no cambia el karma.</b></p>
+        <template x-for="e in estandares" :key="e.id">
+          <section class="caja">
+            <h3 x-text="e.titulo"></h3>
+            <p x-text="e.regla"></p>
+            <p><span class="badge baja">Mal</span> <span x-text="e.mal"></span></p>
+            <p><span class="badge ok">Bien</span> <span x-text="e.bien"></span></p>
+            <p class="suave mono" x-text="'id: ' + e.id"></p>
+          </section>
+        </template>
+      </section>
+
       <!-- ====================================================== CONFLICTOS -->
       <section x-show="vista === 'catalogo' && subcatalogo === 'conflictos'">
         <div class="filtros">

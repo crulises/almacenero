@@ -17,7 +17,7 @@ const SECCIONES = {
 
 const TITULOS = {
   locales: "Locales", usuarios: "Usuarios", invitaciones: "Invitaciones", precios: "Precios", catalogo: "Catálogo",
-  config: "Configuración", auditoria: "Auditoría",
+  config: "Configuración", auditoria: "Auditoría", ayuda: "Ayuda",
 };
 
 function leerSesion() {
@@ -36,6 +36,7 @@ function panel() {
     subcatalogo: "productos",  // dentro de Catálogo: productos | sugerencias | alta | conflictos
     login: { email: "", password: "", error: "", enviando: false },
     config: [],
+    estandares: [],  // ayuda: estándares de carga (Doc 8)
     calidad: null,  // tablero de calidad del catálogo (Doc 7)
     pendientes: 0,  // conflictos + sugerencias sin resolver (globito de Catálogo)
     pendientesConflictos: 0,
@@ -133,8 +134,13 @@ function panel() {
     cambiarVista(v) {
       this.vista = v;
       if (v === "config") this.cargarConfig();
+      else if (v === "ayuda") this.cargarAyuda();
       else if (!(v === "catalogo" && this.subcatalogo === "alta")) this.cargar(v === "catalogo" ? this.subcatalogo : v);
       if (v === "catalogo") { this.contarPendientes(); this.cargarTablero(); }
+    },
+    async cargarAyuda() {
+      if (this.estandares.length) return;
+      await this.intentar(async () => { this.estandares = await this.api("/ayuda/estandares"); });
     },
     async contarPendientes() {
       try { this.pendientesConflictos = (await this.api("/admin/conflictos?estado=pendiente&limit=1")).total; } catch {}
