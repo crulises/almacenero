@@ -145,11 +145,16 @@ _TAMANO = re.compile(
 _UNIDADES_CUENTA = {
     "u", "un", "uni", "unid", "unids", "und", "unds", "ud", "uds", "unidad", "unidades",
 }  # fmt: skip
-# «Limp.lysoform» -> «Limp lysoform»; y «Gat.450ml» -> «Gat 450ml» (punto pegado a un tamaño).
+# Punto que en realidad separa palabras: «Limp.lysoform» -> «Limp lysoform»; «Gat.450ml» ->
+# «Gat 450ml» (pegado a un tamaño); «Gat.x500ml» (pegado a un «x» de cantidad); «D/P.450ml»
+# (una letra suelta tras una barra).
 _PUNTO_ENTRE_LETRAS = re.compile(
-    r"(?<=[A-Za-zÁ-úñÑ]{2})\.(?=[A-Za-zÁ-úñÑ]{2}|\d+(?:[.,]\d+)?\s?(?:ml|cc|cm3|lts?|l|kgs?|gr?s?)\b)",
+    r"(?:(?<=[A-Za-zÁ-úñÑ]{2})|(?<=/[A-Za-z]))\.(?=[A-Za-zÁ-úñÑ]{2}"
+    r"|x?\d+(?:[.,]\d+)?\s?(?:ml|cc|cm3|lts?|l|kgs?|gr?s?)\b)",
     re.IGNORECASE,
 )
+# «Gat.500» (gatillo + 500 sin unidad): un gatillo es de líquido, así que son 500 ml.
+_GAT_SIN_UNIDAD = re.compile(r"\bgat\.?\s?(\d{3,4})\b(?![.,]?\d|\s?[A-Za-z])", re.IGNORECASE)
 _PARTICULAS = {
     "de", "la", "las", "el", "los", "con", "para", "y", "en", "del", "sin", "al", "por",
     "a", "o", "e", "un", "una",
@@ -436,7 +441,7 @@ def puntuar(
 # --------------------------------------------------------------------- principal
 def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una receta lineal
     motivos: list[str] = []
-    original = _limpiar(e.nombre or "")
+    original = _GAT_SIN_UNIDAD.sub(r"Gat \1 ml", _limpiar(e.nombre or ""))
     texto = original
 
     # 1-3. Códigos de ERP al principio y sufijo de envase de SEPA («BOT-750-ml.»).

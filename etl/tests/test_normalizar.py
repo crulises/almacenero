@@ -383,3 +383,36 @@ def test_gat_con_tamano_en_todas_sus_formas(nombre, tam):
     assert s.nombre.lower() in ("limpia vidrios", "limpia vidrios")
     assert s.tamano == (D(tam), "ml")
     assert s.presentacion == "gatillo"
+
+
+@pytest.mark.parametrize(
+    "nombre,marca,campo,esperado,tam,pres,esperada_marca",
+    [
+        # Casos reales de SEPA que la renormalización dejaba sin limpiar.
+        (
+            "AYUDIN ANTIHONGOS C/LAV.GAT.500",
+            "AYUDIN ANTIHONG.GAT.",
+            None,
+            "Antihongos con lav",
+            500,
+            "gatillo",
+            "Ayudin",
+        ),
+        ("ZORRO ANTIB.GAT.X500ML", None, (D(500), "ml"), "Antibacterial", 500, "gatillo", "Zorro"),
+        (
+            "CIF ANTIBACTERIAL D/P.450ml.",
+            "CIF 2EN1 GAT.REP.D/P",
+            None,
+            "Cif Antibacterial",
+            450,
+            "doypack",
+            "Cif",
+        ),
+    ],
+)
+def test_gat_pegado_sin_unidad_x_y_dp(nombre, marca, campo, esperado, tam, pres, esperada_marca):
+    s = normalizar(Entrada(nombre, marca, campo or (D(1), "u")))
+    assert s.nombre == esperado
+    assert s.tamano == (D(tam), "ml")
+    assert s.presentacion == pres
+    assert s.marca == esperada_marca
