@@ -13,6 +13,9 @@ from app.services.permisos import exigir
 
 router = APIRouter(tags=["admin"])
 
+# Se editan desde su propia pantalla (`/admin/reglas`), no como un valor suelto.
+OCULTAS = {"mensajes_reglas"}
+
 # Umbrales de moderación (docs/04 §9) → el otro de la pareja.
 UMBRALES_KARMA = {
     "karma_umbral_aviso": "karma_umbral_restriccion",
@@ -48,7 +51,11 @@ def _tipo(v: Any) -> str:
 async def ver_config(
     _: Usuario = Depends(exigir("config.editar")), pool: asyncpg.Pool = Depends(get_pool)
 ) -> list[ConfigItem]:
-    rows = await pool.fetch("select clave, valor::text as valor, rubro from config order by clave")
+    rows = await pool.fetch(
+        "select clave, valor::text as valor, rubro from config "
+        "where clave <> all($1) order by clave",
+        list(OCULTAS),
+    )
     items = [
         ConfigItem(
             clave=r["clave"],
@@ -61,7 +68,7 @@ async def ver_config(
     ]
     en_base = {i.clave for i in items if i.rubro is None}
     for clave, default in DEFAULTS.items():
-        if clave not in en_base:
+        if clave not in en_base and clave not in OCULTAS:
             items.append(
                 ConfigItem(clave=clave, valor=default, rubro=None, default=default, en_base=False)
             )
@@ -77,6 +84,8 @@ async def cambiar_config(
 ) -> ConfigItem:
     """Cambia el valor global (`rubro` nulo) de una clave que ya existe en la base o tiene
     default en el código. Se valida que el tipo coincida con el actual."""
+    if clave in OCULTAS:
+        raise HTTPException(422, "esa clave se edita desde su propia pantalla")
     async with pool.acquire() as conn, conn.transaction():
         previo = await conn.fetchval(
             "select valor::text from config where clave = $1 and rubro is null for update", clave

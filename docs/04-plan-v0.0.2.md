@@ -1014,6 +1014,7 @@ mayúsculas mezcladas; solo 0,2 % tiene un nombre inservible (el único descarte
   formulario corto, marca con autocompletado, lo que dijo cada fuente al lado) y el rol
   `moderador` en la ficha de usuario.
 
+<<<<<<< HEAD
 **App (corte 16, diseño acordado con el dueño):** la ficha muestra el **nombre limpio** arriba y
 debajo «marca · tamaño · presentación · pack de N». Solo los moderadores (y admins) ven la acción:
 **menú ⋮ de la barra → «Sugerir corrección»**, y en «no encontrado» el botón «Dar de alta este
@@ -1022,6 +1023,40 @@ formulario (nombre, marca, tamaño + unidad, pack, presentación, motivo opciona
 manda **solo lo que cambió** y tiene el enlace «Ver estándares de carga» (`GET /v1/ayuda/estandares`).
 Un moderador restringido por karma no ve la acción. **Pendiente (decidido dejarlo para después):** la
 pantalla de avisos del usuario (`GET /v1/me/avisos` ya existe).
+=======
+### E. Errores que explican la regla (ajuste del corte 15, ✅)
+
+**Principio:** una operación que falla en el backend le dice a quien la hizo **qué regla se
+violó, por qué y cómo se resuelve**. No se esconden reglas de negocio detrás de un «error»
+genérico ni de un «Failed to fetch». Origen: aprobar una sugerencia con `pack_cantidad: 1`
+reventó con un 500 mudo (`pack_cantidad_check`) y el panel solo mostraba «Failed to fetch».
+
+- **Catálogo de reglas** (`backend/app/services/reglas.py`): cada regla tiene un `codigo`
+  estable, un `titulo`, un `mensaje`, un `como_resolver` y el status HTTP. Hoy: `pack_minimo`,
+  `tamano_positivo`, `tamano_con_unidad`, `unidad_invalida`, `ean_formato`, `ean_duplicado`,
+  `campo_bloqueado`, `sugerencia_pendiente`, `sugerencia_incoherente`, `dato_invalido`,
+  `conflicto_de_datos` y `error_interno`. El nombre de cada constraint de la base se mapea a su
+  regla (`POR_CONSTRAINT`); lo que no figura cae en `dato_invalido` con el nombre de la
+  restricción. **Regla del equipo:** al agregar un constraint o una validación nueva, se agrega
+  su regla.
+- **Respuesta:** `detail = {codigo, titulo, mensaje, como_resolver, ...}` (+ `restriccion`,
+  `campos` o `referencia` según el caso). Manejadores globales en `backend/app/errores.py`:
+  `CheckViolation`/`UniqueViolation`/`RaiseError` de Postgres → 422/409 con la regla; datos ya
+  guardados que el modelo actual no acepta (`ValidationError` de pydantic) → 422 con los campos;
+  cualquier otra excepción → 500 `error_interno` con una **`referencia`** que también está en el
+  log (`docker compose logs backend`). El 500 sale **con cabeceras CORS**: antes salía de
+  `ServerErrorMiddleware`, por fuera del CORS, y el navegador lo mostraba como «Failed to fetch».
+- **Configurable desde el panel:** Configuración → «Mensajes de error» edita el **texto** de cada
+  regla (`config.mensajes_reglas`, `GET/PUT /v1/admin/reglas`, capacidad `config.editar`,
+  auditado, máx. 400 caracteres, vacío = el original). El código, el status y la regla en sí no
+  se tocan: son lo que la app y los tests usan.
+- **Panel y app:** el panel muestra `mensaje → como_resolver [codigo · ref]`, y si el backend no
+  responde dice que no hay respuesta (caído o sin red) en vez del «Failed to fetch» del
+  navegador. La acción en masa de sugerencias informa la regla de cada una que falló. La app
+  muestra el `mensaje` del `detail`.
+- **No cubre (a propósito):** los valores de negocio configurables (umbrales, límites) siguen en
+  su propia sección de Configuración; esto es solo el *texto* de los errores.
+>>>>>>> origin/main
 
 ### Decisiones del dueño (2026-11-21)
 
