@@ -48,7 +48,7 @@ async def recuperar_huerfanas(conn: asyncpg.Connection, ejecutor: str, segundos:
         """
         update etl_ejecuciones
            set estado = 'fallo', terminado_en = now(),
-               log = right(log || E'\\n[sin latido: el ejecutor se detuvo; se marca como fallida]', $3)
+               log = right(log || E'\\n[sin latido: el ejecutor se detuvo]', $3)
          where ejecutor = $1 and estado in ('corriendo', 'cancelando')
            and latido_en < now() - make_interval(secs => $2)
         """,

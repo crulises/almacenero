@@ -1,4 +1,4 @@
-"""Cola de ETL (docs/04 §10-A): tomar, correr como subproceso, cancelar, recuperar. Postgres real."""
+"""Cola de ETL (docs/04 §10-A): tomar, correr, cancelar, recuperar. Postgres real."""
 
 import asyncio
 import hashlib
