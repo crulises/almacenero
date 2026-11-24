@@ -1003,3 +1003,17 @@ Decisiones en `docs/04` §9.
 - **Solución:** para depurar, mirar los logs del backend (`docker compose logs backend | grep eventos`):
   un 400 `evento_tipo_desconocido` / 422 `evento_datos_invalidos` explica qué regla se violó. Probar
   con red, escanear un producto, mandar la app a segundo plano y esperar unos segundos.
+
+### La app no manda eventos (o falla algo «nuevo») y el código está bien: backend o APK de otro worktree
+
+- **Síntoma:** una función nueva no hace nada en el celular; en los logs del backend no aparece ningún
+  pedido a la ruta nueva (o aparece un 404), aunque los tests pasan.
+- **Causa:** el contenedor del backend (`almacenero-backend-1`) y el APK son **compartidos entre todos los
+  worktrees**: `make up` y `make apk` pisan el anterior con el código del worktree desde el que se corren. Y
+  el número de versión del APK sale de un contador del `.git` común, así que «0.0.16» no dice de qué rama
+  viene. Si la última vez se corrieron desde otra rama, el celular o el backend no tienen tu código.
+- **Solución:** correr `make up` y `make apk` desde el worktree que se quiere probar. Para comprobarlo:
+  el commit en «Acerca de» de la app tiene que ser el de `git rev-parse --short HEAD`, y
+  `docker inspect almacenero-backend-1 --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'`
+  tiene que dar la carpeta del worktree. Para ver si el backend tiene una ruta:
+  `curl -s localhost:8000/openapi.json | grep eventos`.
