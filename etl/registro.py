@@ -9,6 +9,8 @@ Tipos de parámetro: `texto`, `entero`, `booleano`, `opcion` (una de `opciones`)
 """
 
 import datetime
+import importlib
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -120,13 +122,20 @@ def describir(defn: Definicion) -> dict[str, Any]:
     }
 
 
-def todas() -> list[Definicion]:
+def _definiciones() -> dict[str, Definicion]:
+    """Las del repo, más las de un módulo extra si `ETL_DEFINICIONES_EXTRA` lo nombra (los tests
+    lo usan para probar el ejecutor con ETL de mentira; los subprocesos lo heredan)."""
     from etl.definiciones import DEFINICIONES
 
-    return list(DEFINICIONES.values())
+    extra = os.environ.get("ETL_DEFINICIONES_EXTRA")
+    if not extra:
+        return DEFINICIONES
+    return {**DEFINICIONES, **importlib.import_module(extra).DEFINICIONES}
+
+
+def todas() -> list[Definicion]:
+    return list(_definiciones().values())
 
 
 def obtener(clave: str) -> Definicion | None:
-    from etl.definiciones import DEFINICIONES
-
-    return DEFINICIONES.get(clave)
+    return _definiciones().get(clave)
