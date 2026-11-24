@@ -104,6 +104,21 @@ class ResolverIn(BaseModel):
     elegido: str = Field(pattern="^(a|b)$")  # a: lo del catálogo; b: lo de la otra fuente
 
 
+class EditarConflictoIn(Cambios):
+    """Resolver un conflicto con datos propios: los mismos campos que la corrección directa."""
+
+    motivo: str | None = Field(default=None, max_length=300)
+
+
+# Qué campo de conflicto cubre cada campo editable del producto.
+_CAMPO_DE_CONFLICTO = {
+    "nombre": "nombre",
+    "marca": "marca",
+    "tamano_valor": "tamano",
+    "tamano_unidad": "tamano",
+}
+
+
 _SELECT_PRODUCTO = """
     select p.id, p.ean, p.nombre, p.marca, p.tamano_valor, p.tamano_unidad, p.origen,
            p.campos_bloqueados, p.pack_cantidad, p.presentacion, p.calidad,
@@ -355,6 +370,79 @@ async def resolver_conflicto(
             conflicto_id,
             {"ean": c["ean"], "campo": campo, "a": c["valor_a"], "b": c["valor_b"]},
             {"elegido": body.elegido},
+        )
+        row = await conn.fetchrow(
+            """
+            select c.id, c.ean, p.nombre as producto_nombre, c.campo, c.valor_a, c.fuente_a,
+                   c.valor_b, c.fuente_b, c.estado, c.elegido, c.created_at
+            from conflictos_catalogo c left join productos_canonicos p using (ean)
+            where c.id = $1
+            """,
+            conflicto_id,
+        )
+    return ConflictoOut(**dict(row))
+
+
+@router.post("/conflictos/{conflicto_id}/editar", response_model=ConflictoOut)
+async def editar_y_resolver_conflicto(
+    conflicto_id: UUID,
+    body: EditarConflictoIn,
+    admin: Usuario = Depends(exigir("catalogo.resolver")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ConflictoOut:
+    """Ni A ni B están bien: se corrige el producto a mano y se termina la carga. Es la misma
+    escritura que la corrección directa (`services.catalogo.aplicar`: bloquea lo corregido y
+    recalcula la calidad). Tiene que corregir al menos el campo en disputa; los demás conflictos
+    pendientes de ese producto sobre campos que se corrigieron se cierran con él."""
+    cambios = body.a_dict()
+    cubiertos = {_CAMPO_DE_CONFLICTO[k] for k in cambios if k in _CAMPO_DE_CONFLICTO}
+    async with pool.acquire() as conn, conn.transaction():
+        c = await conn.fetchrow(
+            "select * from conflictos_catalogo where id = $1 for update", conflicto_id
+        )
+        if c is None:
+            raise HTTPException(404, "conflicto no encontrado")
+        if c["estado"] != "pendiente":
+            raise HTTPException(409, "el conflicto ya estaba resuelto")
+        if c["campo"] not in cubiertos:
+            raise HTTPException(
+                422,
+                f"corregí el campo en disputa ({c['campo']}): sin eso el conflicto sigue abierto",
+            )
+        producto_id = await conn.fetchval(
+            "select id from productos_canonicos where ean = $1", c["ean"]
+        )
+        antes, despues = await escritura.aplicar(conn, producto_id, cambios)
+        if not antes and not despues:
+            raise HTTPException(404, "producto no encontrado")
+        cerrados = await conn.fetch(
+            "update conflictos_catalogo set estado = 'resuelto', elegido = 'manual', "
+            "resuelto_por = $1, resuelto_en = now() "
+            "where ean = $2 and estado = 'pendiente' and campo = any($3::text[]) returning id",
+            admin.id,
+            c["ean"],
+            sorted(cubiertos),
+        )
+        otros = [str(x["id"]) for x in cerrados if x["id"] != conflicto_id]
+        await auditoria.registrar(
+            conn,
+            admin.id,
+            "conflicto.editar",
+            "conflicto",
+            conflicto_id,
+            {"ean": c["ean"], "campo": c["campo"], "a": c["valor_a"], "b": c["valor_b"]},
+            {"elegido": "manual", "cambios": despues, "tambien_resueltos": otros},
+            body.motivo,
+        )
+        await auditoria.registrar(
+            conn,
+            admin.id,
+            "producto.corregir",
+            "producto",
+            producto_id,
+            antes,
+            despues,
+            f"al resolver el conflicto {conflicto_id}",
         )
         row = await conn.fetchrow(
             """

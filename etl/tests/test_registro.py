@@ -63,7 +63,8 @@ def test_el_registro_real_describe_sus_etl():
     for d in todas():
         assert d.ejecutor in ("web", "local")
         assert all(
-            p.tipo in ("texto", "entero", "booleano", "opcion", "fecha", "archivo")
+            p.tipo
+            in ("texto", "entero", "booleano", "opcion", "fecha", "archivo", "nombre_archivo")
             for p in d.parametros
         )
         assert all(p.ayuda for p in d.parametros), d.clave  # el panel muestra la ayuda

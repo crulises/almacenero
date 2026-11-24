@@ -138,15 +138,15 @@ async def _osm(p: dict, ctx) -> dict:
 
 
 async def _curado_exportar(p: dict, ctx) -> dict:
+    from etl.comun.rutas import ruta_de_salida
     from etl.curado.exportar import exportar
 
     off = _existe(Path(p["off"])) if p.get("off") else None
     sepa = [_existe(x) for x in _rutas(p.get("sepa", ""))]
     paises = frozenset(x.strip() for x in p.get("paises", "").split(",") if x.strip()) or None
-    r = await asyncio.to_thread(
-        exportar, Path(p["salida"]), off, sepa, paises, p.get("sepa_min_filas", 1)
-    )
-    ctx.log(f"Escrito {p['salida']}\n{r.texto()}")
+    destino = ruta_de_salida(p["salida"])
+    r = await asyncio.to_thread(exportar, destino, off, sepa, paises, p.get("sepa_min_filas", 1))
+    ctx.log(f"Escrito {destino}\n{r.texto()}")
     ctx.filas = r.filas
     return {
         "filas": r.filas,
@@ -154,6 +154,17 @@ async def _curado_exportar(p: dict, ctx) -> dict:
         "por_origen": dict(r.por_origen),
         "descartadas": dict(r.descartadas),
     }
+
+
+async def _catalogo_exportar(p: dict, ctx) -> dict:
+    from etl.comun.rutas import ruta_de_salida
+    from etl.curado.exportar_base import exportar_base
+
+    destino = ruta_de_salida(p["salida"])
+    r = await exportar_base(destino)
+    ctx.log(f"Escrito {destino}\n{r.texto()}")
+    ctx.filas = r.filas
+    return {"filas": r.filas, "sha256": r.sha256, "por_origen": dict(r.por_origen)}
 
 
 _APLICAR = Param(
@@ -329,10 +340,11 @@ DEFINICIONES: dict[str, Definicion] = {
             (
                 Param(
                     "salida",
-                    "texto",
+                    "nombre_archivo",
                     True,
-                    "Dónde escribir el CSV curado.",
-                    "etl/data/catalogo-curado.csv.gz",
+                    "Nombre del archivo (.csv o .csv.gz). Se guarda en la carpeta de exports del "
+                    "worker (ETL_EXPORT_DIR), no hace falta poner ruta.",
+                    "catalogo-curado.csv.gz",
                 ),
                 Param("off", "texto", ayuda="Volcado de OFF (opcional)."),
                 Param("sepa", "texto", ayuda="Zips de SEPA separados por espacio (opcional)."),
@@ -350,6 +362,26 @@ DEFINICIONES: dict[str, Definicion] = {
                 ),
             ),
             _curado_exportar,
+        ),
+        Definicion(
+            "catalogo_exportar",
+            "Exportar el catálogo (formato de intercambio)",
+            "Vuelca el catálogo de la base al formato catalogo_curado_v2: los datos de cada "
+            "producto más sus metadatos (origen, campos bloqueados, si lo cargó o revisó una "
+            "persona, sugerencias, avisos del normalizador, conflictos). Se puede importar acá "
+            "o en otro proyecto sin perder ese trabajo. Ver docs/09.",
+            "local",
+            (
+                Param(
+                    "salida",
+                    "nombre_archivo",
+                    True,
+                    "Nombre del archivo (.csv o .csv.gz). Se guarda en la carpeta de exports del "
+                    "worker (ETL_EXPORT_DIR), no hace falta poner ruta.",
+                    "catalogo-intercambio.csv.gz",
+                ),
+            ),
+            _catalogo_exportar,
         ),
     ]
 }

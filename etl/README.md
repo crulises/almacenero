@@ -46,12 +46,26 @@ Cargar siempre es idempotente: repetir una corrida no duplica ni pisa lo resuelt
 
 ```bash
 # 1. Armarlo en tu máquina desde las fuentes crudas (reproducible: mismo hash con las mismas fuentes)
+#    CURADO_SALIDA es solo el NOMBRE: se guarda en ETL_EXPORT_DIR (por defecto etl/data/exports/)
 make catalogo-csv-exportar OFF_ARCHIVO=etl/data/off-muestra.csv.gz \
-     SEPA_ARCHIVOS="etl/data/sepa/sepa_miercoles.zip" CURADO_SALIDA=etl/data/catalogo-curado.csv.gz
+     SEPA_ARCHIVOS="etl/data/sepa/sepa_miercoles.zip" CURADO_SALIDA=catalogo-curado.csv.gz
 # 2. Ver qué haría (simulacro, no escribe) y después importarlo (con DATABASE_URL local o remota)
-make catalogo-csv-importar ARCHIVO=etl/data/catalogo-curado.csv.gz
-make catalogo-csv-importar ARCHIVO=etl/data/catalogo-curado.csv.gz APLICAR=1
+make catalogo-csv-importar ARCHIVO=etl/data/exports/catalogo-curado.csv.gz
+make catalogo-csv-importar ARCHIVO=etl/data/exports/catalogo-curado.csv.gz APLICAR=1
 ```
+
+### Intercambiar catálogos (con todos los metadatos)
+
+```bash
+# Volcar el catálogo de la base al formato v2: datos + origen, campos bloqueados, revisiones,
+# sugerencias, avisos del normalizador y conflictos de cada producto (sin ids de personas)
+make catalogo-csv-exportar-base CURADO_SALIDA=catalogo-intercambio.csv.gz
+# Importarlo en otra base (o la misma): restaura origen y bloqueos, recalcula la calidad
+make catalogo-csv-importar ARCHIVO=etl/data/exports/catalogo-intercambio.csv.gz   # simulacro
+```
+
+El formato (v1 y v2), sus reglas de importación y cómo implementarlo en otro proyecto:
+`docs/09-formato-intercambio-catalogo.md`.
 
 Después de importar el archivo se puede borrar: `catalogo_lotes` guarda su hash, la versión del
 normalizador y el hash de las fuentes con que se armó. Detalle: `docs/04` §10-B.

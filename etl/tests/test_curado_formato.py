@@ -8,12 +8,15 @@ import pytest
 from etl.comun.catalogo import Producto
 from etl.curado.formato import (
     COLUMNAS,
+    COLUMNAS_V2,
     FORMATO,
+    FORMATO_V2,
     FilaInvalida,
     FormatoInvalido,
     escribir,
     fila_a_producto,
     leer,
+    meta_de_fila,
     producto_a_fila,
 )
 
@@ -130,3 +133,65 @@ def test_archivo_que_no_es_curado(tmp_path):
     ruta.write_text("# formato: otro_v9\nean,nombre\n", encoding="utf-8")
     with pytest.raises(FormatoInvalido):
         leer(ruta)
+
+
+# --- v2: metadatos del tratamiento (docs/09) ---------------------------------------------
+
+
+def fila_v2(**kw):
+    base = dict.fromkeys(COLUMNAS_V2, "")
+    base.update(ean="7790001234567", nombre="Aceite Girasol", **kw)
+    return base
+
+
+def test_v2_ida_y_vuelta_conserva_los_metadatos(tmp_path):
+    ruta = tmp_path / "a.csv.gz"
+    fila = fila_v2(origen="manual", campos_bloqueados="marca|nombre", sugerencias_aprobadas="2")
+    escribir(ruta, [fila], {}, formato=FORMATO_V2)
+    lectura = leer(ruta)
+    assert lectura.cabecera["formato"] == FORMATO_V2
+    assert lectura.filas[0][1]["campos_bloqueados"] == "marca|nombre"
+    assert list(lectura.filas[0][1]) == list(COLUMNAS_V2)
+
+
+def test_v1_sigue_sin_columnas_de_metadatos(tmp_path):
+    ruta = tmp_path / "a.csv"
+    escribir(ruta, [fila_v2()], {})
+    assert list(leer(ruta).filas[0][1]) == list(COLUMNAS)
+
+
+def test_meta_de_fila_valida_y_ordena():
+    m = meta_de_fila(
+        fila_v2(
+            origen="manual",
+            campos_bloqueados="presentacion|nombre",
+            calidad="90",
+            calidad_motivos="a|b",
+            cargado_a_mano="1",
+            conflictos_resueltos="3",
+        )
+    )
+    assert m.origen == "manual" and m.bloqueados == ("nombre", "presentacion")
+    assert m.hay_trabajo_humano
+    assert m.info["calidad_motivos"] == ["a", "b"]
+    assert m.info["cargado_a_mano"] is True and m.info["conflictos_resueltos"] == 3
+
+
+def test_meta_de_fila_v1_es_none():
+    assert meta_de_fila({"ean": "1", "nombre": "x"}) is None
+
+
+@pytest.mark.parametrize(
+    "cambios,motivo",
+    [
+        ({"origen": "otro"}, "origen_invalido"),
+        ({"campos_bloqueados": "nombre|precio"}, "bloqueo_invalido"),
+        ({"sugerencias_aprobadas": "x"}, "meta_invalida"),
+        ({"revisado": "si"}, "meta_invalida"),
+        ({"calidad": "alta"}, "meta_invalida"),
+    ],
+)
+def test_meta_invalida(cambios, motivo):
+    with pytest.raises(FilaInvalida) as e:
+        meta_de_fila(fila_v2(**cambios))
+    assert e.value.motivo == motivo

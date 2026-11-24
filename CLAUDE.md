@@ -21,6 +21,8 @@ Además:
 
 - `docs/08-estandares-de-carga.md` — estándares de carga del catálogo (los que cita el sistema
   cuando ajusta lo que cargó una persona; espejo de `backend/app/services/estandares.py`).
+- `docs/09-formato-intercambio-catalogo.md` — formato `catalogo_curado_v1/v2` para intercambiar
+  catálogos (autocontenido: se reutiliza en otro proyecto). Tocá `etl/curado/` solo de acuerdo a él.
 - `docs/03-problemas-soluciones.md` — cómo armar el entorno desde cero y los
   problemas ya vividos (con su solución). **Leelo antes de debuggear un problema
   de entorno, de build o de auth**, y agregale lo nuevo que aparezca (formato
@@ -104,8 +106,10 @@ Toda la lógica operativa va en el Makefile. CI solo llama a estos targets.
 - `make build` — build de imágenes.
 - `make catalogo-calidad` / `make catalogo-renormalizar [APLICAR=1]` — mide / aplica el
   normalizador del catálogo (Doc 7).
-- `make catalogo-csv-exportar` / `make catalogo-csv-importar ARCHIVO=... [APLICAR=1]` — arma el CSV
-  curado desde OFF/SEPA locales (reproducible) / lo valida en seco o lo importa (Doc 4 §10-B).
+- `make catalogo-csv-exportar` / `make catalogo-csv-exportar-base` / `make catalogo-csv-importar
+  ARCHIVO=... [APLICAR=1]` — arma el CSV curado desde OFF/SEPA locales (reproducible) / vuelca el
+  catálogo de la base con sus metadatos (formato v2, Doc 9) / lo valida en seco o lo importa (Doc 4
+  §10-B). Los exports piden solo un **nombre** de archivo; la carpeta es `ETL_EXPORT_DIR`.
 - `make etl-worker` — worker local: toma de la cola (DATABASE_URL) los ETL pesados que se lanzan desde el
   panel web (sección ETL; Doc 4 §10-A).
 - `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel

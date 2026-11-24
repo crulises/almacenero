@@ -924,3 +924,45 @@ Decisiones en `docs/04` §9.
   informe aclara cómo leerlo («cambiaría: 0» = ya normalizado) e incluye qué reglas se aplicaron y por qué
   bajan de puntaje (Doc 7 §14). Para ver las reglas sobre un dato crudo: ETL → «Probar el normalizador».
 
+### `ruff format` sobre `etl/` reescribe medio repo
+
+- **Síntoma:** después de formatear, `git status` muestra decenas de archivos de `etl/` modificados que no
+  tocaste (comas finales, líneas partidas distinto).
+- **Causa:** `ruff` suelto usa su configuración por defecto (88 columnas), no la del proyecto
+  (`backend/pyproject.toml`, 100).
+- **Solución:** correr siempre `make lint` o `ruff … --config backend/pyproject.toml etl`. Si ya pasó,
+  `git checkout -- <archivos que no editaste>` y reformatear los tuyos con esa config.
+
+### `campos_bloqueados solo se modifica al resolver un conflicto` (o «nombre bloqueado…») desde un script
+
+- **Síntoma:** un `UPDATE` de `campos_bloqueados` o de un campo bloqueado falla aunque hiciste
+  `select set_config('app.catalogo_write', 'on', true)`.
+- **Causa:** `set_config(..., true)` vale solo dentro de la transacción; en una conexión en autocommit
+  cada sentencia es su propia transacción y el permiso se pierde antes del `UPDATE`.
+- **Solución:** `async with conn.transaction():` alrededor de las dos sentencias (lo hace
+  `services.catalogo.aplicar` y `etl/curado/importar.py::_restaurar`).
+
+### Un export no se puede volver a importar: «ean_digito_verificador» en un producto cargado a mano
+
+- **Síntoma:** reimportar un export de la base informa 1 fila inválida por dígito verificador.
+- **Causa:** un producto `manual` (demo/código interno) tiene un EAN con verificador inválido; la base lo
+  acepta (solo exige 8–14 dígitos) pero el importador validaba todo con GS1.
+- **Solución:** en un v2 las filas `origen = manual` se aceptan con solo el largo (Doc 9 §5.4).
+
+### «Pasan a figurar como `curado`: 134503» al reimportar un export de la base
+
+- **Síntoma:** el simulacro de reimportar un v2 decía que casi todos cambiaban de origen.
+- **Causa:** la fusión con `fuente = 'curado'` sube el origen a `curado`, pero en un v2 cada fila ya trae el
+  suyo (`off`, `sepa`…).
+- **Solución:** el importador restaura el `origen` del archivo (sin degradar nunca un `manual` local); Doc 9
+  §5.2. Ahora da 0.
+
+### Una migración aplicada «a mano» en la base compartida y `make migrate` en otras ramas
+
+- **Síntoma:** `remote migration versions not found in local migrations directory` en una rama que no
+  tiene la migración.
+- **Causa:** `supabase migration up` registra la versión en la base; las ramas sin ese archivo no la
+  conocen. La base local es una sola para todos los worktrees.
+- **Solución:** cambiar a la rama que la tiene (`git switch feat/etl-panel`). Para cambios aditivos que
+  hay que probar desde otro lado, escribir la migración idempotente y aplicarla con `psql -f` (no
+  registra la versión; el `make migrate` posterior de la rama correcta la reaplica sin daño).

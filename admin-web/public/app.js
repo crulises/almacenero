@@ -57,6 +57,7 @@ function panel() {
     etlDetalle: null,
     _etlTimer: null,
     ficha: null,
+    edicion: null,  // conflicto que se está editando a mano ({c, base, f})
     toast: null,
     _t: null,
 
@@ -282,6 +283,42 @@ function panel() {
         await this.api(`/admin/conflictos/${c.id}/resolver`, { method: "POST", body: { elegido } });
         this.avisar("Resuelto");
         this.quitar("conflictos", [c.id]);
+        this.contarPendientes();
+      });
+    },
+
+    // «Editar y resolver»: ni A ni B están bien; se corrigen los datos a mano y se cierra el conflicto.
+    async editarConflicto(c) {
+      await this.intentar(async () => {
+        let p = {};
+        try { p = await this.api(`/admin/productos/por-ean/${c.ean}`); } catch {}
+        const f = {
+          nombre: p.nombre || c.producto_nombre || "", marca: p.marca || "",
+          tamano_valor: p.tamano_valor ?? "", tamano_unidad: p.tamano_unidad || "",
+          pack_cantidad: p.pack_cantidad ?? "", presentacion: p.presentacion || "", motivo: "",
+        };
+        this.edicion = { c, base: { ...f }, f };
+      });
+    },
+    async guardarEdicion() {
+      const { c, base, f } = this.edicion;
+      const cambia = (k) => String(f[k]) !== String(base[k]);
+      const vacio = (v) => (v === "" || v === null ? null : v);
+      const cuerpo = {};
+      // el campo en disputa viaja siempre: «confirmar tal cual» también cierra el conflicto
+      for (const k of ["nombre", "marca", "presentacion"]) if (cambia(k) || c.campo === k) cuerpo[k] = vacio(f[k]);
+      if (cambia("tamano_valor") || cambia("tamano_unidad") || c.campo === "tamano") {
+        cuerpo.tamano_valor = vacio(f.tamano_valor);
+        cuerpo.tamano_unidad = vacio(f.tamano_unidad);
+      }
+      if (cambia("pack_cantidad")) cuerpo.pack_cantidad = f.pack_cantidad === "" ? null : Number(f.pack_cantidad);
+      if (f.motivo) cuerpo.motivo = f.motivo;
+      await this.intentar(async () => {
+        await this.api(`/admin/conflictos/${c.id}/editar`, { method: "POST", body: cuerpo });
+        this.avisar("Conflicto resuelto con tus datos");
+        this.edicion = null;
+        await this.cargar("conflictos");
+        if (this.ficha) await this.recargarFicha();
         this.contarPendientes();
       });
     },

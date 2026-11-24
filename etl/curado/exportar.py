@@ -22,6 +22,7 @@ from pathlib import Path
 
 from etl.comun.catalogo import Producto, Reporte, normalizar_producto
 from etl.comun.normalizar import NORMALIZADOR_VERSION
+from etl.comun.rutas import NombreInvalido, ruta_de_salida
 from etl.curado.formato import escribir, producto_a_fila
 from etl.off.__main__ import abrir, filas, transformar
 from etl.sepa.__main__ import Agrupador, leer_productos_zip
@@ -134,7 +135,7 @@ def exportar(
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("salida", type=Path, help="CSV curado a escribir (.csv o .csv.gz)")
+    ap.add_argument("salida", help="nombre del CSV (.csv o .csv.gz); va a ETL_EXPORT_DIR")
     ap.add_argument("--off", type=Path, help="volcado CSV de OFF (.csv o .csv.gz)")
     ap.add_argument("--sepa", type=Path, nargs="*", default=[], help="zip(s) diario(s) de SEPA")
     ap.add_argument("--paises", default="", help="tags de OFF separados por coma; vacío = todos")
@@ -147,8 +148,12 @@ def main() -> None:
     if not args.off and not args.sepa:
         raise SystemExit("Hace falta al menos una fuente: --off y/o --sepa.")
     paises = frozenset(p.strip() for p in args.paises.split(",") if p.strip()) or None
-    r = exportar(args.salida, args.off, args.sepa, paises, args.sepa_min_filas, args.limite_off)
-    print(f"Escrito {args.salida}\n{r.texto()}")
+    try:
+        destino = ruta_de_salida(args.salida)
+    except NombreInvalido as e:
+        raise SystemExit(f"SALIDA: {e}") from None
+    r = exportar(destino, args.off, args.sepa, paises, args.sepa_min_filas, args.limite_off)
+    print(f"Escrito {destino}\n{r.texto()}")
 
 
 if __name__ == "__main__":

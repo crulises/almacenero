@@ -1014,6 +1014,34 @@ los productos relevantes y guardar ese extracto como CSV**.
   con las mismas fuentes (nombre + hash en `fuentes_entrada`) y la misma versión; el `sha256` tiene
   que coincidir con el del lote.
 
+**Ajustes del corte 18 sobre B y el panel (2026-11-24, a pedido del dueño):**
+
+- **Los exports piden solo un nombre de archivo.** Tipo de parámetro `nombre_archivo` del registro de
+  ETL (`etl/registro.py`): sin carpetas, sin `..`, termina en `.csv` o `.csv.gz`. La carpeta base la
+  decidimos nosotros: `ETL_EXPORT_DIR` (por defecto `etl/data/exports/`, ignorada por git). Vale para
+  el formulario del panel, la CLI y el Makefile (`CURADO_SALIDA` ahora es un nombre, no una ruta).
+  Así un formulario no puede escribir en cualquier lado de la máquina del worker.
+- **Formato de intercambio v2 (`catalogo_curado_v2`) con los metadatos del tratamiento** y
+  **exportación desde la base** (`make catalogo-csv-exportar-base`; panel: ETL → «Exportar el
+  catálogo»). Cada fila lleva `origen`, `campos_bloqueados`, `calidad`/`estado`/`motivos`,
+  `normalizador_version`, `cargado_a_mano`, `revisado`, y conteos de ediciones del admin,
+  sugerencias, avisos del normalizador y conflictos. Son conteos y banderas, **sin ids de
+  personas**. El importador lee v1 y v2 y, con un v2, **restaura** origen y campos bloqueados
+  (reglas de convergencia en el Doc 9 §5); lo demás queda en `producto_fuentes.datos.intercambio`.
+  El formato y sus decisiones están en **`docs/09-formato-intercambio-catalogo.md`** porque se va a
+  reutilizar en otro proyecto. Verificado con el catálogo local completo: 134 506 filas exportadas,
+  simulacro de reimportación = 0 inválidas, 0 cambios, 0 cambios de origen.
+- **Conflictos: «Editar y resolver».** Catálogo → Conflictos (y la ficha del producto) suma, junto a
+  «Dejar A» / «Usar B», una tercera acción para cuando ninguna de las dos está bien (unidades mal,
+  nombre mal…): abre un formulario con los datos actuales del producto; al guardar se escriben con el
+  mismo camino que la corrección directa (`services.catalogo.aplicar`: bloquea lo corregido y
+  recalcula la calidad) y el conflicto queda `resuelto` con `elegido = 'manual'`. Reglas:
+  tiene que corregir al menos el campo en disputa (si no, 422 y sigue abierto); se cierran también
+  los demás conflictos pendientes de ese producto sobre los campos corregidos; se audita
+  `conflicto.editar` (con el motivo opcional) y `producto.corregir` (aparece en el historial del
+  producto). Migración `20261129000001_conflicto_edicion_manual.sql` (el check de `elegido` admite
+  `'manual'`). API: `POST /v1/admin/conflictos/{id}/editar`.
+
 ### C. Calidad y normalización
 
 Todo en `docs/07-normalizacion-catalogo.md` (reglas, puntaje, casos). Resumen de lo que se

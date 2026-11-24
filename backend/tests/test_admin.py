@@ -456,6 +456,96 @@ def test_resolver_conflicto(client, admin):
     )
 
 
+def _conflicto(campo, a, b, fuente_b="sepa"):
+    sql(
+        "insert into conflictos_catalogo (ean, campo, valor_a, fuente_a, valor_b, fuente_b) "
+        f"values ('7790000000017', '{campo}', '{a}', 'off', '{b}', '{fuente_b}')"
+    )
+
+
+def test_editar_y_resolver_conflicto_con_datos_propios(client, admin):
+    """Ni A ni B están bien: se corrige a mano y se termina la carga (docs/04 §10-F)."""
+    _producto()
+    _conflicto("tamano", "500 g", "750 g")
+    _conflicto("tamano", "500 g", "0.5 kg", "curado")  # otra disputa del mismo campo
+    _conflicto("marca", "Marca A", "Marca B")  # otro campo: no se toca
+    items = client.get("/v1/admin/conflictos?ean=7790000000017", headers=admin).json()["items"]
+    c = next(x for x in items if x["campo"] == "tamano")
+    r = client.post(
+        f"/v1/admin/conflictos/{c['id']}/editar",
+        headers=admin,
+        json={"tamano_valor": "1", "tamano_unidad": "l", "motivo": "las dos fuentes erraban"},
+    )
+    assert r.status_code == 200
+    assert (r.json()["estado"], r.json()["elegido"]) == ("resuelto", "manual")
+    p = _consulta(
+        "select tamano_valor, tamano_unidad, campos_bloqueados from productos_canonicos "
+        "where ean = '7790000000017'"
+    )[0]
+    assert (float(p["tamano_valor"]), p["tamano_unidad"]) == (1.0, "l")
+    assert "tamano" in p["campos_bloqueados"]
+    estados = {
+        (x["campo"], x["estado"], x["elegido"])
+        for x in _consulta(
+            "select campo, estado, elegido from conflictos_catalogo where ean = '7790000000017'"
+        )
+    }
+    # las dos disputas de tamaño quedaron resueltas; la de marca sigue pendiente
+    assert estados == {("tamano", "resuelto", "manual"), ("marca", "pendiente", None)}
+    aud = _consulta(
+        "select accion, nota from auditoria_admin where entidad = 'conflicto' "
+        f"and entidad_id = '{c['id']}'"
+    )
+    assert [a["accion"] for a in aud] == ["conflicto.editar"]
+    assert aud[0]["nota"] == "las dos fuentes erraban"
+    # ya resuelto: no se puede volver a resolver
+    assert (
+        client.post(
+            f"/v1/admin/conflictos/{c['id']}/editar", headers=admin, json={"nombre": "Otro"}
+        ).status_code
+        == 409
+    )
+
+
+def test_editar_conflicto_exige_corregir_el_campo_en_disputa(client, admin):
+    _producto()
+    _conflicto("nombre", "Adm Prod", "ADM PROD X")
+    c = client.get("/v1/admin/conflictos?ean=7790000000017", headers=admin).json()["items"][0]
+    url = f"/v1/admin/conflictos/{c['id']}/editar"
+    # sin cambios, o cambios que no tocan el campo en disputa: no es una resolución
+    assert client.post(url, headers=admin, json={}).status_code == 422
+    assert client.post(url, headers=admin, json={"marca": "Otra"}).status_code == 422
+    # un dato inválido lo frena la misma validación que la corrección directa
+    assert client.post(url, headers=admin, json={"nombre": ""}).status_code == 422
+    assert (
+        _consulta(f"select estado from conflictos_catalogo where id = '{c['id']}'")[0]["estado"]
+        == "pendiente"
+    )
+    ok = client.post(url, headers=admin, json={"nombre": "Aceite de Girasol 1 l", "marca": "Otra"})
+    assert ok.status_code == 200
+    p = _consulta(
+        "select nombre, marca, campos_bloqueados from productos_canonicos "
+        "where ean = '7790000000017'"
+    )[0]
+    assert (p["nombre"], p["marca"]) == ("Aceite de Girasol 1 l", "Otra")
+    assert set(p["campos_bloqueados"]) >= {"nombre", "marca"}
+
+
+def test_editar_conflicto_no_existente_o_sin_permiso(client, admin):
+    assert (
+        client.post(
+            "/v1/admin/conflictos/00000000-0000-0000-0000-000000000000/editar",
+            headers=admin,
+            json={"nombre": "X"},
+        ).status_code
+        == 404
+    )
+    assert client.post(
+        "/v1/admin/conflictos/00000000-0000-0000-0000-000000000000/editar",
+        json={"nombre": "X"},
+    ).status_code in (401, 403)
+
+
 # ------------------------------------------------------------------ auditoría
 def test_la_auditoria_no_se_modifica_ni_se_borra(client, admin):
     uid = _mi_id(client, admin)

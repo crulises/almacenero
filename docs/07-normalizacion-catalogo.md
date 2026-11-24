@@ -346,6 +346,10 @@ simulacro e importación: `docs/04` §10-B. Lo que importa para la normalizació
   `NORMALIZADOR_VERSION` desde que se armó el CSV, el simulacro muestra qué cambiaría.
 - Si cambia un diccionario o la versión, el hash del CSV regenerado **cambia a propósito**: la
   versión del normalizador va en la cabecera y en `catalogo_lotes`.
+- El **formato v2** (export desde la base, `docs/09`) lleva también `calidad`, `estado_calidad`,
+  `calidad_motivos` y `normalizador_version` de cada producto, pero **solo informativos**: al
+  importar, la calidad se recalcula con el normalizador de quien importa (no se confía en el
+  puntaje de otro proyecto).
 
 ## 14. Qué transformó el normalizador: reportes legibles (ajuste del corte 18)
 

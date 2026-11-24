@@ -1,4 +1,4 @@
-.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-importar etl-worker
+.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar etl-worker
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -199,13 +199,18 @@ catalogo-renormalizar: $(PY) ## Normaliza TODO el catálogo y recalcula la calid
 # El CSV curado es un extracto ya normalizado de las fuentes crudas: se arma una vez en tu
 # máquina (reproducible: mismas fuentes + normalizador = mismo hash) y se importa donde haga
 # falta, sin volver a bajar OFF entero. El archivo se puede borrar tras importarlo.
-CURADO_SALIDA ?= etl/data/catalogo-curado.csv.gz
+# Solo el NOMBRE del archivo: la carpeta es ETL_EXPORT_DIR (por defecto etl/data/exports/).
+CURADO_SALIDA ?= catalogo-curado.csv.gz
 SEPA_MIN_FILAS ?= 1
 
 catalogo-csv-exportar: $(PY) ## Arma el CSV curado desde OFF/SEPA locales: make catalogo-csv-exportar [CURADO_SALIDA=...] [OFF_ARCHIVO=...] [SEPA_ARCHIVOS="a.zip b.zip"] [OFF_PAISES=] [SEPA_MIN_FILAS=1]
 	@test -f "$(OFF_ARCHIVO)" -o -n "$(SEPA_ARCHIVOS)" || { echo "Falta una fuente: OFF_ARCHIVO=... (make etl-off-muestra) y/o SEPA_ARCHIVOS=\"a.zip\""; exit 1; }
 	$(PY) -m etl.curado.exportar $(CURADO_SALIDA) $(if $(wildcard $(OFF_ARCHIVO)),--off $(OFF_ARCHIVO)) \
 		$(if $(SEPA_ARCHIVOS),--sepa $(SEPA_ARCHIVOS)) --paises "$(OFF_PAISES)" --sepa-min-filas $(SEPA_MIN_FILAS)
+
+catalogo-csv-exportar-base: $(PY) ## Vuelca el catálogo de la base al formato de intercambio v2 (con metadatos): make catalogo-csv-exportar-base [CURADO_SALIDA=nombre.csv.gz]
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.curado.exportar_base $(CURADO_SALIDA)
 
 catalogo-csv-importar: $(PY) ## Valida (simulacro) o importa un CSV curado: make catalogo-csv-importar ARCHIVO=... [APLICAR=1] [FORZAR=1]
 	@test -n "$(ARCHIVO)" || { echo "Uso: make catalogo-csv-importar ARCHIVO=<csv curado> [APLICAR=1] [FORZAR=1]"; exit 1; }

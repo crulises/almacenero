@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-TIPOS = ("texto", "entero", "booleano", "opcion", "fecha", "archivo")
+TIPOS = ("texto", "entero", "booleano", "opcion", "fecha", "archivo", "nombre_archivo")
 MAX_TEXTO = 500
 
 
@@ -72,6 +72,13 @@ def _convertir(p: Param, v: Any) -> Any:
             return datetime.date.fromisoformat(str(v)).isoformat()
         except ValueError:
             raise ParametroInvalido(p.nombre, "tiene que ser una fecha AAAA-MM-DD") from None
+    if p.tipo == "nombre_archivo":
+        from etl.comun.rutas import NombreInvalido, validar_nombre
+
+        try:
+            return validar_nombre(str(v))
+        except NombreInvalido as e:
+            raise ParametroInvalido(p.nombre, str(e)) from None
     # texto y archivo (el id del archivo subido, que la API resuelve y comprueba)
     if not isinstance(v, str):
         raise ParametroInvalido(p.nombre, "tiene que ser un texto")

@@ -24,9 +24,9 @@ from uuid import UUID
 
 import asyncpg
 
-from etl.comun.catalogo import Reporte, conectar, fusionar_lote
+from etl.comun.catalogo import Reporte, conectar, fusionar_lote, recalcular_calidad
 from etl.comun.normalizar import NORMALIZADOR_VERSION
-from etl.curado.formato import FORMATO, FilaInvalida, fila_a_producto, leer
+from etl.curado.formato import FORMATO, FilaInvalida, Meta, fila_a_producto, leer, meta_de_fila
 
 _CAMPOS = (
     "nombre",
@@ -125,7 +125,72 @@ def _diferencias(antes, despues) -> dict[str, list]:
     return {c: [_texto(antes[c]), _texto(despues[c])] for c in _CAMPOS if antes[c] != despues[c]}
 
 
-async def _lote(conn: asyncpg.Connection, productos, r: ReporteImport, aplicar: bool) -> None:
+# Restaura lo que dice un archivo v2 (docs/09 §4) sobre un lote ya fusionado:
+#  - origen: el del archivo (off/sepa/curado/manual), salvo que acá ya sea `manual` y el archivo
+#    no lo sea (lo hecho a mano nunca se degrada). Así la ida y vuelta es fiel y no todo pasa a
+#    figurar como `curado`.
+#  - campos bloqueados por una persona: se aplican acá (un dato humano vale más que el de un
+#    ETL) salvo los que acá ya estén bloqueados, y quedan bloqueados.
+_SQL_ORIGEN = """
+update productos_canonicos p set origen = x.origen
+  from unnest($1::text[], $2::text[]) as x(ean, origen)
+ where p.ean = x.ean and p.origen is distinct from x.origen
+   and (x.origen = 'manual' or p.origen <> 'manual')
+"""
+_SQL_RESTAURAR = """
+update productos_canonicos set
+  nombre = case when 'nombre' = any($2::text[]) and not 'nombre' = any(campos_bloqueados)
+                then $3 else nombre end,
+  marca = case when 'marca' = any($2::text[]) and not 'marca' = any(campos_bloqueados)
+               then $4 else marca end,
+  tamano_valor = case when 'tamano' = any($2::text[]) and not 'tamano' = any(campos_bloqueados)
+                      then $5 else tamano_valor end,
+  tamano_unidad = case when 'tamano' = any($2::text[]) and not 'tamano' = any(campos_bloqueados)
+                       then $6 else tamano_unidad end,
+  pack_cantidad = case when 'tamano' = any($2::text[]) and not 'tamano' = any(campos_bloqueados)
+                       then $7 else pack_cantidad end,
+  presentacion = case when 'presentacion' = any($2::text[])
+                           and not 'presentacion' = any(campos_bloqueados)
+                      then $8 else presentacion end,
+  campos_bloqueados = array(select distinct unnest(campos_bloqueados || $2::text[]))
+where ean = $1
+"""
+
+
+async def _restaurar(conn, productos, metas: dict[str, Meta]) -> None:
+    """Aplica los metadatos v2 de un lote ya fusionado (en su propia transacción)."""
+    con_origen = [(p.ean, metas[p.ean].origen) for p in productos if p.ean in metas]
+    con_origen = [(e, o) for e, o in con_origen if o]
+    async with conn.transaction():
+        await conn.execute("select set_config('app.catalogo_write', 'on', true)")
+        if con_origen:
+            await conn.execute(_SQL_ORIGEN, [e for e, _ in con_origen], [o for _, o in con_origen])
+        for p in productos:
+            m = metas.get(p.ean)
+            if m is None or not m.bloqueados:
+                continue
+            await conn.execute(
+                _SQL_RESTAURAR,
+                p.ean,
+                list(m.bloqueados),
+                p.nombre,
+                p.marca,
+                p.tamano_valor,
+                p.tamano_unidad,
+                p.pack_cantidad,
+                p.presentacion,
+            )
+        if con_origen:
+            await recalcular_calidad(conn, [e for e, _ in con_origen])
+
+
+async def _lote(
+    conn: asyncpg.Connection,
+    productos,
+    r: ReporteImport,
+    aplicar: bool,
+    metas: dict[str, Meta] | None = None,
+) -> None:
     """Fusiona un lote y mide qué pasó con cada EAN (antes vs después)."""
     eans = [p.ean for p in productos]
     estadisticas: dict = {}
@@ -133,6 +198,8 @@ async def _lote(conn: asyncpg.Connection, productos, r: ReporteImport, aplicar: 
     async def correr() -> None:
         antes = {x["ean"]: x for x in await conn.fetch(_SQL_FOTO, eans)}
         await fusionar_lote(conn, "curado", productos, r.fusion)
+        if metas:
+            await _restaurar(conn, productos, metas)
         despues = {x["ean"]: x for x in await conn.fetch(_SQL_FOTO, eans)}
         n = c = i = o = 0
         for ean in eans:
@@ -179,12 +246,19 @@ async def importar(
     r.editado = declarado is not None and declarado != lectura.sha256
 
     productos = {}
+    metas: dict[str, Meta] = {}
     for linea, fila in lectura.filas:
         r.leidas += 1
         try:
-            p = fila_a_producto(
-                fila, {"archivo_sha256": lectura.sha256, "formato": lectura.cabecera["formato"]}
-            )
+            meta = meta_de_fila(fila)
+            extra = {"archivo_sha256": lectura.sha256, "formato": lectura.cabecera["formato"]}
+            if meta:
+                extra["intercambio"] = {
+                    "origen": meta.origen,
+                    "campos_bloqueados": list(meta.bloqueados),
+                    **meta.info,
+                }
+            p = fila_a_producto(fila, extra, ean_confiable=bool(meta and meta.origen == "manual"))
         except FilaInvalida as e:
             r.invalidas[e.motivo] += 1
             if len(r.ejemplos_invalidos) < MAX_EJEMPLOS:
@@ -193,6 +267,10 @@ async def importar(
         if p.ean in productos:
             r.duplicados += 1
         productos[p.ean] = p
+        if meta:
+            metas[p.ean] = meta
+        else:
+            metas.pop(p.ean, None)
     r.validas = len(productos)
 
     conn = await conectar()
@@ -209,7 +287,7 @@ async def importar(
         r.ya_importado = previo
         lista = list(productos.values())
         for i in range(0, len(lista), lote):
-            await _lote(conn, lista[i : i + lote], r, aplicar)
+            await _lote(conn, lista[i : i + lote], r, aplicar, metas)
         if aplicar:
             r.lote_id = await conn.fetchval(
                 "insert into catalogo_lotes (formato, version_normalizador, nombre_archivo, sha256,"
