@@ -19,13 +19,14 @@ import gzip
 import hashlib
 import io
 import json
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from etl.comun.catalogo import Producto
 from etl.comun.ean import normalizar_ean
+from etl.comun.paquete import PaqueteInvalido, contenido_csv, escribir_zip
 
 FORMATO = "catalogo_curado_v1"
 FORMATO_V2 = "catalogo_curado_v2"
@@ -241,15 +242,23 @@ def _sha256(texto: str) -> str:
 
 
 def escribir(
-    ruta: Path, filas: Iterable[dict[str, str]], cabecera: dict[str, str], formato: str = FORMATO
+    ruta: Path,
+    filas: Iterable[dict[str, str]],
+    cabecera: dict[str, str],
+    formato: str = FORMATO,
+    leeme: Callable[[str], str] | None = None,
 ) -> str:
-    """Escribe el CSV curado (`.gz` si la ruta lo pide). -> sha256 del contenido."""
+    """Escribe el CSV curado. Según la extensión de `ruta`: `.zip` (paquete: el CSV + un
+    `LEEME.txt` que arma `leeme(sha256)`), `.gz` o CSV pelado. -> sha256 del contenido."""
     cuerpo = _cuerpo(filas, COLUMNAS_DE[formato])
     sha = _sha256(cuerpo)
     comentarios = {"formato": formato, **cabecera, "contenido_sha256": sha}
     texto = "".join(f"# {k}: {v}\n" for k, v in comentarios.items()) + cuerpo
     datos = texto.encode("utf-8")
-    ruta.write_bytes(gzip.compress(datos, mtime=0) if ruta.suffix == ".gz" else datos)
+    if ruta.suffix == ".zip":
+        escribir_zip(ruta, f"{ruta.stem}.csv", datos, leeme(sha) if leeme else None)
+    else:
+        ruta.write_bytes(gzip.compress(datos, mtime=0) if ruta.suffix == ".gz" else datos)
     return sha
 
 
@@ -261,13 +270,12 @@ class Lectura:
 
 
 def leer(ruta: Path) -> Lectura:
-    """Lee el CSV curado. Tolera `.gz`, BOM y `\\r\\n`. Lanza `FormatoInvalido`."""
-    crudo = ruta.read_bytes()
-    if ruta.suffix == ".gz":
-        try:
-            crudo = gzip.decompress(crudo)
-        except (OSError, EOFError) as e:
-            raise FormatoInvalido(f"el .gz está roto: {e}") from None
+    """Lee el CSV curado: `.zip` (paquete), `.gz` o CSV pelado (se reconoce por el contenido,
+    no por la extensión). Tolera BOM y `\\r\\n`. Lanza `FormatoInvalido`."""
+    try:
+        crudo = contenido_csv(ruta.read_bytes())
+    except PaqueteInvalido as e:
+        raise FormatoInvalido(str(e)) from None
     texto = crudo.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
     lineas = texto.split("\n")
     cabecera: dict[str, str] = {}

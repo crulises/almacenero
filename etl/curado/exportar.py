@@ -4,7 +4,7 @@ No toca la base: lee los archivos, pasa cada fila por el normalizador (Doc 7) y 
 `catalogo_curado_v1` que se puede importar donde sea (`python -m etl.curado.importar`). Es
 reproducible: mismas fuentes + misma versión del normalizador = mismo `sha256` de contenido.
 
-    python -m etl.curado.exportar SALIDA.csv[.gz] [--off OFF.csv.gz] [--sepa A.zip B.zip]
+    python -m etl.curado.exportar NOMBRE [--off OFF.csv.gz] [--sepa A.zip B.zip]
         [--paises en:argentina,...] [--sepa-min-filas N]
 
 Por EAN gana la fuente de más prioridad (SEPA > OFF, como en el catálogo) y la otra completa
@@ -20,10 +20,12 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from etl.comun.catalogo import Producto, Reporte, normalizar_producto
+from etl.comun.catalogo import Producto, Reporte, normalizar_con_traza, normalizar_producto
 from etl.comun.normalizar import NORMALIZADOR_VERSION
+from etl.comun.paquete import leeme_de
 from etl.comun.rutas import NombreInvalido, ruta_de_salida
-from etl.curado.formato import escribir, producto_a_fila
+from etl.curado import leeme
+from etl.curado.formato import FORMATO, escribir, producto_a_fila
 from etl.off.__main__ import abrir, filas, transformar
 from etl.sepa.__main__ import Agrupador, leer_productos_zip
 
@@ -38,11 +40,14 @@ class ResultadoExport:
     filas: int = 0
     por_origen: Counter = field(default_factory=Counter)
     descartadas: Counter = field(default_factory=Counter)
+    reglas: str = ""  # qué reglas del normalizador se aplicaron (también va en el LEEME.txt)
 
     def texto(self) -> str:
         lineas = [f"Filas escritas: {self.filas}", f"sha256 del contenido: {self.sha256}"]
         lineas += [f"  de {o}: {n}" for o, n in self.por_origen.most_common()]
         lineas += [f"  descartadas por {m}: {n}" for m, n in self.descartadas.most_common()]
+        if self.reglas:
+            lineas += ["", self.reglas]
         return "\n".join(lineas)
 
 
@@ -72,6 +77,13 @@ def _combinar(candidatos: dict[str, Producto]) -> Producto:
     return base
 
 
+def _normalizar(p: Producto, reporte: Reporte) -> Producto:
+    """Normaliza lo que dice una fuente y anota qué reglas se aplicaron (para el LEEME)."""
+    nuevo, _, salida = normalizar_con_traza(p)
+    reporte.trazas.agregar(salida, p.nombre, nuevo.nombre)
+    return nuevo
+
+
 def _leer_off(
     ruta: Path, paises: frozenset[str] | None, reporte: Reporte, limite: int | None
 ) -> Iterator[Producto]:
@@ -97,7 +109,7 @@ def exportar(
     por_fuente: dict[str, dict[str, Producto]] = {"off": {}, "sepa": {}}
     if off:
         for p in _leer_off(off, paises, reporte, limite_off):
-            por_fuente["off"][p.ean] = normalizar_producto(p)[0]
+            por_fuente["off"][p.ean] = _normalizar(p, reporte)
     if sepa:
         agrupador = Agrupador(reporte)
         for ruta in sepa:
@@ -106,7 +118,7 @@ def exportar(
                     agrupador.agregar(fila)
         for p in agrupador.productos():
             if json.loads(p.datos).get("filas", 1) >= sepa_min_filas:
-                por_fuente["sepa"][p.ean] = normalizar_producto(p)[0]
+                por_fuente["sepa"][p.ean] = _normalizar(p, reporte)
 
     resultado_filas: list[dict[str, str]] = []
     por_origen: Counter = Counter()
@@ -126,16 +138,45 @@ def exportar(
         "paises": ",".join(sorted(paises)) if paises else "(todos)",
         "sepa_min_filas": str(sepa_min_filas),
     }
-    sha = escribir(salida, resultado_filas, cabecera)
     descartadas = Counter(reporte.descartadas)
+    total_normalizados = len(por_fuente["off"]) + len(por_fuente["sepa"])
+    secciones = [
+        ("Qué es", leeme.seccion_que_es(FORMATO, len(resultado_filas), por_origen, cabecera)),
+        (
+            "Qué se hizo con los datos",
+            leeme.seccion_reglas(
+                reporte.trazas,
+                total_normalizados,
+                f"{total_normalizados} productos tal como los dicen las fuentes (antes de "
+                "combinarlas por EAN)",
+            ),
+        ),
+        (
+            "Qué se descartó",
+            "\n".join(f"  {m}: {n}" for m, n in descartadas.most_common()) or "  nada",
+        ),
+        ("Columnas", leeme.seccion_columnas(FORMATO)),
+        ("Cómo importarlo", leeme.seccion_importar()),
+    ]
+    sha = escribir(
+        salida,
+        resultado_filas,
+        cabecera,
+        leeme=leeme_de("Catálogo curado — armado desde fuentes", secciones),
+    )
     return ResultadoExport(
-        sha, {**cabecera, "contenido_sha256": sha}, len(resultado_filas), por_origen, descartadas
+        sha,
+        {**cabecera, "contenido_sha256": sha},
+        len(resultado_filas),
+        por_origen,
+        descartadas,
+        reglas=reporte.trazas.texto(total_normalizados),
     )
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("salida", help="nombre del CSV (.csv o .csv.gz); va a ETL_EXPORT_DIR")
+    ap.add_argument("salida", help="nombre del export (sin extensión); va a ETL_EXPORT_DIR")
     ap.add_argument("--off", type=Path, help="volcado CSV de OFF (.csv o .csv.gz)")
     ap.add_argument("--sepa", type=Path, nargs="*", default=[], help="zip(s) diario(s) de SEPA")
     ap.add_argument("--paises", default="", help="tags de OFF separados por coma; vacío = todos")

@@ -1019,7 +1019,7 @@ los productos relevantes y guardar ese extracto como CSV**.
 - **Los exports piden solo un nombre de archivo.** Tipo de parámetro `nombre_archivo` del registro de
   ETL (`etl/registro.py`): sin carpetas, sin `..`, termina en `.csv` o `.csv.gz`. La carpeta base la
   decidimos nosotros: `ETL_EXPORT_DIR` (por defecto `etl/data/exports/`, ignorada por git). Vale para
-  el formulario del panel, la CLI y el Makefile (`CURADO_SALIDA` ahora es un nombre, no una ruta).
+  el formulario del panel, la CLI y el Makefile (`CURADO_SALIDA` ahora es un nombre, no una ruta; ver más abajo: sin extensión).
   Así un formulario no puede escribir en cualquier lado de la máquina del worker.
 - **Formato de intercambio v2 (`catalogo_curado_v2`) con los metadatos del tratamiento** y
   **exportación desde la base** (`make catalogo-csv-exportar-base`; panel: ETL → «Exportar el
@@ -1041,6 +1041,25 @@ los productos relevantes y guardar ese extracto como CSV**.
   `conflicto.editar` (con el motivo opcional) y `producto.corregir` (aparece en el historial del
   producto). Migración `20261129000001_conflicto_edicion_manual.sql` (el check de `elegido` admite
   `'manual'`). API: `POST /v1/admin/conflictos/{id}/editar`.
+
+**Segunda tanda de ajustes del corte 18 (2026-11-24, a pedido del dueño):**
+
+- **Los exports no piden extensión.** Solo un nombre (`catalogo-2026-11`); el sistema agrega `.zip`
+  (si alguien escribe `.zip`/`.csv`/`.csv.gz`, se ignora). Sin elegir formatos.
+- **El export es un `.zip` con el CSV y un `LEEME.txt`** que cuenta qué se hizo: cuántos productos
+  tienen cada tratamiento, **qué reglas del normalizador se aplicaron** (a cuántos y con un ejemplo),
+  motivos de calidad, columnas y cómo importarlo (`etl/comun/paquete.py`, `etl/curado/leeme.py`). El
+  importador reconoce zip/gzip/CSV por el contenido (no por la extensión). El hash de contenido no
+  cambia con el contenedor.
+- **Las reglas del normalizador se imprimen** también al cargar SEPA y OFF y al importar un curado
+  (`Reporte.trazas`, el mismo informe que usa «Renormalizar»), y al armar el curado desde las fuentes.
+- **Importar con selector de archivo:** el formulario del panel sube el archivo al servidor antes de
+  ejecutar (`<input type="file">`, hasta 25 MB; ya existía `POST /v1/admin/etl/archivos`): ahora
+  acepta el `.zip` del export, muestra «Subiendo…» y el nombre/tamaño subido.
+- **Locales validados intercambiables** (`locales_intercambio_v1`, Doc 9 §8): ETL «Exportar locales»
+  (worker local; por defecto solo `verificado`) e «Importar locales» (con selector de archivo y
+  simulacro). Sin tocar al existente, sin personas, conserva `fuente` y vínculos OSM/SEPA. Sin
+  migración nueva. CLI: `make locales-exportar` / `make locales-importar`.
 
 ### C. Calidad y normalización
 

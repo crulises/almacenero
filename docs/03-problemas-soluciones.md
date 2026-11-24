@@ -966,3 +966,19 @@ Decisiones en `docs/04` §9.
 - **Solución:** cambiar a la rama que la tiene (`git switch feat/etl-panel`). Para cambios aditivos que
   hay que probar desde otro lado, escribir la migración idempotente y aplicarla con `psql -f` (no
   registra la versión; el `make migrate` posterior de la rama correcta la reaplica sin daño).
+
+### El usuario tenía que saber la extensión del export (`.csv.gz`)
+
+- **Síntoma:** el formulario de export rechazaba `catalogo` por no terminar en `.csv`/`.csv.gz`.
+- **Causa:** el nombre validaba la extensión en vez de decidir nosotros el formato.
+- **Solución:** el export pide solo un nombre y siempre escribe `.zip` (CSV + `LEEME.txt`); si el nombre
+  trae `.zip`/`.csv`/`.csv.gz`, se ignora. Al importar se reconoce el formato por los primeros bytes, no
+  por la extensión (Doc 9 §2.1).
+
+### Sin migración: dos datos de un mismo local en dos instalaciones
+
+- **Síntoma:** al llevar locales de una base a otra se duplicaban o se pisaba lo que el admin de destino
+  ya había corregido.
+- **Causa:** no hay un id común entre instalaciones (los uuid son locales a cada base).
+- **Solución:** se cruza por los vínculos con OSM/SEPA y, si no, por nombre + distancia (la regla del alta
+  de locales); un local existente no se pisa (solo se verifica y se le suman vínculos). Doc 9 §8.

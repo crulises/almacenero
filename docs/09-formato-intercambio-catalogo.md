@@ -3,15 +3,19 @@
 > Este documento es **autocontenido a propósito**: el mismo formato se va a usar para intercambiar
 > catálogos con otro proyecto. Quien lo implemente allá no necesita leer el resto del repo.
 > Implementación de referencia: `etl/curado/` (`formato.py`, `exportar.py`, `exportar_base.py`,
-> `importar.py`). Tests que fijan el comportamiento: `etl/tests/test_curado_*.py`.
+> `importar.py`, `leeme.py`), `etl/comun/paquete.py` (el `.zip`) y `etl/locales_intercambio.py`
+> (locales, §8). Tests que fijan el comportamiento: `etl/tests/test_curado_*.py`,
+> `test_paquete.py`, `test_locales_intercambio.py`.
 
 ## 1. Para qué sirve y qué decisiones lo definen
 
 Un archivo de intercambio es **el catálogo con su historia de tratamiento**: no solo «qué
 producto es», también «qué le hicimos». Las decisiones (tomadas el 2026-11-24, corte 18):
 
-1. **Un solo archivo, texto plano.** CSV UTF-8 (opcionalmente `.gz`), legible en cualquier planilla
-   o con `zcat`. Sin binarios, sin base de datos adjunta.
+1. **Un solo archivo.** El contenido es un CSV UTF-8 (legible en cualquier planilla). Lo que se
+   **exporta** es un paquete `.zip` con ese CSV y un `LEEME.txt` que cuenta qué es, qué se hizo y
+   qué reglas del normalizador se aplicaron (§2.1). Sin base de datos adjunta. Quien exporta **no
+   elige formato ni extensión**: solo pone un nombre.
 2. **Lleva todos los metadatos que importan de cada registro** (origen, bloqueos humanos, si lo
    cargó o revisó una persona, sugerencias, avisos del normalizador, conflictos), para que al
    importarlo **no se repita el trabajo manual** ni se vuelva a pelear lo ya resuelto.
@@ -49,6 +53,20 @@ ean,nombre,marca,tamano_valor,…
   `fuentes` (`nombre:sha256` de cada archivo crudo, o `(base de datos)`), `exportado_de`,
   `paises`, `sepa_min_filas`, `contenido_sha256`.
 - Clave única: `ean`. Si se repite dentro del archivo, **gana la última** y se informa.
+
+### 2.1 El paquete `.zip` y cómo se reconoce un archivo
+
+Lo que sale de un export es `<nombre>.zip` con **dos** archivos: `<nombre>.csv` (lo de arriba) y
+`LEEME.txt` (texto para personas, no lo lee ninguna máquina). El `LEEME.txt` dice: qué es el
+archivo, de dónde salió, el hash, cuántos productos tienen cada tratamiento, **qué reglas del
+normalizador se aplicaron** (a cuántos productos y con un ejemplo antes → después), por qué algunos
+productos no llegan al puntaje máximo, las columnas y cómo importarlo.
+
+Al **importar**, el formato se reconoce por el **contenido** (los primeros bytes: `PK` = zip,
+`1f 8b` = gzip, otra cosa = CSV), nunca por la extensión: quien sube el archivo no tiene que
+acordarse cómo se llamaba. Un `.zip` tiene que tener **un solo** `.csv` (el `LEEME.txt` y lo demás
+se ignoran); se rechazan los que se descomprimen a más de 2 GiB. El hash (§4) es del contenido del
+CSV: es el mismo dentro de un zip, de un `.gz` o pelado.
 
 ## 3. Columnas
 
@@ -141,11 +159,18 @@ resto del archivo sigue.
 | Lo mismo desde el panel (ETL → «Armar el CSV curado» / «Exportar el catálogo») | worker local | v1 / v2 |
 | Importar (cualquiera de los dos) | `make catalogo-csv-importar ARCHIVO=… [APLICAR=1]` | lee v1 y v2 |
 
-**Dónde se escribe:** los formularios y comandos de exportación piden **solo el nombre del
-archivo** (`catalogo.csv.gz`, letras/números/`.`/`-`/`_`, termina en `.csv` o `.csv.gz`). La carpeta
-la fija quien opera la máquina: `ETL_EXPORT_DIR` (por defecto `etl/data/exports/`, fuera de git). Una
-ruta, un `..` o una extensión rara se rechazan: desde un formulario no se puede escribir en
-cualquier lado.
+**Cómo se nombra lo que se exporta:** los formularios y comandos piden **solo un nombre** (letras,
+números, `.`, `-`, `_`; sin carpeta ni espacios), **sin extensión**: el sistema agrega `.zip`. Si
+alguien igual escribe `.zip`, `.csv` o `.csv.gz`, se ignora. La carpeta la fija quien opera la
+máquina: `ETL_EXPORT_DIR` (por defecto `etl/data/exports/`, fuera de git). Una ruta o un `..` se
+rechazan: desde un formulario no se puede escribir en cualquier lado. Si ya había un export con ese
+nombre, se reemplaza.
+
+**Cómo se sube lo que se importa (panel):** el formulario tiene un selector de archivo
+(`<input type="file">`); al elegirlo el panel lo sube al servidor (`POST /v1/admin/etl/archivos`, hasta
+25 MB, guardado temporalmente en la base) y recién después se ejecuta el ETL con el id del archivo
+subido. El simulacro lo deja disponible para confirmar; se borra al importar de verdad o a las 24 h.
+Los volcados enormes de OFF/SEPA/OSM no se suben así: se leen de la máquina del worker.
 
 ## 7. Implementar el formato en otro proyecto (mínimo)
 
@@ -155,7 +180,54 @@ cualquier lado.
 3. Validar cada fila según §3.1; rechazar y reportar, no abortar.
 4. Para un v2: guardar `origen` y `campos_bloqueados`, aplicar §5.2–5.3, y conservar el resto de
    los metadatos donde convenga (en este proyecto, `producto_fuentes.datos.intercambio`).
-5. Al exportar: `\n`, sin BOM, filas por `ean`, hash según §4, `# formato` primero.
+5. Al exportar: `\n`, sin BOM, filas por `ean`, hash según §4, `# formato` primero. Empaquetar en
+   `.zip` con un `LEEME.txt` (§2.1) es recomendable; al importar, reconocer zip/gzip/CSV por los
+   primeros bytes.
 
 Cambios futuros: columnas nuevas **al final** y sin cambiar el significado de las existentes
 (v2 sigue válido); cualquier cambio de significado o de forma = `v3`.
+
+## 8. Locales (`locales_intercambio_v1`)
+
+Los **locales validados** también se pueden llevar de una instalación a otra con el mismo criterio
+(un archivo, sin personas, simulacro antes de escribir), **sin** el «modo migración de plataforma».
+Implementación: `etl/locales_intercambio.py`. Comandos: `make locales-exportar [TODOS=1]` y
+`make locales-importar ARCHIVO=… [APLICAR=1]`; en el panel, ETL → «Exportar locales» (worker local) e
+«Importar locales» (con selector de archivo).
+
+**Contenedor y nombre:** igual que el catálogo (§2.1 y §6): `.zip` con `<nombre>.csv` + `LEEME.txt`.
+
+**Archivo:** cabecera `# formato: locales_intercambio_v1`, `# generado`, `# solo_verificados` y
+`# contenido_sha256` (hash del contenido, §4; filas ordenadas por lat, lng, nombre, id). Columnas:
+
+| Columna | Regla |
+|---|---|
+| `id_origen` | Informativo (el id en la instalación que exportó). No se usa para cruzar. |
+| `nombre` | Obligatoria, 2 a 200 caracteres. |
+| `direccion` | Opcional, hasta 300. |
+| `lat`, `lng` | Obligatorias, grados decimales (WGS84), `-90..90` y `-180..180`. |
+| `fuente` | `manual`, `osm` o `sepa`: cómo nació el local. Vacío = `manual`. |
+| `verificado` | `1` o `0`: si un admin ya lo validó. Por defecto solo se exportan los `1`. |
+| `referencias` | Vínculos con las fuentes de los ETL, separados por `\|`: `osm:node/123`, `sepa:<comercio>-<bandera>-<sucursal>`. |
+| `medios_pago`, `recargo_tarjeta` | JSON (objetos). |
+
+**Qué no lleva:** personas (`creado_por`, usuarios), precios, ni el dato crudo de cada fuente
+(`local_fuentes.datos`). Se conservan `fuente` y `referencias` a propósito: los locales de OSM tienen
+licencia ODbL y hay que poder separarlos del resto.
+
+**Cómo se importa (por cada fila válida):**
+
+1. **¿Ya existe?** Primero por vínculo (alguna de sus `referencias` ya está vinculada a un local de
+   acá). Si no, por la misma regla anti-duplicados del alta de locales: nombre parecido (similitud ≥
+   `local_duplicado_similitud`) a menos de `local_duplicado_metros`.
+2. **Si existe:** no se pisan sus datos (el admin de acá pudo corregirlos). Solo se le suman los
+   vínculos que falten y, si el archivo lo trae verificado y acá no lo estaba, se lo **verifica**
+   (esa validación es justo lo que viaja).
+3. **Si no existe:** se crea con los datos del archivo, el mismo `fuente` y `verificado`, **sin dueño**
+   (`creado_por` nulo: las personas de otra instalación no existen acá) y con sus vínculos.
+4. **Idempotente:** importar dos veces el mismo archivo no cambia nada la segunda. El simulacro
+   corre la misma lógica dentro de una transacción que se revierte.
+
+Filas inválidas (no frenan el resto, se informan con línea y motivo): `nombre_corto`,
+`coordenadas_invalidas`, `coordenadas_fuera_de_rango`, `fuente_invalida`, `verificado_invalido`,
+`referencia_invalida`, `json_invalido`.

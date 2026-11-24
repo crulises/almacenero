@@ -1,4 +1,4 @@
-.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar etl-worker
+.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar locales-exportar locales-importar etl-worker
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -199,8 +199,9 @@ catalogo-renormalizar: $(PY) ## Normaliza TODO el catálogo y recalcula la calid
 # El CSV curado es un extracto ya normalizado de las fuentes crudas: se arma una vez en tu
 # máquina (reproducible: mismas fuentes + normalizador = mismo hash) y se importa donde haga
 # falta, sin volver a bajar OFF entero. El archivo se puede borrar tras importarlo.
-# Solo el NOMBRE del archivo: la carpeta es ETL_EXPORT_DIR (por defecto etl/data/exports/).
-CURADO_SALIDA ?= catalogo-curado.csv.gz
+# Solo un NOMBRE (sin carpeta ni extensión): el export es un .zip con los datos y un LEEME.txt,
+# y va a ETL_EXPORT_DIR (por defecto etl/data/exports/).
+CURADO_SALIDA ?= catalogo-curado
 SEPA_MIN_FILAS ?= 1
 
 catalogo-csv-exportar: $(PY) ## Arma el CSV curado desde OFF/SEPA locales: make catalogo-csv-exportar [CURADO_SALIDA=...] [OFF_ARCHIVO=...] [SEPA_ARCHIVOS="a.zip b.zip"] [OFF_PAISES=] [SEPA_MIN_FILAS=1]
@@ -208,7 +209,7 @@ catalogo-csv-exportar: $(PY) ## Arma el CSV curado desde OFF/SEPA locales: make 
 	$(PY) -m etl.curado.exportar $(CURADO_SALIDA) $(if $(wildcard $(OFF_ARCHIVO)),--off $(OFF_ARCHIVO)) \
 		$(if $(SEPA_ARCHIVOS),--sepa $(SEPA_ARCHIVOS)) --paises "$(OFF_PAISES)" --sepa-min-filas $(SEPA_MIN_FILAS)
 
-catalogo-csv-exportar-base: $(PY) ## Vuelca el catálogo de la base al formato de intercambio v2 (con metadatos): make catalogo-csv-exportar-base [CURADO_SALIDA=nombre.csv.gz]
+catalogo-csv-exportar-base: $(PY) ## Vuelca el catálogo de la base al formato de intercambio v2 (con metadatos): make catalogo-csv-exportar-base [CURADO_SALIDA=nombre]
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m etl.curado.exportar_base $(CURADO_SALIDA)
 
@@ -216,6 +217,18 @@ catalogo-csv-importar: $(PY) ## Valida (simulacro) o importa un CSV curado: make
 	@test -n "$(ARCHIVO)" || { echo "Uso: make catalogo-csv-importar ARCHIVO=<csv curado> [APLICAR=1] [FORZAR=1]"; exit 1; }
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m etl.curado.importar "$(ARCHIVO)" $(if $(APLICAR),--aplicar) $(if $(FORZAR),--forzar)
+
+# Locales verificados para llevar a otra instalación (docs/09 §8): mismo esquema de nombre/zip.
+LOCALES_SALIDA ?= locales-intercambio
+
+locales-exportar: $(PY) ## Vuelca los locales verificados a un .zip: make locales-exportar [LOCALES_SALIDA=nombre] [TODOS=1]
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.locales_intercambio exportar $(LOCALES_SALIDA) $(if $(TODOS),--todos)
+
+locales-importar: $(PY) ## Valida (simulacro) o importa un export de locales: make locales-importar ARCHIVO=... [APLICAR=1]
+	@test -n "$(ARCHIVO)" || { echo "Uso: make locales-importar ARCHIVO=<zip de locales> [APLICAR=1]"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.locales_intercambio importar "$(ARCHIVO)" $(if $(APLICAR),--aplicar)
 
 # --- ETL desde el panel (docs/04 §10-A) ---------------------------------------
 etl-worker: $(PY) ## Worker local: toma de la cola de la base (DATABASE_URL, local o remota) los ETL pesados que lanzás desde el panel

@@ -72,14 +72,16 @@
                     <template x-if="p.tipo === 'entero'"><input type="number" x-model="etlForm[p.nombre]"></template>
                     <template x-if="p.tipo === 'fecha'"><input type="date" x-model="etlForm[p.nombre]"></template>
                     <template x-if="p.tipo === 'texto'"><input type="text" x-model="etlForm[p.nombre]"></template>
-                    <template x-if="p.tipo === 'nombre_archivo'"><input type="text" x-model="etlForm[p.nombre]" placeholder="mi-archivo.csv.gz" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" title="Solo el nombre, sin carpetas"></template>
+                    <template x-if="p.tipo === 'nombre_archivo'"><input type="text" x-model="etlForm[p.nombre]" placeholder="mi-export (sin extensión)" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" title="Solo un nombre: letras, números, punto y guion. La extensión la pone el sistema."></template>
                     <template x-if="p.tipo === 'opcion'">
                       <select x-model="etlForm[p.nombre]"><option value="">—</option><template x-for="o in p.opciones" :key="o"><option :value="o" x-text="o"></option></template></select>
                     </template>
                     <template x-if="p.tipo === 'archivo'">
                       <span>
-                        <input type="file" @change="subirArchivoEtl(p, $event)">
-                        <span class="suave" x-show="etlArchivos[p.nombre]" x-text="etlArchivos[p.nombre] ? 'Subido: ' + etlArchivos[p.nombre].nombre + ' (' + kb(etlArchivos[p.nombre].tamano) + ')' : ''"></span>
+                        <input type="file" accept=".zip,.csv,.gz,application/zip,text/csv" :disabled="etlSubiendo" @change="subirArchivoEtl(p, $event)">
+                        <small class="suave" x-show="etlSubiendo" style="display:block">Subiendo al servidor…</small>
+                        <small class="suave" x-show="!etlSubiendo && !etlArchivos[p.nombre]" style="display:block">Se sube apenas lo elegís.</small>
+                        <small class="suave" x-show="etlArchivos[p.nombre]" style="display:block" x-text="etlArchivos[p.nombre] ? 'Subido: ' + etlArchivos[p.nombre].nombre + ' (' + kb(etlArchivos[p.nombre].tamano) + ')' : ''"></small>
                       </span>
                     </template>
                     <span x-text="p.ayuda"></span>

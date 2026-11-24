@@ -167,6 +167,36 @@ async def _catalogo_exportar(p: dict, ctx) -> dict:
     return {"filas": r.filas, "sha256": r.sha256, "por_origen": dict(r.por_origen)}
 
 
+async def _locales_exportar(p: dict, ctx) -> dict:
+    from etl.comun.rutas import ruta_de_salida
+    from etl.locales_intercambio import exportar
+
+    destino = ruta_de_salida(p["salida"])
+    r = await exportar(destino, solo_verificados=p.get("solo_verificados", True))
+    ctx.log(f"Escrito {destino}\n{r.texto()}")
+    ctx.filas = r.filas
+    return {"filas": r.filas, "verificados": r.verificados, "sha256": r.sha256}
+
+
+async def _locales_importar(p: dict, ctx) -> dict:
+    from etl.locales_intercambio import importar
+
+    r = await importar(
+        p["archivo"], aplicar=p.get("aplicar", False), nombre_archivo=ctx.nombres.get("archivo")
+    )
+    ctx.log(r.texto())
+    ctx.filas = r.leidas
+    return {
+        "leidas": r.leidas,
+        "nuevos": r.nuevos,
+        "existentes": r.existentes,
+        "verificados_ahora": r.verificados_ahora,
+        "vinculos_nuevos": r.vinculos_nuevos,
+        "invalidas": dict(r.invalidas),
+        "sha256": r.sha256,
+    }
+
+
 _APLICAR = Param(
     "aplicar",
     "booleano",
@@ -180,12 +210,17 @@ DEFINICIONES: dict[str, Definicion] = {
         Definicion(
             "curado_importar",
             "Importar CSV curado",
-            "Importa un CSV curado (catalogo_curado_v1) al catálogo. Primero subilo y corré el "
+            "Importa un export de catálogo (catalogo_curado_v1 o v2, en .zip, .csv.gz o .csv) al catálogo. Primero subilo y corré el "
             "simulacro; si el reporte está bien, repetí con «aplicar». El archivo se borra al "
             "importar de verdad (o a las 24 h); queda su hash en el lote.",
             "web",
             (
-                Param("archivo", "archivo", True, "El CSV curado (.csv o .csv.gz, hasta 25 MB)."),
+                Param(
+                    "archivo",
+                    "archivo",
+                    True,
+                    "El .zip del export (sirve también .csv o .csv.gz). Hasta 25 MB.",
+                ),
                 _APLICAR,
                 Param(
                     "forzar",
@@ -335,16 +370,17 @@ DEFINICIONES: dict[str, Definicion] = {
         Definicion(
             "curado_exportar",
             "Armar el CSV curado",
-            "Arma el CSV curado desde OFF y SEPA de la máquina del worker (no toca la base).",
+            "Arma el catálogo curado desde OFF y SEPA de la máquina del worker (no toca la base). "
+            "Deja un .zip con el CSV y un LEEME.txt que cuenta qué reglas del normalizador se aplicaron.",
             "local",
             (
                 Param(
                     "salida",
                     "nombre_archivo",
                     True,
-                    "Nombre del archivo (.csv o .csv.gz). Se guarda en la carpeta de exports del "
-                    "worker (ETL_EXPORT_DIR), no hace falta poner ruta.",
-                    "catalogo-curado.csv.gz",
+                    "Solo un nombre, sin extensión ni carpeta. Se guarda como .zip (datos + "
+                    "LEEME.txt) en la carpeta de exports del worker (ETL_EXPORT_DIR).",
+                    "catalogo-curado",
                 ),
                 Param("off", "texto", ayuda="Volcado de OFF (opcional)."),
                 Param("sepa", "texto", ayuda="Zips de SEPA separados por espacio (opcional)."),
@@ -368,20 +404,65 @@ DEFINICIONES: dict[str, Definicion] = {
             "Exportar el catálogo (formato de intercambio)",
             "Vuelca el catálogo de la base al formato catalogo_curado_v2: los datos de cada "
             "producto más sus metadatos (origen, campos bloqueados, si lo cargó o revisó una "
-            "persona, sugerencias, avisos del normalizador, conflictos). Se puede importar acá "
-            "o en otro proyecto sin perder ese trabajo. Ver docs/09.",
+            "persona, sugerencias, avisos del normalizador, conflictos). Deja un .zip con el CSV "
+            "y un LEEME.txt que explica qué se hizo. Se puede importar acá o en otro proyecto sin "
+            "perder ese trabajo. Ver docs/09.",
             "local",
             (
                 Param(
                     "salida",
                     "nombre_archivo",
                     True,
-                    "Nombre del archivo (.csv o .csv.gz). Se guarda en la carpeta de exports del "
-                    "worker (ETL_EXPORT_DIR), no hace falta poner ruta.",
-                    "catalogo-intercambio.csv.gz",
+                    "Solo un nombre, sin extensión ni carpeta. Se guarda como .zip (datos + "
+                    "LEEME.txt) en la carpeta de exports del worker (ETL_EXPORT_DIR).",
+                    "catalogo-intercambio",
                 ),
             ),
             _catalogo_exportar,
+        ),
+        Definicion(
+            "locales_exportar",
+            "Exportar locales (formato de intercambio)",
+            "Vuelca los locales verificados a un .zip (CSV + LEEME.txt) para llevarlos a otra "
+            "instalación sin el modo migración. Lleva nombre, dirección, ubicación, fuente, "
+            "vínculos con OSM/SEPA, medios de pago y recargo; no lleva personas. Ver docs/09 §8.",
+            "local",
+            (
+                Param(
+                    "salida",
+                    "nombre_archivo",
+                    True,
+                    "Solo un nombre, sin extensión ni carpeta. Se guarda como .zip en la carpeta "
+                    "de exports del worker (ETL_EXPORT_DIR).",
+                    "locales-intercambio",
+                ),
+                Param(
+                    "solo_verificados",
+                    "booleano",
+                    default=True,
+                    ayuda="Solo los locales que un admin ya verificó. Destildalo para llevarlos todos.",
+                ),
+            ),
+            _locales_exportar,
+        ),
+        Definicion(
+            "locales_importar",
+            "Importar locales (formato de intercambio)",
+            "Suma a esta base los locales de un export de locales. Los que ya existen (mismo "
+            "vínculo OSM/SEPA o mismo nombre a pocos metros) no se pisan: solo se verifican si el "
+            "archivo los trae verificados. Primero el simulacro; si está bien, repetí con «aplicar».",
+            "web",
+            (
+                Param(
+                    "archivo",
+                    "archivo",
+                    True,
+                    "El .zip del export (sirve también .csv). Hasta 25 MB.",
+                ),
+                _APLICAR,
+            ),
+            _locales_importar,
+            consume_archivo_con="aplicar",
         ),
     ]
 }

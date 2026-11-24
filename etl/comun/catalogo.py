@@ -25,7 +25,8 @@ from decimal import Decimal
 
 import asyncpg
 
-from etl.comun.normalizar import NORMALIZADOR_VERSION, Entrada, normalizar, puntuar
+from etl.comun.normalizar import NORMALIZADOR_VERSION, Entrada, Salida, normalizar, puntuar
+from etl.comun.resumen import Trazas
 
 DATABASE_URL_LOCAL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 
@@ -57,6 +58,7 @@ class Reporte:
     catalogo_nuevos: int = 0
     catalogo_actualizados: int = 0
     conflictos_nuevos: int = 0
+    trazas: Trazas = field(default_factory=Trazas)  # qué reglas del normalizador se aplicaron
 
     @property
     def total_descartadas(self) -> int:
@@ -75,6 +77,8 @@ class Reporte:
         ]
         for motivo, n in self.descartadas.most_common():
             lineas.append(f"    {motivo}: {n}")
+        lineas.append("")
+        lineas.append(self.trazas.texto(self.leidas))
         return "\n".join(lineas)
 
 
@@ -252,6 +256,12 @@ _PEGAJOSOS = {"tamano_en_conflicto", "abreviado", "marca_en_nombre", "tamano_amb
 def normalizar_producto(p: Producto) -> tuple[Producto, frozenset[str]]:
     """Pasa lo que dice la fuente por el normalizador. El dato crudo sigue en `datos`.
     -> (producto normalizado, motivos pegajosos que detectó)."""
+    nuevo, pegajosos, _ = normalizar_con_traza(p)
+    return nuevo, pegajosos
+
+
+def normalizar_con_traza(p: Producto) -> tuple[Producto, frozenset[str], Salida]:
+    """Como `normalizar_producto`, y además la `Salida` (con las reglas que se aplicaron)."""
     tam = (p.tamano_valor, p.tamano_unidad) if p.tamano_valor and p.tamano_unidad else None
     s = normalizar(Entrada(p.nombre, p.marca, tam, bool(p.imagen_url)))
     nuevo = replace(
@@ -263,7 +273,7 @@ def normalizar_producto(p: Producto) -> tuple[Producto, frozenset[str]]:
         pack_cantidad=s.pack_cantidad,
         presentacion=s.presentacion,
     )
-    return nuevo, frozenset(s.motivos) & _PEGAJOSOS
+    return nuevo, frozenset(s.motivos) & _PEGAJOSOS, s
 
 
 # Motivos que una persona resuelve al corregir (y bloquear) ese campo: dejan de restar.
@@ -333,7 +343,11 @@ async def fusionar_lote(
     conn: asyncpg.Connection, fuente: str, productos: list[Producto], reporte: Reporte
 ) -> None:
     """Fusiona un lote (una transacción). EAN repetidos en el lote: gana el último."""
-    normalizados = {p.ean: normalizar_producto(p) for p in productos}
+    normalizados = {}
+    for p in productos:
+        nuevo, pegajosos, salida = normalizar_con_traza(p)
+        reporte.trazas.agregar(salida, p.nombre, nuevo.nombre)
+        normalizados[p.ean] = (nuevo, pegajosos)
     unicos = {ean: n[0] for ean, n in normalizados.items()}
     pegajosos = {ean: (n[0].nombre, n[1]) for ean, n in normalizados.items()}
     if not unicos:

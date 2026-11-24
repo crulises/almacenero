@@ -365,6 +365,9 @@ Un reporte con solo totales no dice **qué se le hizo a los datos**. Por eso:
   llano (qué hace y un ejemplo). **Regla del equipo:** al sumar una regla al normalizador, sumar su
   id a `TRANSFORMACIONES` y su texto acá; si falta, el test de cobertura falla.
 - `etl/comun/resumen.py` arma el informe: cuántos productos tocó cada regla, ejemplos «antes →
+- Las **cargas** (SEPA, OFF, importar curado) y el **armado del curado desde las fuentes** también
+  imprimen ese informe al final (`Reporte.trazas`, `etl/comun/catalogo.py`), y el `LEEME.txt` del `.zip`
+  del export lo copia: así quien recibe el archivo sabe qué reglas se aplicaron a los datos.
   después», las abreviaturas más usadas y por qué bajan de puntaje.
 - `make catalogo-calidad` y `make catalogo-renormalizar` (y las mismas ejecuciones del panel) lo
   imprimen, junto con la lista de reglas en orden. En la calidad, `muestra` y `estado` eligen los

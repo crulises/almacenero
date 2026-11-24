@@ -104,6 +104,7 @@ class ReporteImport:
             )
         if self.lote_id:
             lineas.append(f"Lote registrado: {self.lote_id}")
+        lineas += ["", self.fusion.trazas.texto(self.validas)]
         return "\n".join(lineas)
 
 
@@ -316,7 +317,7 @@ async def importar(
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("archivo", type=Path, help="CSV curado (.csv o .csv.gz)")
+    ap.add_argument("archivo", type=Path, help="export curado (.zip, .csv.gz o .csv)")
     ap.add_argument("--aplicar", action="store_true", help="escribe (sin esto es un simulacro)")
     ap.add_argument("--forzar", action="store_true", help="importar aunque ya se haya importado")
     ap.add_argument("--lote", type=int, default=20_000)

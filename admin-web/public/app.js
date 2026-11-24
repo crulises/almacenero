@@ -53,6 +53,7 @@ function panel() {
     etlClave: "",
     etlForm: {},
     etlArchivos: {},  // parámetro -> {id, nombre, tamano} ya subido
+    etlSubiendo: false,
     etlEnviando: false,
     etlDetalle: null,
     _etlTimer: null,
@@ -662,11 +663,13 @@ function panel() {
     async subirArchivoEtl(p, evento) {
       const f = evento.target.files[0];
       if (!f) return;
+      this.etlSubiendo = true;
       await this.intentar(async () => {
         const a = await this.api(`/admin/etl/archivos?nombre=${encodeURIComponent(f.name)}`, { method: "POST", crudo: f });
         this.etlArchivos[p.nombre] = a; this.etlForm[p.nombre] = a.id;
         this.avisar(`Archivo subido (${this.kb(a.tamano)}): se borra al importar de verdad o a las 24 h`);
       });
+      this.etlSubiendo = false;
       evento.target.value = "";
     },
     parametrosEtl() {

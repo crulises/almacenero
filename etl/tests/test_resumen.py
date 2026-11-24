@@ -39,3 +39,14 @@ def test_explicar_motivos_en_lenguaje_llano():
     texto = explicar_motivos({"sin_tamano": 50, "abreviado": 5}, total=100)
     assert "no tiene tamaño" in texto and "50,0 %" in texto and "abreviatura ambigua" in texto
     assert texto.index("sin_tamano") < texto.index("abreviado")  # de más a menos
+
+
+def test_el_reporte_de_una_carga_imprime_las_reglas_aplicadas():
+    from etl.comun.catalogo import Producto, Reporte, normalizar_con_traza
+
+    reporte = Reporte(leidas=1)
+    assert "Transformaciones: ninguna" in reporte.texto()
+    p = Producto("7790070411112", "ACEITE GIRASOL COCINERO 900 CC", "COCINERO")
+    nuevo, _, salida = normalizar_con_traza(p)
+    reporte.trazas.agregar(salida, p.nombre, nuevo.nombre)
+    assert "Transformaciones aplicadas (1 productos afectados de 1)" in reporte.texto()

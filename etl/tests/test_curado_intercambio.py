@@ -220,3 +220,29 @@ def test_un_producto_manual_con_ean_de_digito_dudoso_viaja_igual(tmp_path):
     asyncio.run(exportar_base(ruta, prefijo_ean="79999"))
     r = asyncio.run(importar(ruta, aplicar=False))
     assert (r.validas, r.invalidas.total()) == (1, 0)
+
+
+def test_zip_con_leeme_y_ida_y_vuelta(tmp_path, usuario):
+    import zipfile
+
+    from etl.comun.paquete import LEEME
+
+    a, b, d = db(lambda c: _sembrar(c, usuario))
+    ruta = tmp_path / "test-base.zip"
+    r = asyncio.run(exportar_base(ruta, prefijo_ean="79999"))
+    with zipfile.ZipFile(ruta) as z:
+        assert z.namelist() == [LEEME, "test-base.csv"]
+        leeme = z.read(LEEME).decode()
+    assert r.sha256 in leeme
+    # cuenta qué se hizo con los productos
+    assert "cargados o corregidos a mano por una persona: 1" in leeme
+    assert "con conflictos entre fuentes sin resolver: 1" in leeme
+    assert "nombre: 1" in leeme and "tamano: 1" in leeme  # campos bloqueados
+    assert "Reglas del normalizador" in leeme
+    assert str(usuario) not in leeme
+    # importar el .zip tal cual: no cambia nada
+    rep = asyncio.run(importar(ruta, aplicar=False, nombre_archivo="test-base.zip"))
+    assert (rep.leidas, rep.invalidas) == (3, {})
+    assert rep.cambiados == 0 and rep.cambia_origen == 0
+    # y el reporte del import dice qué reglas aplicó
+    assert "Transformaciones" in rep.texto()

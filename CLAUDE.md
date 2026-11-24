@@ -109,7 +109,10 @@ Toda la lógica operativa va en el Makefile. CI solo llama a estos targets.
 - `make catalogo-csv-exportar` / `make catalogo-csv-exportar-base` / `make catalogo-csv-importar
   ARCHIVO=... [APLICAR=1]` — arma el CSV curado desde OFF/SEPA locales (reproducible) / vuelca el
   catálogo de la base con sus metadatos (formato v2, Doc 9) / lo valida en seco o lo importa (Doc 4
-  §10-B). Los exports piden solo un **nombre** de archivo; la carpeta es `ETL_EXPORT_DIR`.
+  §10-B). Los exports piden solo un **nombre** (sin extensión): dejan un `.zip` (CSV + `LEEME.txt`)
+  en `ETL_EXPORT_DIR`.
+- `make locales-exportar [TODOS=1]` / `make locales-importar ARCHIVO=... [APLICAR=1]` — llevan los
+  locales verificados de una instalación a otra (Doc 9 §8).
 - `make etl-worker` — worker local: toma de la cola (DATABASE_URL) los ETL pesados que se lanzan desde el
   panel web (sección ETL; Doc 4 §10-A).
 - `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel
