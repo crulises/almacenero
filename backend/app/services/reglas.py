@@ -123,7 +123,7 @@ REGLAS: dict[str, Regla] = {
         Regla(
             "etl_archivo_inexistente",
             "El archivo ya no está",
-            "El archivo de esa ejecución ya no existe: se borra al importar de verdad o a las 24 h.",
+            "Ese archivo ya no existe: se borra al importar de verdad o a las 24 h.",
             "Subilo de nuevo.",
         ),
         Regla(
