@@ -1199,12 +1199,182 @@ reventó con un 500 mudo (`pack_cantidad_check`) y el panel solo mostraba «Fail
 | 16 | ✅ **App: ficha normalizada y sugerir** (`app/`) | nombre limpio + marca · tamaño · presentación; acción «Sugerir / dar de alta» solo para moderadores. Se acuerda el diseño antes de tocar. | medio |
 | 17 | ✅ **CSV curado por CLI** | `catalogo_lotes`, fuente `curado`, formato `catalogo_curado_v1`, `make catalogo-curado` (genera) y `make catalogo-importar` (valida en seco + importa), hashes. | medio |
 | 18 | ✅ **ETL desde el panel** | `etl_ejecuciones`, registro de definiciones, worker `web` y `local`, API `/v1/admin/etl`, sección ETL con formularios generados, cancelación, auditoría, subida del CSV por el panel. | grande |
+| 19 | 📋 **Dashboard de admin** (planificado) | `eventos` genéricos + tarjetas de precios/usuarios/invitaciones, rankings, mapa de zonas y exportación programada de eventos (§11). | grande, en 3 partes (19a, 19b, 19c) |
 
 **Orden y por qué:** 13 → 14 → 15 → 16 → (release) → 17 → 18. Hasta el 16 inclusive el release
 sale con datos normalizados, un tablero para revisar lo dudoso, una forma de completar lo
 descartado y el moderador listo. Para cargar la base de producción **no hace falta** el panel de
 ETL: se corre el ETL desde tu Mac con `DATABASE_URL` remoto (es lo que hace el worker local de
 todos modos), así que 17 y 18 pueden ir después del primer reparto sin bloquearlo.
+
+## 11. Dashboard de admin como landing (corte 19, planificado)
+
+Estado: **solo diseñado** (2026-11-24, pedido del dueño). No se implementa dentro del PR de los
+cortes 17-18. Va en su propia rama (`feat/dashboard-admin`) y en tres partes.
+
+> **Versionado:** el esquema de versiones de release cambió. Lo que este plan llama «v0.0.1» y
+> «v0.0.2» son **nombres históricos de planes**, no versiones vigentes: la 0.0.1 es una compilación
+> vieja. El próximo release es **0.1.x**. La app que **emite eventos** (§11.2) sale en esa línea;
+> la **validación colaborativa** (y por lo tanto la tarjeta «precios validados») probablemente en
+> **0.2.x o posterior**. El panel y el backend no dependen de la versión de la app: se despliegan solos.
+
+### 11.1 Qué muestra (la pantalla de inicio del panel)
+
+| Bloque | Qué cuenta | De dónde sale | Estado de los datos |
+|---|---|---|---|
+| **Precios cargados** | Por hora, día, semana y mes | `precios.created_at` | ya hay |
+| **Precios validados** | Igual que arriba | `validaciones` | queda en **0** hasta que exista la validación colaborativa (0.2.x+); la tarjeta se dibuja igual para no rehacerla |
+| **Usuarios activos anónimos / registrados** | Distintos usuarios con actividad en el período, separados por `usuarios.es_anonimo` | `eventos` + `precios` + `sugerencias_catalogo` | parcial hasta que la app emita eventos (§11.2) |
+| **Invitaciones** | Enviadas, aceptadas, pendientes (y vencidas, que no son pendientes) | `invitaciones` | ya hay |
+| **Productos estrella** | Los EAN más escaneados por **usuarios distintos** (no por escaneos repetidos de uno solo) | `eventos` (`producto.escaneado`) | vacío hasta que la app emita eventos |
+| **Rankings de usuarios** | Quién más carga productos nuevos, precios y sugerencias (alias, nunca email) | `productos_canonicos` (origen manual) / `precios` / `sugerencias_catalogo` | ya hay |
+| **Zonas con más actividad** | Mapa con celdas sombreadas en verde según la cantidad de precios cargados | `precios` + `locales.ubicacion` | ya hay |
+
+- **«Usuario activo»** = tuvo al menos un evento, un precio o una sugerencia en el período. Hoy no
+  hay forma de saber que alguien abrió la app y no hizo nada: por eso la app va a emitir un evento
+  `app.abierta` (una vez por sesión). Hasta entonces los activos son un piso, no el total.
+- **«Mejores precios»** empieza como **densidad de precios cargados** por zona (lo pedido). «Precio
+  relativo al promedio» (zona más barata) es una **segunda etapa**: hay que normalizar por producto
+  para no comparar un aceite con un fideo. Queda anotado, no se diseña ahora.
+- **Orden de las partes:** **19a** tarjetas y series que ya tienen datos (precios, invitaciones,
+  usuarios por precios/sugerencias, rankings) + zona horaria; **19b** `eventos`, endpoint, cambio
+  mínimo en la app, productos estrella y usuarios activos reales; **19c** mapa y exportación
+  (manual y programada). Solo 19b toca `app/`.
+
+### 11.2 Eventos: una tabla genérica, no una por concepto
+
+Hoy el único evento que querés guardar es el escaneo, pero van a aparecer más. Se arma **una tabla
+genérica** y un **registro de tipos** (como el registro de ETL), así un evento nuevo es agregar una
+entrada en código, no una migración.
+
+```
+eventos
+  id            bigint generated always as identity primary key
+  tipo          text        not null  check (tipo ~ '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$')   -- 'producto.escaneado'
+  ocurrio_en    timestamptz not null  default now()        -- el instante (UTC), lo pone el servidor
+  usuario_id    uuid        references usuarios (id) on delete set null
+  entidad       text        null      -- 'producto', 'local'… (para agrupar sin abrir el json)
+  entidad_ref   text        null      -- el EAN, el id del local…
+  datos         jsonb       not null  default '{}'         -- lo propio de cada tipo
+  indices: (tipo, ocurrio_en), (tipo, entidad_ref), (usuario_id, ocurrio_en)
+```
+
+- **Registro de tipos** (`backend/app/services/eventos.py`): por cada tipo, qué `datos` acepta
+  (esquema Pydantic), si lo puede mandar la app (`desde_app`) o solo el backend, y si cuenta como
+  «actividad» del usuario. Un tipo desconocido se rechaza (400): nadie llena la tabla con basura.
+- **Tipos iniciales:** `producto.escaneado` (`datos: {ean, encontrado: bool}`) y `app.abierta`.
+  Candidatos futuros, **sin implementar**: `producto.consultado`, `local.consultado`,
+  `precio.visto`. Agregarlos no cambia el esquema.
+- **Endpoint:** `POST /v1/eventos` recibe una **lista** (hasta 50) para que la app pueda juntar y
+  mandar de a tandas sin gastar batería. Autenticado, con rate limit. El instante lo pone el
+  servidor; si la app manda el suyo (`ocurrio_en_cliente`), se guarda aparte en `datos` y nunca se usa
+  para agrupar (los relojes de los celulares mienten).
+- **Privacidad:** el evento lleva el id del usuario y nada más personal (sin ubicación, sin texto
+  libre). Los tipos nuevos pasan por esa misma revisión antes de entrar al registro.
+- **Retención:** `config.eventos_max_filas` (por defecto **100 000**, configurable). Al pasarlo, el
+  dashboard avisa y ofrece exportar (§11.4). Si hace falta más adelante, la tabla se puede
+  particionar por mes sin cambiar el código (por eso el índice empieza por `tipo, ocurrio_en`).
+
+### 11.3 Zona horaria: UTC por dentro, Buenos Aires solo al mostrar
+
+**Estado verificado el 2026-11-24:** la base local tiene `timezone = UTC` y **no hay ninguna columna
+`timestamp without time zone`** (todas son `timestamptz`). Pero el pool del backend **no fija** la zona
+de la sesión: hoy depende de lo que traiga el servidor. Ese es el hueco a cerrar, porque con otro
+proveedor podría ser otra.
+
+Reglas (se escriben también en el Doc 2, «Tiempo y zona horaria», porque valen para todo el proyecto):
+
+1. **Todo instante es `timestamptz`.** Nunca `timestamp` sin zona. Un test recorre
+   `information_schema.columns` y falla si aparece una (así una migración futura no la cuela).
+2. **La sesión siempre en UTC, la fijamos nosotros.** El pool del backend y la conexión de los ETL
+   (`etl/comun/catalogo.py::conectar`) crean cada conexión con `server_settings={"timezone": "UTC"}`.
+   Así el resultado **no depende** del valor por defecto de Supabase ni del proveedor al que nos
+   mudemos. Al arrancar, el backend verifica `show timezone` y, si no es UTC, lo registra en el log.
+3. **Dónde ocurre la conversión a hora argentina: una sola vez, al armar la respuesta del dashboard.**
+   La zona sale de `config.panel_zona_horaria` (por defecto `America/Buenos_Aires`) y se valida contra
+   `pg_timezone_names`. El resto del sistema no sabe que existe.
+4. **Por qué no hay riesgo de «argentino a argentino»:** la doble conversión solo pasa con valores
+   **sin** zona (`timestamp`), que se reinterpretan según la zona de quien los lea. Con `timestamptz` el
+   valor es un instante absoluto y `ts AT TIME ZONE 'America/Buenos_Aires'` solo lo **expresa** en hora
+   local; no lo reinterpreta. Aun así, para que no haya que confiar en eso, la regla 1 y la 2 impiden
+   que exista un valor ambiguo.
+5. **Cómo se agrupa por hora/día/semana/mes:** el backend recibe `granularidad` y la zona, y calcula
+   `date_trunc(g, ts AT TIME ZONE zona) AT TIME ZONE zona`, o sea que cada bucket **vuelve como un
+   instante UTC** (`inicio_utc`, ISO-8601 con `Z`) que es el comienzo del bucket local. El panel solo
+   formatea con `Intl.DateTimeFormat(..., {timeZone})`. Un «día argentino» arranca a las 00:00
+   GMT-3 = 03:00 UTC: agrupar por día **UTC** y rotular como argentino daría días corridos 3 horas,
+   y por eso el día se agrupa en la zona, no en UTC. Argentina no tiene horario de verano hoy, pero
+   el cálculo no lo asume (una zona con DST también da buckets correctos, de 23 o 25 horas).
+   La semana empieza el lunes (ISO).
+6. **Tests que lo fijan** (Postgres real): (a) datos sembrados cerca de la medianoche argentina caen
+   en el día correcto; (b) el resultado es idéntico con `set timezone = 'UTC'` que con
+   `'America/Buenos_Aires'` y `'Asia/Tokyo'` en la sesión; (c) el test de «sin columnas `timestamp`»;
+   (d) la zona inválida da 422.
+
+### 11.4 Exportar y vaciar eventos (manual y programado)
+
+Objetivo: que la tabla no crezca sin límite **y** que no dependa de una persona acordarse.
+
+- **Formato:** el mismo criterio que los demás exports (Doc 9): `.zip` con `eventos.csv` y un `LEEME.txt`,
+  nombre sin extensión, hash del contenido. Columnas: `id, tipo, ocurrio_en (UTC, ISO-8601 con Z),
+  usuario_id (uuid), entidad, entidad_ref, datos (json)`. Es un export **de análisis**, no de
+  intercambio: lleva ids de usuario (es el dato que se quiere analizar), así que no se comparte afuera
+  sin anonimizar; el `LEEME.txt` lo dice.
+- **ETL nuevo** `eventos_exportar` (parámetros: `tipo` opcional, `hasta` opcional, `borrar`
+  sí/no). Corre por la cola de siempre y queda en el historial y la auditoría.
+- **El borrado es seguro por construcción:** se exporta todo lo que tenga `id <= N` (N fijado al
+  empezar), se comprueba que el archivo quedó guardado **y** que su hash/cantidad coinciden, y recién
+  ahí se borran **solo** esas filas, en una transacción, y se anota en `eventos_exportaciones` (id,
+  tipo, rango de ids, filas, sha256, nombre, cuándo). Si algo falla, no se borra nada.
+- **Dónde queda el archivo:** el disco del backend desplegado (Fly) es efímero, así que un export
+  programado **no puede** quedar ahí. Decisión propuesta: un **bucket S3-compatible** (Supabase Storage
+  hoy, el que sea mañana) configurado por variables de entorno; el panel lista las exportaciones y
+  deja descargarlas. El worker local sigue pudiendo escribir en `ETL_EXPORT_DIR`. *Decisión a confirmar
+  en 19c: si el bucket es de Supabase o aparte.*
+- **Programación:** no hay un planificador en el proyecto. Se agrega una tabla genérica
+  `etl_programaciones` (ETL, parámetros, expresión cron **interpretada en UTC**, activa, última y
+  próxima corrida, última ejecución) y un ciclo liviano dentro del proceso web que, con
+  `pg_try_advisory_lock` (para que con varias réplicas corra una sola), encola en la **misma** cola
+  `etl_ejecuciones`. Sirve para eventos y también para cualquier otro ETL. Se administra desde la
+  sección ETL; el panel muestra la hora en Buenos Aires y guarda UTC. No se usa `pg_cron` a propósito:
+  ata el proyecto a una extensión del proveedor (regla de «nada acoplado a Supabase»).
+- **Disparador por umbral:** además del cron, si `eventos_max_filas` se supera y la programación está
+  activa con «exportar al pasar el umbral», el ciclo encola el export. Si no, el dashboard solo avisa
+  (banner con el conteo y el botón «Exportar ahora»).
+
+### 11.5 API, permisos y pantalla
+
+- `GET /v1/admin/dashboard/resumen?desde=&hasta=` (tarjetas), `GET /v1/admin/dashboard/series?metrica=precios|validaciones|activos&granularidad=hora|dia|semana|mes&desde=&hasta=&zona=`,
+  `GET .../rankings?tipo=productos|precios|sugerencias`, `GET .../estrellas`, `GET .../zonas`
+  (GeoJSON de celdas con conteo). Sin tablas precalculadas: con el volumen actual alcanzan consultas
+  directas con los índices que ya hay; si un día pesan, se agregan vistas materializadas sin cambiar la API.
+- **Permiso nuevo** `dashboard.ver` (admin; el moderador no). Los datos de usuarios muestran **alias**.
+- **Mapa:** Leaflet (CDN fijado, como el resto del panel estático) sobre tiles de OpenStreetMap; las
+  celdas salen de una grilla en PostGIS (`ST_SnapToGrid`, tamaño en `config.dashboard_celda_m`,
+  ~1 km por defecto) y se sombrean en verde por cuantiles. Solo se dibujan celdas con al menos
+  `dashboard_celda_min_precios` precios (evita señalar un comercio suelto). Los tiles de OSM tienen
+  política de uso: sirven para un panel interno; si el panel se vuelve público o muy usado, se cambia
+  de proveedor.
+- **Landing:** el panel abre en el dashboard (hoy abre en Locales); el resto del menú queda igual.
+  Selector de período (hoy, 7 días, 30 días, mes, rango) y de granularidad.
+
+### 11.6 Fuera de alcance de este corte
+
+Validación colaborativa (hasta 0.2.x), «precio relativo al promedio», alertas por mail, dashboards
+públicos y particionado de `eventos` (se deja preparado, no se hace).
+
+### 11.7 Orden de trabajo y qué debe quedar probado
+
+1. **19a (sin tocar la app):** reglas de zona horaria (pool y ETL en UTC, test de columnas, aviso al
+   arrancar) + `GET /dashboard/*` de precios, validaciones, invitaciones, rankings y zonas + landing.
+2. **19b (toca `app/`, va con el release 0.1.x):** migración `eventos`, registro de tipos,
+   `POST /v1/eventos`, la app emite `producto.escaneado` y `app.abierta` (en lote, tolerando estar
+   sin red: si falla, descarta, **nunca** bloquea escanear), productos estrella y activos reales.
+3. **19c:** `eventos_exportar`, `eventos_exportaciones`, `etl_programaciones` y el ciclo, bucket de
+   exportaciones, banner por umbral, mapa.
+
+Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs al día y PR propio
+(yo no mergeo).
 
 ## Decisiones
 
