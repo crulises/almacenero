@@ -15,9 +15,18 @@ import 'sugerir_screen.dart';
 /// Ficha de un producto buscado por EAN: cuánto sale en cada local (mapa + lista
 /// con la frescura de cada precio) y su historial.
 class ProductScreen extends StatefulWidget {
-  const ProductScreen({super.key, required this.ean, required this.deps});
+  const ProductScreen({
+    super.key,
+    required this.ean,
+    required this.deps,
+    this.via,
+  });
 
   final String ean;
+
+  /// Cómo se llegó al código: `camara` o `manual` (tipeado). Si viene, se anota el evento
+  /// `producto.escaneado` (con esa `via`) cuando se sabe si el producto está en el catálogo.
+  final String? via;
   final AppDeps deps;
 
   @override
@@ -26,6 +35,37 @@ class ProductScreen extends StatefulWidget {
 
 class _ProductScreenState extends State<ProductScreen> {
   late Future<Producto> _producto = widget.deps.loadProducto(widget.ean);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.via != null) _anotarEscaneo();
+  }
+
+  /// `encontrado` se sabe recién con la respuesta: 200 = sí, 404 = no. Cualquier otro
+  /// fallo (sin red, 5xx) no dice nada del catálogo y no se anota. Los reintentos de la
+  /// pantalla no repiten el evento.
+  void _anotarEscaneo() {
+    final ean = widget.ean;
+    final via = widget.via;
+    _producto.then<void>(
+      (_) => widget.deps.registrarEvento('producto.escaneado', {
+        'ean': ean,
+        'encontrado': true,
+        'via': via,
+      }),
+      onError: (Object e) {
+        if (clasificarError(e) == ProductoError.noEncontrado) {
+          widget.deps.registrarEvento('producto.escaneado', {
+            'ean': ean,
+            'encontrado': false,
+            'via': via,
+          });
+        }
+      },
+    );
+  }
+
   late Future<List<PrecioVigente>> _vigentes = _cargarVigentes();
 
   /// Para saber si puede cargar. Si falla se asume que sí: el backend decide.

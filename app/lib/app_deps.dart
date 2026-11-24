@@ -25,8 +25,14 @@ Future<SugerenciaEnviada> _sinSugerir({
 
 Future<List<Estandar>> _sinEstandares() async => const [];
 
+void _sinEventos(String tipo, [Map<String, Object?> datos = const {}]) {}
+
+Future<void> _sinVaciar() async {}
+
 class AppDeps {
   const AppDeps({
+    this.registrarEvento = _sinEventos,
+    this.vaciarEventos = _sinVaciar,
     this.sugerir = _sinSugerir,
     this.loadEstandares = _sinEstandares,
     this.guardarInvitacion = _sinInvitacion,
@@ -45,6 +51,14 @@ class AppDeps {
     required this.loadHistorial,
     required this.loadVigentes,
   });
+
+  /// Anota un evento de producto (`producto.escaneado`, `app.abierta`). Síncrono y que
+  /// nunca falla: la cola los manda aparte (docs/04 §11.2). En los tests no hace nada.
+  final void Function(String tipo, [Map<String, Object?> datos])
+  registrarEvento;
+
+  /// Manda ya los eventos pendientes (al irse la app a segundo plano). Nunca lanza.
+  final Future<void> Function() vaciarEventos;
 
   /// Guarda el código de invitación que el usuario escribió (primer arranque).
   final Future<void> Function(String codigo) guardarInvitacion;

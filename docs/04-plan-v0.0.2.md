@@ -1209,8 +1209,9 @@ todos modos), así que 17 y 18 pueden ir después del primer reparto sin bloquea
 
 ## 11. Dashboard de admin como landing (corte 19, planificado)
 
-Estado: **solo diseñado** (2026-11-24, pedido del dueño). No se implementa dentro del PR de los
-cortes 17-18. Va en su propia rama (`feat/dashboard-admin`) y en tres partes.
+Estado: diseñado el 2026-11-24 (pedido del dueño). Va en tres partes, cada una en su rama y PR:
+**19b hecho** (rama `feat/eventos-app`, ver «Hecho en 19b» al final de §11.7); 19a y 19c pendientes. El
+dueño eligió este orden: 19b primero, probarlo en local/offline, y después 19a y 19c.
 
 > **Versionado:** el esquema de versiones de release cambió. Lo que este plan llama «v0.0.1» y
 > «v0.0.2» son **nombres históricos de planes**, no versiones vigentes: la 0.0.1 es una compilación
@@ -1396,6 +1397,41 @@ públicos y particionado de `eventos` (se deja preparado, no se hace).
 
 Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs al día y PR propio
 (yo no mergeo).
+
+**Hecho en 19b** (2026-11-24):
+
+- Migración `20261130000001_eventos.sql` (tabla e índices como en §11.2, con RLS activado y sin
+  políticas: solo el backend la toca). Config nueva: `eventos_max_filas` (100 000) y
+  `max_lotes_eventos_por_hora` (120), con default en `services/config.py` y en `seed.sql`.
+- `services/eventos.py` (registro: esquema de `datos` con `extra="forbid"`, `desde_app`,
+  `cuenta_como_actividad` —hoy falso en todos—, entidad/ref) y `POST /v1/eventos`. Reglas nuevas en el
+  catálogo `services/reglas.py`: `evento_tipo_desconocido` (400) y `evento_datos_invalidos` (422).
+- **Decisiones de más:** el lote es todo o nada; el rate limit es por **lotes** por usuario por hora
+  (reusa `ratelimit.limitar`, en memoria como el resto del anti-spam) y no por eventos; el `ean` del
+  escaneo se valida de 8 a 14 dígitos (un código escaneado no hallado en el catálogo igual es válido).
+- **Zona horaria (reglas 1 y 2 de §11.3):** pool y ETL en UTC, `verificar_utc` al arrancar y test de
+  columnas `timestamp`. Las reglas 3 a 6 (conversión, buckets) siguen para 19a.
+- **App:** `ColaEventos` en memoria (tope 200, lotes de 50, envío ~5 s después del primer evento nuevo y al irse a segundo plano,
+  timeout de 10 s por lote, descarte sin reintentar). `app.abierta` se anota al arrancar el proceso (no
+  al volver de segundo plano). `producto.escaneado` se anota **solo si se escaneó con la cámara** (no al
+  tipear el código) y **cuando se sabe `encontrado`** (200 → true, 404 → false); si el pedido falla por
+  red no se anota nada. El pedido es «silencioso»: no prende «Despertando servidor…».
+- **Ajustes tras la primera prueba en el celular (2026-11-24):**
+  - `producto.escaneado` ahora lleva `via` (`camara` | `manual`, opcional): un código **tipeado** también
+    se anota, porque un EAN inexistente no se puede escanear y no había forma de probar `encontrado:
+    false`. El dashboard de productos estrella podrá contar solo `camara`, o ambas.
+  - `app.abierta` lleva datos del celular, todos opcionales y **sin pedir permisos al usuario**:
+    `app_version`, `android`, `sdk`, `marca`, `modelo`, `idioma` y `red` (`wifi|movil|ethernet|otra|ninguna`).
+    Nunca: ubicación, nombre de la red (SSID), batería ni identificadores del aparato. `red` usa
+    `connectivity_plus`, que declara `ACCESS_NETWORK_STATE` (permiso «normal» de instalación, sin cartel).
+  - **Envío:** la cola manda solo ~5 s después del primer evento nuevo (antes: cada 60 s o al irse a
+    segundo plano, y por eso los eventos «aparecían» recién al salir de la app). También sigue mandando al
+    pasar a segundo plano. Si falla, se descarta y queda una línea en el log (`adb logcat | grep eventos`).
+  - Los tests de backend borran los eventos que crean (comparten base con el celular).
+- **Pendiente de 19b: productos estrella** (`GET .../estrellas`) van con el dashboard (19a/19c), porque
+  dependen del endpoint `/dashboard/*`; acá solo se guardan los datos.
+- Qué no se probó: nada contra un celular real ni contra el contenedor del backend (los tests de
+  backend corren la app en proceso contra Postgres real); ver los pasos manuales del PR.
 
 ## Decisiones
 

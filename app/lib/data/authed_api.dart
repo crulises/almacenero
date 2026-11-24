@@ -15,8 +15,14 @@ class AuthedApi {
   Future<List<dynamic>> getList(String path) =>
       _conReintento((token) => _api.getList(path, token: token));
 
-  Future<Map<String, dynamic>> post(String path, Map<String, dynamic> body) =>
-      _conReintento((token) => _api.post(path, body: body, token: token));
+  Future<Map<String, dynamic>> post(
+    String path,
+    Map<String, dynamic> body, {
+    bool silencioso = false,
+  }) => _conReintento(
+    (token) =>
+        _api.post(path, body: body, token: token, silencioso: silencioso),
+  );
 
   Future<T> _conReintento<T>(Future<T> Function(String token) llamada) async {
     try {

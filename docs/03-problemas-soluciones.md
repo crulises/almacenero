@@ -982,3 +982,38 @@ Decisiones en `docs/04` §9.
 - **Causa:** no hay un id común entre instalaciones (los uuid son locales a cada base).
 - **Solución:** se cruza por los vínculos con OSM/SEPA y, si no, por nombre + distancia (la regla del alta
   de locales); un local existente no se pisa (solo se verifica y se le suman vínculos). Doc 9 §8.
+
+### `make test` falla con `No such file ... backend/.venv/bin/python` en un worktree nuevo
+
+- **Síntoma:** en un worktree recién creado, `cd backend && .venv/bin/python -m pytest` no encuentra el
+  intérprete.
+- **Causa:** el `.venv` no se versiona: cada worktree tiene el suyo y empieza sin él.
+- **Solución:** `make venv` (lo crea e instala `backend[dev,etl]`); `make test` y `make lint` también
+  lo crean solos. Los tests igual usan **la misma base local** de los demás worktrees.
+
+### Los eventos de la app no llegan (y nadie se entera)
+
+- **Síntoma:** el celular escanea y `select count(*) from eventos` no sube.
+- **Causa posible:** es **a propósito silencioso**: la cola de la app descarta el lote si no hay red, si
+  el servidor tarda más de 10 s o si responde error (docs/04 §11.2). Además `producto.escaneado` solo se
+  anota cuando la app **sabe** si el producto existe (200 o 404); sin red al buscar el producto no hay
+  evento, y los eventos se mandan ~5 s después del primero (o al irse la app a segundo plano).
+  Ojo: **los tests de backend usan la misma base** que el celular; los de eventos limpian lo que
+  crean, pero filas viejas de antes del fixture (con `ocurrio_en_cliente` de 2001) son de pruebas.
+- **Solución:** para depurar, mirar los logs del backend (`docker compose logs backend | grep eventos`):
+  un 400 `evento_tipo_desconocido` / 422 `evento_datos_invalidos` explica qué regla se violó. Probar
+  con red, escanear un producto, mandar la app a segundo plano y esperar unos segundos.
+
+### La app no manda eventos (o falla algo «nuevo») y el código está bien: backend o APK de otro worktree
+
+- **Síntoma:** una función nueva no hace nada en el celular; en los logs del backend no aparece ningún
+  pedido a la ruta nueva (o aparece un 404), aunque los tests pasan.
+- **Causa:** el contenedor del backend (`almacenero-backend-1`) y el APK son **compartidos entre todos los
+  worktrees**: `make up` y `make apk` pisan el anterior con el código del worktree desde el que se corren. Y
+  el número de versión del APK sale de un contador del `.git` común, así que «0.0.16» no dice de qué rama
+  viene. Si la última vez se corrieron desde otra rama, el celular o el backend no tienen tu código.
+- **Solución:** correr `make up` y `make apk` desde el worktree que se quiere probar. Para comprobarlo:
+  el commit en «Acerca de» de la app tiene que ser el de `git rev-parse --short HEAD`, y
+  `docker inspect almacenero-backend-1 --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'`
+  tiene que dar la carpeta del worktree. Para ver si el backend tiene una ruta:
+  `curl -s localhost:8000/openapi.json | grep eventos`.

@@ -33,6 +33,10 @@ DEFAULTS: dict[str, Any] = {
     "mensajes_reglas": {},
     # Moderador (docs/04 §10-D): karma que gana al aprobarse una sugerencia suya.
     "karma_sugerencia_aprobada": 3,
+    # Eventos de producto (docs/04 §11.2): tope de filas antes de avisar/exportar (corte 19c) y
+    # de lotes por usuario por hora (la app junta los eventos y los manda de a tandas).
+    "eventos_max_filas": 100000,
+    "max_lotes_eventos_por_hora": 120,
 }
 
 

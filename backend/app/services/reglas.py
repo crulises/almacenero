@@ -134,6 +134,21 @@ REGLAS: dict[str, Regla] = {
             409,
         ),
         Regla(
+            "evento_tipo_desconocido",
+            "Tipo de evento conocido",
+            "Ese tipo de evento no existe o la app no lo puede mandar.",
+            "Mandá solo tipos del registro (producto.escaneado, app.abierta); los demás los "
+            "registra el backend o todavía no existen.",
+            400,
+        ),
+        Regla(
+            "evento_datos_invalidos",
+            "Datos del evento",
+            "Los datos del evento no cumplen lo que pide ese tipo: faltan campos, hay campos "
+            "de más (no se aceptan ubicación ni texto libre) o un valor tiene mal formato.",
+            "Corregí el campo indicado según el tipo de evento; se descartó todo el lote.",
+        ),
+        Regla(
             "error_interno",
             "Error interno",
             "Algo falló del lado del servidor y no pudimos completar la acción.",
