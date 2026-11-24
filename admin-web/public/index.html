@@ -47,6 +47,99 @@
         </button>
       </div>
 
+      <!-- ===================================================== DASHBOARD (inicio) -->
+      <section x-show="vista === 'dashboard'">
+        <div class="filtros">
+          <template x-for="[k, t] in [['hoy','Hoy'],['7d','7 días'],['30d','30 días'],['mes','Este mes'],['rango','Rango']]" :key="k">
+            <button :class="{primario: dash.periodo === k}" @click="elegirPeriodo(k)" x-text="t"></button>
+          </template>
+          <template x-if="dash.periodo === 'rango'">
+            <span class="filtros">
+              <input type="date" x-model="dash.desde" @change="cargarDashboard()">
+              <input type="date" x-model="dash.hasta" @change="cargarDashboard()">
+            </span>
+          </template>
+          <select x-model="dash.granularidad" @change="cargarDashboard()" title="Granularidad de la serie">
+            <option value="hora">Hora</option><option value="dia">Día</option><option value="semana">Semana</option><option value="mes">Mes</option>
+          </select>
+          <button @click="cargarDashboard()" :disabled="dash.cargando">Actualizar</button>
+          <span class="suave">Zona: <span class="mono" x-text="dash.zona"></span> (se cambia en Configuración: <span class="mono">panel_zona_horaria</span>)</span>
+        </div>
+
+        <template x-if="dash.resumen">
+          <div>
+            <div class="tarjetas">
+              <div class="tarjeta"><div class="suave">Precios cargados</div><div class="num" x-text="dash.resumen.precios.periodo"></div><div class="suave" x-text="'de ' + dash.resumen.precios.total + ' en total'"></div></div>
+              <div class="tarjeta"><div class="suave">Precios validados</div><div class="num" x-text="dash.resumen.validaciones.periodo"></div><div class="suave">llega con la validación colaborativa (0.2.x)</div></div>
+              <div class="tarjeta"><div class="suave" x-text="'Usuarios activos (' + dash.resumen.usuarios_activos.dias + ' días)'"></div>
+                <div class="num" x-text="dash.resumen.usuarios_activos.anonimos + dash.resumen.usuarios_activos.registrados"></div>
+                <div class="suave" x-text="dash.resumen.usuarios_activos.anonimos + ' anónimos · ' + dash.resumen.usuarios_activos.registrados + ' registrados'"></div></div>
+              <div class="tarjeta"><div class="suave">Invitaciones aceptadas</div><div class="num" x-text="dash.resumen.invitaciones.aceptadas_periodo"></div>
+                <div class="suave" x-text="dash.resumen.invitaciones.aceptadas_total + ' en total · ' + dash.resumen.invitaciones.emitidas + ' emitidas, ' + dash.resumen.invitaciones.disponibles + ' disponibles, ' + dash.resumen.invitaciones.vencidas + ' vencidas'"></div></div>
+            </div>
+
+            <div class="caja">
+              <h3>Serie
+                <select x-model="dash.metrica" @change="cargarDashboard()">
+                  <option value="precios">Precios cargados</option><option value="validaciones">Precios validados</option>
+                  <option value="activos">Usuarios activos</option><option value="invitaciones">Invitaciones aceptadas</option>
+                </select>
+                <span class="suave" x-show="dash.metrica === 'activos'">usuarios distintos por barra · <span class="leyenda anon"></span> anónimos <span class="leyenda reg"></span> registrados</span>
+              </h3>
+              <div class="barras" x-show="dash.serie && dash.serie.puntos.length">
+                <template x-for="p in (dash.serie?.puntos || [])" :key="p.inicio_utc">
+                  <div class="barra" :title="etiquetaBarra(p.inicio_utc) + ': ' + p.valor">
+                    <div class="col">
+                      <template x-if="p.anonimos === null">
+                        <div class="relleno" :style="'height:' + (100 * p.valor / maximoSerie()) + '%'"></div>
+                      </template>
+                      <template x-if="p.anonimos !== null">
+                        <div class="apilado" :style="'height:' + (100 * p.valor / maximoSerie()) + '%'">
+                          <div class="relleno anon" :style="'flex:' + p.anonimos"></div>
+                          <div class="relleno reg" :style="'flex:' + p.registrados"></div>
+                        </div>
+                      </template>
+                    </div>
+                    <div class="valor" x-text="p.valor"></div>
+                    <div class="eti" x-text="etiquetaBarra(p.inicio_utc)"></div>
+                  </div>
+                </template>
+              </div>
+              <p class="suave" x-show="dash.serie && !dash.serie.puntos.length">Sin datos en el período.</p>
+            </div>
+
+            <div class="dos">
+              <div class="caja">
+                <h3>Ranking de usuarios
+                  <select x-model="dash.rankTipo" @change="cargarDashboard()">
+                    <option value="precios">Precios cargados</option><option value="productos">Productos nuevos</option><option value="sugerencias">Sugerencias</option>
+                  </select></h3>
+                <table x-show="dash.ranking.length">
+                  <template x-for="(r, i) in dash.ranking" :key="r.id">
+                    <tr><td x-text="i + 1"></td><td x-text="r.alias"></td><td class="suave" x-text="r.es_anonimo ? 'anónimo' : r.rol"></td><td x-text="r.cantidad"></td></tr>
+                  </template>
+                </table>
+                <p class="suave" x-show="!dash.ranking.length">Nadie cargó nada en el período.</p>
+              </div>
+              <div class="caja">
+                <h3>Productos estrella
+                  <select x-model="dash.via" @change="cargarDashboard()">
+                    <option value="">Cámara y tipeado</option><option value="camara">Solo cámara</option><option value="manual">Solo tipeado</option>
+                  </select></h3>
+                <p class="suave">Los EAN escaneados por más <b>usuarios distintos</b> (no por repeticiones de uno solo).</p>
+                <table x-show="dash.estrellas.length">
+                  <template x-for="e in dash.estrellas" :key="e.ean">
+                    <tr><td class="mono" x-text="e.ean"></td><td x-text="e.nombre ? e.nombre + (e.marca ? ' · ' + e.marca : '') : '(fuera del catálogo)'"></td>
+                      <td x-text="e.usuarios + (e.usuarios === 1 ? ' usuario' : ' usuarios')"></td><td class="suave" x-text="e.escaneos + ' escaneos'"></td></tr>
+                  </template>
+                </table>
+                <p class="suave" x-show="!dash.estrellas.length">Sin escaneos en el período (la app los manda desde la 0.1.x).</p>
+              </div>
+            </div>
+          </div>
+        </template>
+      </section>
+
       <!-- ============================================================= ETL -->
       <section x-show="vista === 'etl'">
         <div class="caja">

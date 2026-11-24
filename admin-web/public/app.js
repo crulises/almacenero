@@ -17,7 +17,7 @@ const SECCIONES = {
 };
 
 const TITULOS = {
-  locales: "Locales", usuarios: "Usuarios", invitaciones: "Invitaciones", precios: "Precios", catalogo: "Catálogo",
+  dashboard: "Inicio", locales: "Locales", usuarios: "Usuarios", invitaciones: "Invitaciones", precios: "Precios", catalogo: "Catálogo",
   etl: "ETL", config: "Configuración", auditoria: "Auditoría", ayuda: "Ayuda",
 };
 
@@ -33,7 +33,7 @@ function panel() {
   return {
     API, TITULOS, sec,
     sesion: leerSesion(),
-    vista: "locales",
+    vista: "dashboard",
     subcatalogo: "productos",  // dentro de Catálogo: productos | sugerencias | alta | conflictos
     login: { email: "", password: "", error: "", enviando: false },
     config: [],
@@ -62,7 +62,7 @@ function panel() {
     toast: null,
     _t: null,
 
-    init() { if (this.sesion) this.cambiarVista("locales"); },
+    init() { if (this.sesion) this.cambiarVista("dashboard"); },
 
     // ------------------------------------------------------------- red
     async api(path, { method = "GET", body, crudo } = {}, reintento = true) {
@@ -143,7 +143,7 @@ function panel() {
         if (!r.ok) throw new Error(this.mensaje(d.detail) || `Error ${r.status}`);
         this.guardarSesion(d);
         this.login.password = "";
-        this.cambiarVista("locales");
+        this.cambiarVista("dashboard");
       } catch (e) {
         this.login.error = e instanceof TypeError ? "No puedo conectar con el backend (" + API + ")" : e.message;
       } finally { this.login.enviando = false; }
@@ -160,6 +160,7 @@ function panel() {
       this.vista = v;
       clearInterval(this._etlTimer);
       if (v === "etl") { this.iniciarEtl(); return; }
+      if (v === "dashboard") { this.cargarDashboard(); return; }
       if (v === "config") { this.cargarConfig(); this.cargarReglas(); }
       else if (v === "ayuda") this.cargarAyuda();
       else if (!(v === "catalogo" && this.subcatalogo === "alta")) this.cargar(v === "catalogo" ? this.subcatalogo : v);
@@ -188,6 +189,79 @@ function panel() {
       this.sec[vista].offset = 0;
       this.cambiarVista(vista);
     },
+
+    // --------------------------------------------------------- dashboard
+    // Docs/04 §11. El backend agrupa en la zona del panel y devuelve instantes UTC (con Z); acá
+    // solo se formatea con Intl en esa misma zona. Los períodos («hoy», «mes»…) arrancan en la
+    // medianoche de esa zona, no en la del navegador.
+    dash: {
+      periodo: "7d", granularidad: "dia", metrica: "precios", rankTipo: "precios", via: "",
+      desde: "", hasta: "",  // solo para «rango» (fechas AAAA-MM-DD en la zona del panel)
+      zona: "", resumen: null, serie: null, ranking: [], estrellas: [], cargando: false,
+    },
+    // Diferencia (min) entre la hora de pared de `zona` y UTC en el instante `t`.
+    _offsetMin(zona, t) {
+      const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+        timeZone: zona, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric",
+        hour: "numeric", minute: "numeric", second: "numeric",
+      }).formatToParts(t).map((x) => [x.type, +x.value]));
+      return (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(t.getTime() / 1000) * 1000) / 60000;
+    },
+    // Instante UTC de la medianoche, en `zona`, del día local y/m/d (d puede salirse del mes).
+    _medianoche(zona, y, m, d) {
+      const nominal = new Date(Date.UTC(y, m, d));
+      return new Date(nominal.getTime() - this._offsetMin(zona, nominal) * 60000);
+    },
+    _hoyLocal(zona) {
+      const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: zona, year: "numeric", month: "numeric", day: "numeric" })
+        .formatToParts(new Date()).map((x) => [x.type, +x.value]));
+      return { y: p.year, m: p.month - 1, d: p.day };
+    },
+    rangoDashboard() {
+      const z = this.dash.zona, { y, m, d } = this._hoyLocal(z), ahora = new Date();
+      const k = this.dash.periodo;
+      if (k === "hoy") return [this._medianoche(z, y, m, d), ahora];
+      if (k === "7d") return [this._medianoche(z, y, m, d - 6), ahora];
+      if (k === "30d") return [this._medianoche(z, y, m, d - 29), ahora];
+      if (k === "mes") return [this._medianoche(z, y, m, 1), ahora];
+      const f = (t) => { const [a, b, c] = t.split("-").map(Number); return [a, b - 1, c]; };
+      if (!this.dash.desde || !this.dash.hasta) return null;
+      const [y1, m1, d1] = f(this.dash.desde), [y2, m2, d2] = f(this.dash.hasta);
+      return [this._medianoche(z, y1, m1, d1), this._medianoche(z, y2, m2, d2 + 1)];
+    },
+    elegirPeriodo(k) {
+      this.dash.periodo = k;
+      this.dash.granularidad = k === "hoy" ? "hora" : "dia";
+      this.cargarDashboard();
+    },
+    async cargarDashboard() {
+      const D = this.dash;
+      D.cargando = true;
+      await this.intentar(async () => {
+        if (!D.zona) D.zona = (await this.api("/admin/dashboard/resumen")).zona;
+        const r = this.rangoDashboard();
+        if (!r) return;
+        const q = new URLSearchParams({ desde: r[0].toISOString(), hasta: r[1].toISOString(), zona: D.zona });
+        const qs = new URLSearchParams({ desde: q.get("desde"), hasta: q.get("hasta") });
+        const [resumen, serie, ranking, estrellas] = await Promise.all([
+          this.api(`/admin/dashboard/resumen?${q}`),
+          this.api(`/admin/dashboard/series?${new URLSearchParams({ metrica: D.metrica, granularidad: D.granularidad, desde: q.get("desde"), hasta: q.get("hasta"), zona: D.zona })}`),
+          this.api(`/admin/dashboard/rankings?${new URLSearchParams({ tipo: D.rankTipo, desde: q.get("desde"), hasta: q.get("hasta") })}`),
+          this.api(`/admin/dashboard/estrellas?${new URLSearchParams({ ...Object.fromEntries(qs), ...(D.via ? { via: D.via } : {}) })}`),
+        ]);
+        Object.assign(D, { resumen, serie, ranking, estrellas });
+      });
+      D.cargando = false;
+    },
+    // «01/03 14:00» en la zona del panel (el backend manda UTC; acá se muestra, no se calcula).
+    etiquetaBarra(iso) {
+      const o = { timeZone: this.dash.zona };
+      const g = this.dash.serie?.granularidad;
+      if (g === "hora") return new Intl.DateTimeFormat("es-AR", { ...o, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
+      if (g === "mes") return new Intl.DateTimeFormat("es-AR", { ...o, month: "short", year: "numeric" }).format(new Date(iso));
+      return new Intl.DateTimeFormat("es-AR", { ...o, day: "2-digit", month: "2-digit" }).format(new Date(iso));
+    },
+    maximoSerie() { return Math.max(1, ...(this.dash.serie?.puntos || []).map((p) => p.valor)); },
 
     // ---------------------------------------------------------- listados
     query(nombre, extra = {}) {

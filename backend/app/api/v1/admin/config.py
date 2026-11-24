@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from app.auth import Usuario
 from app.db import get_pool
-from app.services import auditoria
+from app.services import auditoria, dashboard
 from app.services.config import DEFAULTS
 from app.services.permisos import exigir
 
@@ -97,6 +97,15 @@ async def cambiar_config(
             raise HTTPException(
                 422, f"el valor tiene que ser de tipo {_tipo(actual)} (como el actual)"
             )
+        if clave == "panel_zona_horaria":
+            try:
+                await dashboard.zona_valida(conn, body.valor)
+            except dashboard.ZonaInvalida:
+                raise HTTPException(
+                    422, "esa zona horaria no existe: usá un nombre como America/Buenos_Aires"
+                ) from None
+        elif clave == "dashboard_activo_dias" and body.valor < 1:
+            raise HTTPException(422, "tiene que ser al menos 1 día")
         if clave in UMBRALES_KARMA:
             # Son negativos a propósito (karma <= umbral). La escalera tiene que bajar:
             # primero el aviso, después la restricción.

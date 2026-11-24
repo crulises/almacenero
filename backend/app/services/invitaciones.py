@@ -6,6 +6,7 @@ cómo se generan los PINs de un solo uso.
 """
 
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -19,42 +20,64 @@ def normalizar(codigo: str) -> str:
     return codigo.strip().lower()
 
 
-async def consumir(pool: asyncpg.Pool, codigo: str) -> UUID | None:
-    """Gasta un uso del código si existe, no venció y le quedan usos. Un único
-    UPDATE condicional: dos pedidos a la vez no pasan del tope (un PIN lo usa UNA
-    persona). None si no sirve (no se distingue el motivo: no hay que ayudar a
-    adivinar códigos)."""
-    return await pool.fetchval(
-        """
-        update invitaciones set usos = usos + 1, usada_at = now()
-        where codigo = $1
-          and (vence is null or vence > now())
-          and (usos_max is null or usos < usos_max)
-        returning id
-        """,
-        normalizar(codigo),
-    )
+@dataclass(frozen=True)
+class Uso:
+    """Un uso gastado: la invitación y la fila de `invitaciones_usos` que lo registra."""
+
+    invitacion_id: UUID
+    uso_id: int
 
 
-async def anotar_usuario(pool: asyncpg.Pool, invitacion_id: UUID, auth_id: UUID) -> None:
-    """Deja escrito quién usó el código (para el panel de admin)."""
-    await pool.execute(
-        "update invitaciones set usada_por_auth = $2 where id = $1", invitacion_id, auth_id
-    )
+async def consumir(pool: asyncpg.Pool, codigo: str) -> Uso | None:
+    """Gasta un uso del código si existe, no venció y le quedan usos, y lo anota en
+    `invitaciones_usos` (docs/04 §11). Un único UPDATE condicional: dos pedidos a la vez no pasan
+    del tope (un PIN lo usa UNA persona). None si no sirve (no se distingue el motivo: no hay
+    que ayudar a adivinar códigos)."""
+    async with pool.acquire() as conn, conn.transaction():
+        invitacion_id = await conn.fetchval(
+            """
+            update invitaciones set usos = usos + 1, usada_at = now()
+            where codigo = $1
+              and (vence is null or vence > now())
+              and (usos_max is null or usos < usos_max)
+            returning id
+            """,
+            normalizar(codigo),
+        )
+        if invitacion_id is None:
+            return None
+        uso_id = await conn.fetchval(
+            "insert into invitaciones_usos (invitacion_id) values ($1) returning id", invitacion_id
+        )
+        return Uso(invitacion_id, uso_id)
 
 
-async def devolver(pool: asyncpg.Pool, invitacion_id: UUID) -> None:
-    """Devuelve el uso si el alta falló después de gastarlo (proveedor caído)."""
-    await pool.execute(
-        """
-        update invitaciones
-        set usos = usos - 1,
-            usada_at = case when usos - 1 = 0 then null else usada_at end,
-            usada_por_auth = case when usos - 1 = 0 then null else usada_por_auth end
-        where id = $1 and usos > 0
-        """,
-        invitacion_id,
-    )
+async def anotar_usuario(pool: asyncpg.Pool, uso: Uso, auth_id: UUID) -> None:
+    """Deja escrito quién usó el código (para el panel de admin y la serie del dashboard)."""
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            "update invitaciones set usada_por_auth = $2 where id = $1", uso.invitacion_id, auth_id
+        )
+        await conn.execute(
+            "update invitaciones_usos set auth_id = $2 where id = $1", uso.uso_id, auth_id
+        )
+
+
+async def devolver(pool: asyncpg.Pool, uso: Uso) -> None:
+    """Devuelve el uso si el alta falló después de gastarlo (proveedor caído): baja el contador
+    y borra la fila de ese uso."""
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """
+            update invitaciones
+            set usos = usos - 1,
+                usada_at = case when usos - 1 = 0 then null else usada_at end,
+                usada_por_auth = case when usos - 1 = 0 then null else usada_por_auth end
+            where id = $1 and usos > 0
+            """,
+            uso.invitacion_id,
+        )
+        await conn.execute("delete from invitaciones_usos where id = $1", uso.uso_id)
 
 
 def pin_al_azar() -> str:

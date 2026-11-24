@@ -149,6 +149,22 @@ REGLAS: dict[str, Regla] = {
             "Corregí el campo indicado según el tipo de evento; se descartó todo el lote.",
         ),
         Regla(
+            "zona_invalida",
+            "Zona horaria conocida",
+            "Esa zona horaria no existe: tiene que ser un nombre de la base de zonas (IANA), "
+            "como America/Buenos_Aires.",
+            "Usá un nombre con el formato Continente/Ciudad (America/Buenos_Aires, UTC, "
+            "Europe/Madrid); no valen siglas como ART o EST.",
+        ),
+        Regla(
+            "periodo_invalido",
+            "Período del dashboard",
+            "El período no sirve: «desde» tiene que ser anterior a «hasta» y no puede dar más de "
+            "1000 barras en el gráfico.",
+            "Elegí un rango más corto o una granularidad más gruesa (por ejemplo día en vez de "
+            "hora).",
+        ),
+        Regla(
             "error_interno",
             "Error interno",
             "Algo falló del lado del servidor y no pudimos completar la acción.",
