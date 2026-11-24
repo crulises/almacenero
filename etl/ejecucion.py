@@ -238,7 +238,7 @@ async def bucle(
     """Hasta que `parar` se active: una vuelta cada `espera_s` si no había trabajo."""
     while not parar.is_set():
         try:
-            conn = await asyncpg.connect(url)
+            conn = await asyncpg.connect(url, server_settings={"timezone": "UTC"})
             try:
                 while not parar.is_set():
                     if not await ciclo(conn, ejecutor, **opciones):

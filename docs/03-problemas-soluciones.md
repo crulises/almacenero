@@ -982,3 +982,22 @@ Decisiones en `docs/04` §9.
 - **Causa:** no hay un id común entre instalaciones (los uuid son locales a cada base).
 - **Solución:** se cruza por los vínculos con OSM/SEPA y, si no, por nombre + distancia (la regla del alta
   de locales); un local existente no se pisa (solo se verifica y se le suman vínculos). Doc 9 §8.
+
+### `make test` falla con `No such file ... backend/.venv/bin/python` en un worktree nuevo
+
+- **Síntoma:** en un worktree recién creado, `cd backend && .venv/bin/python -m pytest` no encuentra el
+  intérprete.
+- **Causa:** el `.venv` no se versiona: cada worktree tiene el suyo y empieza sin él.
+- **Solución:** `make venv` (lo crea e instala `backend[dev,etl]`); `make test` y `make lint` también
+  lo crean solos. Los tests igual usan **la misma base local** de los demás worktrees.
+
+### Los eventos de la app no llegan (y nadie se entera)
+
+- **Síntoma:** el celular escanea y `select count(*) from eventos` no sube.
+- **Causa posible:** es **a propósito silencioso**: la cola de la app descarta el lote si no hay red, si
+  el servidor tarda más de 10 s o si responde error (docs/04 §11.2). Además `producto.escaneado` solo se
+  anota cuando la app **sabe** si el producto existe (200 o 404); sin red al buscar el producto no hay
+  evento, y los eventos se mandan cada 60 s o al irse la app a segundo plano.
+- **Solución:** para depurar, mirar los logs del backend (`docker compose logs backend | grep eventos`):
+  un 400 `evento_tipo_desconocido` / 422 `evento_datos_invalidos` explica qué regla se violó. Probar
+  con red, escanear un producto, mandar la app a segundo plano y esperar unos segundos.

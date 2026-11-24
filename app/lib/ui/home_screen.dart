@@ -53,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _escanear() async {
     final ean = await Navigator.of(context)
         .push<String>(MaterialPageRoute(builder: (_) => const ScanScreen()));
-    if (ean != null && mounted) _abrirProducto(ean);
+    if (ean != null && mounted) _abrirProducto(ean, escaneado: true);
   }
 
   void _buscarManual() {
@@ -66,10 +66,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _abrirProducto(ean);
   }
 
-  Future<void> _abrirProducto(String ean) async {
+  Future<void> _abrirProducto(String ean, {bool escaneado = false}) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ProductScreen(ean: ean, deps: widget.deps),
+        builder: (_) =>
+            ProductScreen(ean: ean, deps: widget.deps, escaneado: escaneado),
       ),
     );
     if (!mounted) return;

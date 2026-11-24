@@ -40,7 +40,10 @@ insert into config (clave, valor, rubro) values
     ('max_precios_por_dia',      '300', null),
     -- Moderación (docs/04 §9)
     ('karma_umbral_aviso',       '-5',  null),
-    ('karma_umbral_restriccion', '-15', null)
+    ('karma_umbral_restriccion', '-15', null),
+    -- Eventos de producto (docs/04 §11.2)
+    ('eventos_max_filas',        '100000', null),
+    ('max_lotes_eventos_por_hora', '120', null)
 on conflict do nothing;
 
 -- Invitación de desarrollo (en producción se crea otra: `make invitacion`).

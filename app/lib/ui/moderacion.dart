@@ -140,6 +140,9 @@ class _VigilanteDeCuentaState extends State<VigilanteDeCuenta>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState estado) {
+    if (estado == AppLifecycleState.paused) {
+      widget.deps.vaciarEventos().ignore(); // la app se va: se manda lo juntado
+    }
     if (estado == AppLifecycleState.resumed &&
         widget.deps.verificarCada != null) {
       _verificar();

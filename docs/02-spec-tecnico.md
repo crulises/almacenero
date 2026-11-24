@@ -132,13 +132,33 @@ Regla para todo el proyecto (decidida el 2026-11-24, a pedido del dueño; detall
   instantes ISO-8601 con `Z`. Con `timestamptz` convertir a hora local solo la expresa; no la
   reinterpreta, y por eso no hay riesgo de convertir «argentino a argentino».
 - Los relojes de los celulares **no** se usan para agrupar ni ordenar: el instante lo pone el servidor.
+- **Cómo se hace cumplir** (implementado en el corte 19b): el pool del backend
+  (`app/db.py::create_pool`) y las conexiones de los ETL (`etl/comun/catalogo.py::conectar`,
+  `etl/ejecucion.py`) se abren con `server_settings={"timezone": "UTC"}`; al arrancar el backend
+  verifica `show timezone` y, si no es UTC, lo deja en el log (`verificar_utc`). Los tests
+  `test_zona_horaria.py` fallan si aparece una columna `timestamp without time zone`. La conversión a
+  hora argentina para el dashboard (regla 3 en adelante de `docs/04` §11.3) es del corte 19a.
 
 ## Eventos de producto
 
 Lo que hace la gente en la app y conviene analizar (escanear, abrir la app…) se registra en **una tabla
-genérica `eventos`** con un registro de tipos en el backend, no una tabla por concepto. Un evento nuevo
-es una entrada en el registro, no una migración. Diseño completo en `docs/04` §11.2 (corte 19, aún no
-implementado). Los eventos llevan el id de usuario y nada más personal.
+genérica `eventos`** con un registro de tipos en el backend (`services/eventos.py`), no una tabla por
+concepto. Un evento nuevo es una entrada en el registro, no una migración. Diseño en `docs/04` §11.2.
+Los eventos llevan el id de usuario y nada más personal (sin ubicación ni texto libre).
+
+**Implementado (corte 19b):**
+
+- `POST /v1/eventos` recibe hasta 50 eventos `{tipo, datos, ocurrio_en_cliente?}`; todo o nada. Tipo
+  desconocido o solo del backend → 400 (`evento_tipo_desconocido`); `datos` inválidos → 422
+  (`evento_datos_invalidos`). Rate limit por usuario: `config.max_lotes_eventos_por_hora` (120).
+- `ocurrio_en` lo pone el servidor; el reloj del celular se guarda en `datos.ocurrio_en_cliente` y no se
+  usa para agrupar. Tipos iniciales: `producto.escaneado` y `app.abierta`.
+- **La app** (`app/lib/data/cola_eventos.dart`) junta los eventos en memoria y los manda cada 60 s o al
+  pasar a segundo plano. **Nunca estorba:** `registrar` es síncrono, el pedido es «silencioso» (no prende
+  «Despertando servidor…») y, si falla por lo que sea (sin red, timeout de 10 s, 4xx/5xx), el lote se
+  **descarta**, sin errores ni reintentos. No hay persistencia en disco: si el sistema mata la app, lo
+  pendiente se pierde (son estadísticas).
+- Retención (`config.eventos_max_filas`, 100 000): solo el valor; el aviso y la exportación son del 19c.
 
 ## Versionado de releases
 

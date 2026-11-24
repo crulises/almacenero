@@ -83,7 +83,8 @@ class Reporte:
 
 
 async def conectar() -> asyncpg.Connection:
-    return await asyncpg.connect(database_url())
+    # Sesión siempre en UTC (docs/04 §11.3): no depende del default del proveedor.
+    return await asyncpg.connect(database_url(), server_settings={"timezone": "UTC"})
 
 
 _CREAR_STAGING = """

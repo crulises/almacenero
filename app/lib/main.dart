@@ -7,6 +7,7 @@ import 'app_deps.dart';
 import 'data/api_client.dart';
 import 'data/app_info.dart';
 import 'data/auth_repository.dart';
+import 'data/cola_eventos.dart';
 import 'data/authed_api.dart';
 import 'data/local_repository.dart';
 import 'data/location_service.dart';
@@ -39,9 +40,15 @@ void main() {
   );
   final authed = AuthedApi(api: api, auth: auth);
   final location = LocationService();
+  // Eventos de estadística: en memoria, por lotes, y si no hay red se descartan.
+  final eventos = ColaEventos(enviar: EventosRepository(api: authed).enviar)
+    ..iniciar()
+    ..registrar('app.abierta');
   runApp(
     AlmaceneroApp(
       deps: AppDeps(
+        registrarEvento: eventos.registrar,
+        vaciarEventos: eventos.vaciar,
         cuentaBaja: cuentaBaja,
         despertando: api.despertando,
         verificarCada: const Duration(seconds: 30),

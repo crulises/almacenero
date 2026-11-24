@@ -124,19 +124,27 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
     String? token,
-  }) async =>
-      await _send('POST', path, body: body, token: token)
-          as Map<String, dynamic>;
+    bool silencioso = false,
+  }) async => await _send(
+    'POST',
+    path,
+    body: body,
+    token: token,
+    silencioso: silencioso,
+  ) as Map<String, dynamic>;
 
   Future<Object?> _send(
     String method,
     String path, {
     Map<String, dynamic>? body,
     String? token,
+    bool silencioso = false,
   }) async {
-    // El primer pedido tras un rato puede tardar (arranque en frío): se avisa.
+    // El primer pedido tras un rato puede tardar (arranque en frío): se avisa. Los pedidos
+    // `silencioso` (eventos de estadística) nunca muestran el aviso.
     var marcado = false;
     final aviso = Timer(avisarTras, () {
+      if (silencioso) return;
       marcado = true;
       despertando.value = ++_lentos > 0;
     });

@@ -5,6 +5,7 @@ from app.api.v1 import (
     auth,
     avisos,
     config,
+    eventos,
     health,
     locales,
     me,
@@ -20,6 +21,7 @@ router.include_router(auth.router)
 router.include_router(me.router)
 router.include_router(avisos.router)
 router.include_router(config.router)
+router.include_router(eventos.router)
 router.include_router(locales.router)
 router.include_router(productos.router)
 router.include_router(precios.router)
