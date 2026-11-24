@@ -1224,21 +1224,23 @@ cortes 17-18. Va en su propia rama (`feat/dashboard-admin`) y en tres partes.
 |---|---|---|---|
 | **Precios cargados** | Por hora, día, semana y mes | `precios.created_at` | ya hay |
 | **Precios validados** | Igual que arriba | `validaciones` | queda en **0** hasta que exista la validación colaborativa (0.2.x+); la tarjeta se dibuja igual para no rehacerla |
-| **Usuarios activos anónimos / registrados** | Distintos usuarios con actividad en el período, separados por `usuarios.es_anonimo` | `eventos` + `precios` + `sugerencias_catalogo` | parcial hasta que la app emita eventos (§11.2) |
+| **Usuarios activos anónimos / registrados** | Distintos usuarios que cargaron un precio en los últimos N días (N configurable, 7 por defecto) | `precios` + `usuarios.es_anonimo` | ya hay |
 | **Invitaciones** | Enviadas, aceptadas, pendientes (y vencidas, que no son pendientes) | `invitaciones` | ya hay |
 | **Productos estrella** | Los EAN más escaneados por **usuarios distintos** (no por escaneos repetidos de uno solo) | `eventos` (`producto.escaneado`) | vacío hasta que la app emita eventos |
 | **Rankings de usuarios** | Quién más carga productos nuevos, precios y sugerencias (alias, nunca email) | `productos_canonicos` (origen manual) / `precios` / `sugerencias_catalogo` | ya hay |
 | **Zonas con más actividad** | Mapa con celdas sombreadas en verde según la cantidad de precios cargados | `precios` + `locales.ubicacion` | ya hay |
 
-- **«Usuario activo»** = tuvo al menos un evento, un precio o una sugerencia en el período. Hoy no
-  hay forma de saber que alguien abrió la app y no hizo nada: por eso la app va a emitir un evento
-  `app.abierta` (una vez por sesión). Hasta entonces los activos son un piso, no el total.
+- **«Usuario activo»** (decidido el 2026-11-24) = el que **cargó un precio en los últimos 7 días**.
+  Es **configurable**: `config.dashboard_activo_dias` (por defecto 7). Se cuenta por usuarios
+  distintos, separados anónimos / registrados (`usuarios.es_anonimo`). Más adelante se podrá ampliar
+  (abrir la app, escanear…) cuando existan los eventos de §11.2; por eso `app.abierta` queda
+  preparado pero **no** cambia esta definición hasta que se decida.
 - **«Mejores precios»** empieza como **densidad de precios cargados** por zona (lo pedido). «Precio
   relativo al promedio» (zona más barata) es una **segunda etapa**: hay que normalizar por producto
   para no comparar un aceite con un fideo. Queda anotado, no se diseña ahora.
 - **Orden de las partes:** **19a** tarjetas y series que ya tienen datos (precios, invitaciones,
-  usuarios por precios/sugerencias, rankings) + zona horaria; **19b** `eventos`, endpoint, cambio
-  mínimo en la app, productos estrella y usuarios activos reales; **19c** mapa y exportación
+  usuarios activos por precios, rankings) + zona horaria; **19b** `eventos`, endpoint, cambio
+  mínimo en la app y productos estrella; **19c** mapa y exportación
   (manual y programada). Solo 19b toca `app/`.
 
 ### 11.2 Eventos: una tabla genérica, no una por concepto
@@ -1326,11 +1328,27 @@ Objetivo: que la tabla no crezca sin límite **y** que no dependa de una persona
   empezar), se comprueba que el archivo quedó guardado **y** que su hash/cantidad coinciden, y recién
   ahí se borran **solo** esas filas, en una transacción, y se anota en `eventos_exportaciones` (id,
   tipo, rango de ids, filas, sha256, nombre, cuándo). Si algo falla, no se borra nada.
-- **Dónde queda el archivo:** el disco del backend desplegado (Fly) es efímero, así que un export
-  programado **no puede** quedar ahí. Decisión propuesta: un **bucket S3-compatible** (Supabase Storage
-  hoy, el que sea mañana) configurado por variables de entorno; el panel lista las exportaciones y
-  deja descargarlas. El worker local sigue pudiendo escribir en `ETL_EXPORT_DIR`. *Decisión a confirmar
-  en 19c: si el bucket es de Supabase o aparte.*
+- **Dónde queda el archivo (decidido el 2026-11-24): un bucket de Supabase Storage para arrancar.** El
+  disco del backend desplegado (Fly) es efímero, así que un export programado no puede quedar ahí. Se
+  accede por la **API S3** (no por el SDK de Supabase), así que mudarse a otro almacenamiento
+  S3-compatible es cambiar variables de entorno (`EXPORT_S3_ENDPOINT`, `_BUCKET`, `_KEY`, `_SECRET`).
+  El panel lista las exportaciones y deja descargarlas; el worker local sigue pudiendo escribir en
+  `ETL_EXPORT_DIR`. El código habla con una interfaz mínima de «almacén» (guardar, leer, listar,
+  borrar) con dos implementaciones: S3 y disco.
+  - **Cobertura gratuita** (según la documentación de Supabase al 2026-11-24, a reconfirmar en
+    <https://supabase.com/pricing> antes de depender de ella): el plan Free trae **1 GB** de archivos,
+    **50 MB** por archivo y **5 GB** de egress (descargas). Un evento pesa unos 100–200 bytes en CSV, así
+    que 100 000 eventos son ~10–20 MB y el `.zip` unos 2–5 MB: **1 GB alcanza para cientos de
+    exports**. Lo que sí hay que respetar es el tope de 50 MB por archivo: `eventos_exportar` parte el
+    export en varios `.zip` si hace falta (`config.eventos_export_filas_por_archivo`, por defecto
+    500 000), y cada parte registra su rango de ids. Cuidado aparte: en el plan Free los proyectos se
+    **pausan tras una semana sin actividad**; para producción no es opción, pero no cambia este diseño.
+  - **«Que nada falle al mudarse»:** el export hace siempre la misma comprobación, sea cual sea el
+    almacén: sube el archivo, lo **vuelve a leer**, compara tamaño y sha256 y **recién ahí** borra las
+    filas. Se agrega `make almacen-probar` (y un botón en el panel) que hace esa ida y vuelta con un
+    archivo de prueba: se corre al configurar un almacén nuevo y antes de activar la programación. Si
+    falla, los eventos no se tocan. Tests: con un servidor S3 local (MinIO en el `docker compose` de
+    desarrollo) y con la implementación de disco, el mismo conjunto de pruebas.
 - **Programación:** no hay un planificador en el proyecto. Se agrega una tabla genérica
   `etl_programaciones` (ETL, parámetros, expresión cron **interpretada en UTC**, activa, última y
   próxima corrida, última ejecución) y un ciclo liviano dentro del proceso web que, con
@@ -1369,7 +1387,7 @@ públicos y particionado de `eventos` (se deja preparado, no se hace).
    arrancar) + `GET /dashboard/*` de precios, validaciones, invitaciones, rankings y zonas + landing.
 2. **19b (toca `app/`, va con el release 0.1.x):** migración `eventos`, registro de tipos,
    `POST /v1/eventos`, la app emite `producto.escaneado` y `app.abierta` (en lote, tolerando estar
-   sin red: si falla, descarta, **nunca** bloquea escanear), productos estrella y activos reales.
+   sin red: si falla, descarta, **nunca** bloquea escanear) y productos estrella.
 3. **19c:** `eventos_exportar`, `eventos_exportaciones`, `etl_programaciones` y el ciclo, bucket de
    exportaciones, banner por umbral, mapa.
 
