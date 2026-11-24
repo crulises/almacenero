@@ -1224,17 +1224,20 @@ cortes 17-18. Va en su propia rama (`feat/dashboard-admin`) y en tres partes.
 |---|---|---|---|
 | **Precios cargados** | Por hora, día, semana y mes | `precios.created_at` | ya hay |
 | **Precios validados** | Igual que arriba | `validaciones` | queda en **0** hasta que exista la validación colaborativa (0.2.x+); la tarjeta se dibuja igual para no rehacerla |
-| **Usuarios activos anónimos / registrados** | Distintos usuarios que cargaron un precio en los últimos N días (N configurable, 7 por defecto) | `precios` + `usuarios.es_anonimo` | ya hay |
+| **Usuarios activos anónimos / registrados** | Distintos usuarios que cargaron un precio, un producto nuevo o una sugerencia en los últimos N días (N configurable, 7 por defecto) | `precios` + `auditoria_admin` + `sugerencias_catalogo` + `usuarios.es_anonimo` | ya hay |
 | **Invitaciones** | Enviadas, aceptadas, pendientes (y vencidas, que no son pendientes) | `invitaciones` | ya hay |
 | **Productos estrella** | Los EAN más escaneados por **usuarios distintos** (no por escaneos repetidos de uno solo) | `eventos` (`producto.escaneado`) | vacío hasta que la app emita eventos |
 | **Rankings de usuarios** | Quién más carga productos nuevos, precios y sugerencias (alias, nunca email) | `productos_canonicos` (origen manual) / `precios` / `sugerencias_catalogo` | ya hay |
 | **Zonas con más actividad** | Mapa con celdas sombreadas en verde según la cantidad de precios cargados | `precios` + `locales.ubicacion` | ya hay |
 
-- **«Usuario activo»** (decidido el 2026-11-24) = el que **cargó un precio en los últimos 7 días**.
-  Es **configurable**: `config.dashboard_activo_dias` (por defecto 7). Se cuenta por usuarios
-  distintos, separados anónimos / registrados (`usuarios.es_anonimo`). Más adelante se podrá ampliar
-  (abrir la app, escanear…) cuando existan los eventos de §11.2; por eso `app.abierta` queda
-  preparado pero **no** cambia esta definición hasta que se decida.
+- **«Usuario activo»** (decidido el 2026-11-24) = el que **hizo una carga en los últimos 7 días**, y
+  «carga» es cualquiera de: **un precio**, **un producto nuevo** o **una sugerencia de cambio**. Los dos
+  últimos solo los pueden hacer moderadores y admins, pero también cuentan. Es **configurable**:
+  `config.dashboard_activo_dias` (por defecto 7). Se cuenta por usuarios distintos (uno que hizo las tres
+  cosas cuenta una vez), separados anónimos / registrados (`usuarios.es_anonimo`). Fuentes: `precios`,
+  `productos_canonicos` (altas manuales: `auditoria_admin` con `producto.crear`) y `sugerencias_catalogo`.
+  Más adelante se podrá ampliar (abrir la app, escanear…) con los eventos de §11.2; por eso `app.abierta`
+  queda preparado pero **no** cambia esta definición hasta que se decida.
 - **«Mejores precios»** empieza como **densidad de precios cargados** por zona (lo pedido). «Precio
   relativo al promedio» (zona más barata) es una **segunda etapa**: hay que normalizar por producto
   para no comparar un aceite con un fideo. Queda anotado, no se diseña ahora.
