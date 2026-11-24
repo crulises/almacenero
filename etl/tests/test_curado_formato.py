@@ -67,7 +67,7 @@ def test_motivos_de_fila_invalida(cambios, motivo):
 def test_producto_a_fila_y_vuelta():
     p = Producto(
         ean=EAN,
-        nombre="Leche, \"entera\"\ncon salto",
+        nombre='Leche, "entera"\ncon salto',
         marca="La Serenísima",
         tamano_valor=Decimal("1.50"),
         tamano_unidad="l",
@@ -80,7 +80,7 @@ def test_producto_a_fila_y_vuelta():
 
 
 def test_escribir_y_leer_conserva_filas_y_hash(tmp_path):
-    filas = [fila(ean="7790070411112", nombre="Leche, \"entera\"\ncon salto"), fila(nombre="B ñ")]
+    filas = [fila(ean="7790070411112", nombre='Leche, "entera"\ncon salto'), fila(nombre="B ñ")]
     ruta = tmp_path / "c.csv"
     sha = escribir(ruta, filas, {"generado": "hoy", "normalizador": "1"})
     lectura = leer(ruta)

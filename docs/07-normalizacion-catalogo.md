@@ -333,3 +333,16 @@ Corrido sobre los mismos 134 505 productos, sin escribir nada:
 **Resultado sobre el catálogo local (134 505):** completo 71 486 (53,1 %) · parcial 54 482
 (40,5 %) · dudoso 2 725 (2,0 %) · descartado 5 812 (4,3 %).
 
+## 13. CSV curado (corte 17)
+
+El CSV curado es el catálogo ya normalizado, extraído una vez de las fuentes crudas
+(`make catalogo-csv-exportar`) para no bajar y leer OFF entero cada vez. Formato, hash,
+simulacro e importación: `docs/04` §10-B. Lo que importa para la normalización:
+
+- Cada fila exportada es **punto fijo del normalizador**: volver a pasarla por `normalizar_producto`
+  no la cambia (lo prueba `etl/tests/test_curado_exportar.py`). Por eso importar un CSV recién
+  exportado, sobre una base que ya lo tiene, da «sin cambios».
+- El importador igual pasa cada fila por el normalizador y la calidad: si subió
+  `NORMALIZADOR_VERSION` desde que se armó el CSV, el simulacro muestra qué cambiaría.
+- Si cambia un diccionario o la versión, el hash del CSV regenerado **cambia a propósito**: la
+  versión del normalizador va en la cabecera y en `catalogo_lotes`.

@@ -1,4 +1,4 @@
-.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar
+.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-importar
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -194,6 +194,23 @@ catalogo-calidad: $(PY) ## Mide la calidad del catálogo con el normalizador (no
 catalogo-renormalizar: $(PY) ## Normaliza TODO el catálogo y recalcula la calidad (Doc 7). Simulacro; con APLICAR=1 escribe
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m etl.renormalizar $(if $(APLICAR),--aplicar)
+
+# --- CSV curado (docs/04 §10-B) ----------------------------------------------
+# El CSV curado es un extracto ya normalizado de las fuentes crudas: se arma una vez en tu
+# máquina (reproducible: mismas fuentes + normalizador = mismo hash) y se importa donde haga
+# falta, sin volver a bajar OFF entero. El archivo se puede borrar tras importarlo.
+CURADO_SALIDA ?= etl/data/catalogo-curado.csv.gz
+SEPA_MIN_FILAS ?= 1
+
+catalogo-csv-exportar: $(PY) ## Arma el CSV curado desde OFF/SEPA locales: make catalogo-csv-exportar [CURADO_SALIDA=...] [OFF_ARCHIVO=...] [SEPA_ARCHIVOS="a.zip b.zip"] [OFF_PAISES=] [SEPA_MIN_FILAS=1]
+	@test -f "$(OFF_ARCHIVO)" -o -n "$(SEPA_ARCHIVOS)" || { echo "Falta una fuente: OFF_ARCHIVO=... (make etl-off-muestra) y/o SEPA_ARCHIVOS=\"a.zip\""; exit 1; }
+	$(PY) -m etl.curado.exportar $(CURADO_SALIDA) $(if $(wildcard $(OFF_ARCHIVO)),--off $(OFF_ARCHIVO)) \
+		$(if $(SEPA_ARCHIVOS),--sepa $(SEPA_ARCHIVOS)) --paises "$(OFF_PAISES)" --sepa-min-filas $(SEPA_MIN_FILAS)
+
+catalogo-csv-importar: $(PY) ## Valida (simulacro) o importa un CSV curado: make catalogo-csv-importar ARCHIVO=... [APLICAR=1] [FORZAR=1]
+	@test -n "$(ARCHIVO)" || { echo "Uso: make catalogo-csv-importar ARCHIVO=<csv curado> [APLICAR=1] [FORZAR=1]"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.curado.importar "$(ARCHIVO)" $(if $(APLICAR),--aplicar) $(if $(FORZAR),--forzar)
 
 # --- app en un celular -----------------------------------------------------
 # API_TIMEOUT_S=40 make apk -> espera 40 s por intento (default de la app: 20 s).
