@@ -6,7 +6,10 @@ name: almacenero
 
 services:
   backend:
-    build: ./backend
+    # Contexto = raíz del repo: la imagen incluye `etl/` (ETL livianos desde el panel, docs/04 §10-A).
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     env_file: .env
     environment:
       # Desde el contenedor, el Postgres del CLI está en el host.

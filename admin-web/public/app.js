@@ -12,12 +12,13 @@ const SECCIONES = {
   conflictos: { ruta: "/admin/conflictos", filtros: { estado: "pendiente" } },
   sugerencias: { ruta: "/admin/sugerencias", filtros: { estado: "pendiente", q: "" } },
   invitaciones: { ruta: "/admin/invitaciones", filtros: { estado: "", q: "" } },
+  etl: { ruta: "/admin/etl/ejecuciones", filtros: { etl: "", estado: "" } },
   auditoria: { ruta: "/admin/auditoria", filtros: { entidad: "" } },
 };
 
 const TITULOS = {
   locales: "Locales", usuarios: "Usuarios", invitaciones: "Invitaciones", precios: "Precios", catalogo: "Catálogo",
-  config: "Configuración", auditoria: "Auditoría", ayuda: "Ayuda",
+  etl: "ETL", config: "Configuración", auditoria: "Auditoría", ayuda: "Ayuda",
 };
 
 function leerSesion() {
@@ -47,6 +48,14 @@ function panel() {
     destino: "",
     // Generador de PINs de invitación (un solo uso). `nuevos` = los recién creados.
     pines: { cantidad: 1, nota: "", n: 24, unidad: "h", sinVencimiento: false, nuevos: [], enviando: false },
+    // ETL (docs/04 §10-A): definiciones (el formulario se arma con ellas), historial y detalle.
+    etlDefs: [],
+    etlClave: "",
+    etlForm: {},
+    etlArchivos: {},  // parámetro -> {id, nombre, tamano} ya subido
+    etlEnviando: false,
+    etlDetalle: null,
+    _etlTimer: null,
     ficha: null,
     toast: null,
     _t: null,
@@ -54,22 +63,23 @@ function panel() {
     init() { if (this.sesion) this.cambiarVista("locales"); },
 
     // ------------------------------------------------------------- red
-    async api(path, { method = "GET", body } = {}, reintento = true) {
+    async api(path, { method = "GET", body, crudo } = {}, reintento = true) {
       let r;
       try {
         r = await fetch(API + "/v1" + path, {
           method,
           headers: {
             Authorization: "Bearer " + this.sesion.access_token,
-            ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+            ...(crudo !== undefined ? { "Content-Type": "application/octet-stream" }
+              : body !== undefined ? { "Content-Type": "application/json" } : {}),
           },
-          body: body !== undefined ? JSON.stringify(body) : undefined,
+          body: crudo !== undefined ? crudo : body !== undefined ? JSON.stringify(body) : undefined,
         });
       } catch {
         // El navegador no distingue «sin red» de «el backend se cayó»: se lo decimos nosotros.
         throw new Error(`No hay respuesta del backend (${API}). Puede estar caído o sin red; si recién hiciste una acción, revisá los logs del backend antes de reintentar.`);
       }
-      if (r.status === 401 && reintento && (await this.renovar())) return this.api(path, { method, body }, false);
+      if (r.status === 401 && reintento && (await this.renovar())) return this.api(path, { method, body, crudo }, false);
       if (r.status === 401) { this.salir(); throw new Error("La sesión venció: entrá de nuevo"); }
       if (r.status === 204) return null;
       const datos = await r.json().catch(() => ({}));
@@ -146,6 +156,8 @@ function panel() {
     get actual() { return this.vista === "catalogo" ? this.subcatalogo : this.vista; },
     cambiarVista(v) {
       this.vista = v;
+      clearInterval(this._etlTimer);
+      if (v === "etl") { this.iniciarEtl(); return; }
       if (v === "config") { this.cargarConfig(); this.cargarReglas(); }
       else if (v === "ayuda") this.cargarAyuda();
       else if (!(v === "catalogo" && this.subcatalogo === "alta")) this.cargar(v === "catalogo" ? this.subcatalogo : v);
@@ -580,6 +592,91 @@ function panel() {
     },
     resolverFicha(c, elegido) {
       return this.accion(() => this.api(`/admin/conflictos/${c.id}/resolver`, { method: "POST", body: { elegido } }), "Conflicto resuelto").then(() => this.contarPendientes());
+    },
+
+
+    // -------------------------------------------------------------- ETL
+    async iniciarEtl() {
+      if (!this.etlDefs.length) await this.intentar(async () => { this.etlDefs = await this.api("/admin/etl"); });
+      await this.cargar("etl");
+      // Mientras haya algo en cola o corriendo, el historial (y el log abierto) se refresca solo.
+      this._etlTimer = setInterval(() => this.refrescarEtl(), 3000);
+    },
+    async refrescarEtl() {
+      if (this.vista !== "etl") return clearInterval(this._etlTimer);
+      const activo = (e) => e && ["en_cola", "corriendo", "cancelando"].includes(e.estado);
+      if (this.sec.etl.items.some(activo) || activo(this.etlDetalle)) {
+        try {
+          const d = await this.api(`/admin/etl/ejecuciones?${this.query("etl")}`);
+          this.sec.etl.items = d.items; this.sec.etl.total = d.total;
+          if (this.etlDetalle) this.etlDetalle = await this.api(`/admin/etl/ejecuciones/${this.etlDetalle.id}`);
+        } catch {}
+      }
+    },
+    get etlDef() { return this.etlDefs.find((d) => d.clave === this.etlClave); },
+    elegirEtl(clave) {
+      this.etlClave = clave; this.etlArchivos = {};
+      this.etlForm = {};
+      for (const p of this.etlDef?.parametros || []) {
+        if (p.tipo === "booleano") this.etlForm[p.nombre] = p.default === true;
+        else this.etlForm[p.nombre] = p.default ?? "";
+      }
+    },
+    async subirArchivoEtl(p, evento) {
+      const f = evento.target.files[0];
+      if (!f) return;
+      await this.intentar(async () => {
+        const a = await this.api(`/admin/etl/archivos?nombre=${encodeURIComponent(f.name)}`, { method: "POST", crudo: f });
+        this.etlArchivos[p.nombre] = a; this.etlForm[p.nombre] = a.id;
+        this.avisar(`Archivo subido (${this.kb(a.tamano)}): se borra al importar de verdad o a las 24 h`);
+      });
+      evento.target.value = "";
+    },
+    parametrosEtl() {
+      // Solo lo que se completó: lo vacío lo resuelve el default del backend.
+      return Object.fromEntries(Object.entries(this.etlForm).filter(([, v]) => v !== "" && v != null));
+    },
+    async ejecutarEtl(clave = this.etlClave, parametros = this.parametrosEtl()) {
+      this.etlEnviando = true;
+      await this.intentar(async () => {
+        const e = await this.api(`/admin/etl/${clave}/ejecutar`, { method: "POST", body: { parametros } });
+        this.avisar(e.ejecutor === "local" ? "En cola: la toma el worker local (make etl-worker en tu máquina)" : "En cola: corre en el backend");
+        await this.cargar("etl", true);
+        this.etlDetalle = e;
+        this.refrescarEtl();
+      });
+      this.etlEnviando = false;
+    },
+    // Tras un simulacro ok: la misma ejecución, pero escribiendo.
+    repetirAplicando(e) {
+      return this.ejecutarEtl(e.etl, { ...e.parametros, aplicar: true });
+    },
+    puedeAplicar(e) {
+      const d = this.etlDefs.find((x) => x.clave === e.etl);
+      return e.estado === "ok" && d?.consume_archivo_con === "aplicar" && !e.parametros.aplicar;
+    },
+    async verEtl(e) {
+      await this.intentar(async () => { this.etlDetalle = await this.api(`/admin/etl/ejecuciones/${e.id}`); });
+    },
+    async cancelarEtl(e) {
+      if (!confirm("¿Cancelar esta ejecución? Lo ya cargado por lotes se queda (cada lote es una transacción).")) return;
+      await this.intentar(async () => {
+        await this.api(`/admin/etl/ejecuciones/${e.id}/cancelar`, { method: "POST" });
+        this.avisar("Cancelación pedida");
+        await this.cargar("etl");
+        if (this.etlDetalle?.id === e.id) await this.verEtl(e);
+      });
+    },
+    etlClase(estado) { return { ok: "ok", fallo: "baja", cancelada: "aviso", cancelando: "aviso", corriendo: "mal", en_cola: "" }[estado] || ""; },
+    etlTitulo(e) { return e.titulo || e.etl; },
+    etlDuracion(e) {
+      if (!e.iniciado_en) return "";
+      const s = Math.round(((e.terminado_en ? new Date(e.terminado_en) : new Date()) - new Date(e.iniciado_en)) / 1000);
+      return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
+    },
+    kb(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB"; },
+    resumenParametros(e) {
+      return Object.entries(e.parametros).map(([k, v]) => `${k}=${v && v.nombre ? v.nombre : v}`).join(" · ");
     },
 
     // ------------------------------------------------------------ varios

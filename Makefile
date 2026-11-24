@@ -1,4 +1,4 @@
-.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-importar
+.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-importar etl-worker
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -211,6 +211,11 @@ catalogo-csv-importar: $(PY) ## Valida (simulacro) o importa un CSV curado: make
 	@test -n "$(ARCHIVO)" || { echo "Uso: make catalogo-csv-importar ARCHIVO=<csv curado> [APLICAR=1] [FORZAR=1]"; exit 1; }
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m etl.curado.importar "$(ARCHIVO)" $(if $(APLICAR),--aplicar) $(if $(FORZAR),--forzar)
+
+# --- ETL desde el panel (docs/04 §10-A) ---------------------------------------
+etl-worker: $(PY) ## Worker local: toma de la cola de la base (DATABASE_URL, local o remota) los ETL pesados que lanzás desde el panel
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.worker
 
 # --- app en un celular -----------------------------------------------------
 # API_TIMEOUT_S=40 make apk -> espera 40 s por intento (default de la app: 20 s).

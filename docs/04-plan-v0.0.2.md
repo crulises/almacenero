@@ -902,6 +902,42 @@ responder):
   Panel: sección **ETL** (lista de definiciones → formulario → historial con estado, filas,
   duración y log).
 
+**Implementado en el corte 18 (así quedó, con lo que se precisó):**
+
+- **Migración** `20261128000001_etl_ejecuciones.sql`: `etl_ejecuciones` (estados `en_cola` · `corriendo` ·
+  `cancelando` · `ok` · `fallo` · `cancelada`; un índice único parcial garantiza **una sola ejecución a la
+  vez por ejecutor**), `etl_archivos` (bytea, tope 25 MiB por check) y `auditoria_admin` acepta la
+  entidad `etl`. `catalogo_lotes.etl_ejecucion_id` ahora es FK.
+- **Definiciones** en `etl/registro.py` (`Param`, `Definicion`, `validar`, `describir`) y
+  `etl/definiciones.py`: `curado_importar`, `catalogo_renormalizar`, `catalogo_calidad` (ejecutor
+  `web`); `off`, `sepa`, `sepa_locales`, `osm`, `curado_exportar` (ejecutor `local`). Cada una llama al
+  mismo código que los `make etl-*`. Imports perezosos: pedir la lista no carga `pyosmium`.
+- **Un solo supervisor para los dos ejecutores** (`etl/ejecucion.py`): toma con `for update skip locked`,
+  corre `python -m etl.ejecutar <id>` como **subproceso** (tope de tiempo; de memoria en Linux), renueva el
+  latido cada 2 s, vuelca la salida al log (últimos 64 KB) y marca `fallo` a lo que lleve más de 2 min sin
+  latido. El **ejecutor `web`** es una tarea de fondo del backend (`app/services/etl.py`, se apaga con
+  `ETL_WEB_ACTIVO=false`); el **ejecutor `local`** es `make etl-worker` (`etl/worker.py`), conexión saliente
+  a la base de `DATABASE_URL`, sin abrir puertos.
+- **Cancelar** (diferencia con el diseño): en vez de que el ETL mire un flag entre lotes, el supervisor ve
+  `cancelar = true` en cada latido y le manda SIGTERM al subproceso (SIGKILL a los 30 s). Es equivalente,
+  porque cada lote es una transacción (Postgres deshace el abierto), y no obliga a tocar cada ETL. Una
+  ejecución `en_cola` se cancela directo.
+- **Archivos:** `POST /v1/admin/etl/archivos?nombre=…` con el archivo como cuerpo crudo (sin
+  `python-multipart`). Se guardan en `etl_archivos` y **se borran al importar de verdad** (`aplicar`) o a las
+  24 h; un simulacro lo deja para confirmar (`Definicion.consume_archivo_con`). El panel ofrece «Importar de
+  verdad» tras un simulacro ok. Queda solo el metadato en `parametros` y el hash en `catalogo_lotes`.
+- **API** (`/v1/admin/etl`): `GET /` (definiciones), `POST /archivos`, `DELETE /archivos/{id}`,
+  `POST /{clave}/ejecutar`, `GET /ejecuciones` (sin log), `GET /ejecuciones/{id}` (con log),
+  `POST /ejecuciones/{id}/cancelar`. Capacidades `etl.ver`, `etl.ejecutar`, `etl.cancelar` (solo admin). Todo
+  `etl.iniciar`/`etl.cancelar`/`etl.archivo_*` va a `auditoria_admin` en la misma transacción. Errores con
+  regla (§10-E): `etl_parametro_invalido` (dice cuál), `etl_archivo_vacio`, `etl_archivo_grande`,
+  `etl_archivo_inexistente`, `etl_ya_terminada`.
+- **Panel:** sección **ETL** (formulario generado desde la definición, subida de archivo, historial con
+  estado/filas/duración, log y reporte, cancelar; se refresca solo mientras haya algo activo).
+- **Imagen del backend:** el contexto de build pasó a la **raíz del repo** (`docker-compose.yml`,
+  `backend/Dockerfile`, `.dockerignore`) para incluir `etl/` junto a `app/`. Quien despliegue (corte 10)
+  debe construir con ese contexto.
+
 ### B. CSV curado en vez de bajar OFF entero cada vez
 
 **Respuesta corta: no, bajar y leer 1,5 GB cada vez no es sensato.** Medido en este
@@ -1115,7 +1151,7 @@ reventó con un 500 mudo (`pack_cantidad_check`) y el panel solo mostraba «Fail
 | 15 | ✅ **Rol moderador + sugerencias + alta simple** | migración (rol, `sugerencias_catalogo`), capacidades, API; panel: solapa Sugerencias y formulario simple de alta/corrección por EAN (Doc 7 §5.1) con aplicación directa del admin. | grande |
 | 16 | ✅ **App: ficha normalizada y sugerir** (`app/`) | nombre limpio + marca · tamaño · presentación; acción «Sugerir / dar de alta» solo para moderadores. Se acuerda el diseño antes de tocar. | medio |
 | 17 | ✅ **CSV curado por CLI** | `catalogo_lotes`, fuente `curado`, formato `catalogo_curado_v1`, `make catalogo-curado` (genera) y `make catalogo-importar` (valida en seco + importa), hashes. | medio |
-| 18 | **ETL desde el panel** | `etl_ejecuciones`, registro de definiciones, worker `web` y `local`, API `/v1/admin/etl`, sección ETL con formularios generados, cancelación, auditoría, subida del CSV por el panel. | grande |
+| 18 | ✅ **ETL desde el panel** | `etl_ejecuciones`, registro de definiciones, worker `web` y `local`, API `/v1/admin/etl`, sección ETL con formularios generados, cancelación, auditoría, subida del CSV por el panel. | grande |
 
 **Orden y por qué:** 13 → 14 → 15 → 16 → (release) → 17 → 18. Hasta el 16 inclusive el release
 sale con datos normalizados, un tablero para revisar lo dudoso, una forma de completar lo

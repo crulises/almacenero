@@ -187,7 +187,9 @@ async def correr(
     finally:
         if not lector.done():
             lector.cancel()
-        if proc.returncode is None:  # nos cancelaron (p. ej. el backend se apaga): no dejar huérfano
+        if (
+            proc.returncode is None
+        ):  # nos cancelaron (p. ej. el backend se apaga): no dejar huérfano
             with contextlib.suppress(ProcessLookupError):
                 proc.kill()
     resto = "".join(pendiente)

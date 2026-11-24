@@ -877,3 +877,38 @@ Decisiones en `docs/04` §9.
 - **Causa:** `catalogo_lotes` ya tiene ese `sha256` con la misma `NORMALIZADOR_VERSION`: importar
   de nuevo no aportaría nada (la importación es idempotente).
 - **Solución:** si hace falta igual (p. ej. otra fuente pisó lo curado), `FORZAR=1`.
+
+### Un ETL lanzado desde el panel se queda «en cola» para siempre
+
+- **Síntoma:** en la sección ETL el estado no sale de `en_cola`.
+- **Causa:** (a) el ETL es de ejecutor **local** y no hay un `make etl-worker` corriendo contra esa base;
+  o (b) es **web** y el backend se levantó con `ETL_WEB_ACTIVO=false`, o con una imagen vieja sin `etl/`.
+- **Solución:** (a) correr `make etl-worker` con el `DATABASE_URL` de la base que mira el panel; (b)
+  `make up` (reconstruye la imagen con el contexto en la raíz del repo) y no desactivar el ejecutor.
+
+### Una ejecución quedó «corriendo» y no avanza
+
+- **Causa:** el ejecutor murió (se apagó el backend o se cortó el worker) a mitad de camino.
+- **Solución:** no hay que hacer nada: sin latido por 2 minutos pasa sola a `fallo` y el ejecutor puede
+  tomar la siguiente. Cada lote es una transacción, así que no quedan datos a medias; volver a lanzar es
+  seguro (los ETL son idempotentes).
+
+### `docker compose build` no encuentra `etl/` (o la imagen vieja no tiene `etl`)
+
+- **Síntoma:** el backend arranca pero el ejecutor web falla con `No module named 'etl'`.
+- **Causa:** el Dockerfile del backend se construía con `./backend` como contexto, que no incluye `etl/`.
+- **Solución:** el contexto es la raíz del repo (`docker-compose.yml`: `context: .`, `dockerfile:
+  backend/Dockerfile`; `.dockerignore` deja afuera `app/`, `etl/data/` y los tests). Cualquier otro build
+  (CI, Fly) tiene que usar ese mismo contexto.
+
+### `asyncio.TimeoutError` no se atrapa como `TimeoutError` en Python 3.10
+
+- **Síntoma:** un `except TimeoutError` alrededor de `asyncio.wait_for` no atrapa nada en la Mac (3.10).
+- **Causa:** recién desde 3.11 `asyncio.TimeoutError` es el mismo `TimeoutError`.
+- **Solución:** `except asyncio.TimeoutError` (vale en las dos).
+
+### `auditoria_admin_entidad_check` al auditar una acción nueva
+
+- **Síntoma:** una acción nueva del panel falla con 422 `dato_invalido (auditoria_admin_entidad_check)`.
+- **Causa:** la entidad de auditoría es una lista cerrada en la base.
+- **Solución:** sumarla al check en una migración (el corte 18 sumó `etl`).

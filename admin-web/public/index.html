@@ -47,6 +47,97 @@
         </button>
       </div>
 
+      <!-- ============================================================= ETL -->
+      <section x-show="vista === 'etl'">
+        <div class="caja">
+          <h3>Lanzar un ETL</h3>
+          <div class="form">
+            <label>ETL
+              <select :value="etlClave" @change="elegirEtl($event.target.value)">
+                <option value="">— elegí uno —</option>
+                <template x-for="d in etlDefs" :key="d.clave"><option :value="d.clave" x-text="d.titulo + (d.ejecutor === 'local' ? ' (worker local)' : '')"></option></template>
+              </select>
+            </label>
+          </div>
+          <template x-if="etlDef">
+            <div>
+              <p x-text="etlDef.descripcion"></p>
+              <p class="suave" x-show="etlDef.ejecutor === 'local'">Es pesado: lo toma el <b>worker local</b>. Tenés que tener <span class="mono">make etl-worker</span> corriendo en tu máquina (con <span class="mono">DATABASE_URL</span> apuntando a esta base); el botón solo lo deja en cola.</p>
+              <p class="suave" x-show="etlDef.ejecutor === 'web'">Es liviano: corre como proceso del backend, de a uno por vez.</p>
+              <div class="form">
+                <template x-for="p in etlDef.parametros" :key="p.nombre">
+                  <label>
+                    <span><span x-text="p.nombre"></span><b class="error" x-show="p.obligatorio"> *</b></span>
+                    <template x-if="p.tipo === 'booleano'"><input type="checkbox" x-model="etlForm[p.nombre]"></template>
+                    <template x-if="p.tipo === 'entero'"><input type="number" x-model="etlForm[p.nombre]"></template>
+                    <template x-if="p.tipo === 'fecha'"><input type="date" x-model="etlForm[p.nombre]"></template>
+                    <template x-if="p.tipo === 'texto'"><input type="text" x-model="etlForm[p.nombre]"></template>
+                    <template x-if="p.tipo === 'opcion'">
+                      <select x-model="etlForm[p.nombre]"><option value="">—</option><template x-for="o in p.opciones" :key="o"><option :value="o" x-text="o"></option></template></select>
+                    </template>
+                    <template x-if="p.tipo === 'archivo'">
+                      <span>
+                        <input type="file" @change="subirArchivoEtl(p, $event)">
+                        <span class="suave" x-show="etlArchivos[p.nombre]" x-text="etlArchivos[p.nombre] ? 'Subido: ' + etlArchivos[p.nombre].nombre + ' (' + kb(etlArchivos[p.nombre].tamano) + ')' : ''"></span>
+                      </span>
+                    </template>
+                    <span x-text="p.ayuda"></span>
+                  </label>
+                </template>
+              </div>
+              <button class="primario" :disabled="etlEnviando" @click="ejecutarEtl()">Ejecutar</button>
+            </div>
+          </template>
+        </div>
+
+        <h3>Historial</h3>
+        <div class="filtros">
+          <select x-model="sec.etl.f.estado" @change="cargar('etl', true)">
+            <option value="">Todos los estados</option>
+            <template x-for="e in ['en_cola','corriendo','ok','fallo','cancelada']"><option :value="e" x-text="e"></option></template>
+          </select>
+          <button @click="cargar('etl')">Actualizar</button>
+          <span class="suave" x-text="rango('etl')"></span>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr><th>Cuándo</th><th>ETL</th><th>Dónde</th><th>Estado</th><th>Filas</th><th>Duración</th><th>Parámetros</th><th>Quién</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="e in sec.etl.items" :key="e.id">
+              <tr>
+                <td class="suave" x-text="fecha(e.creado_en)"></td>
+                <td x-text="etlTitulo(e)"></td>
+                <td class="suave" x-text="e.ejecutor === 'local' ? 'worker local' : 'backend'"></td>
+                <td><span class="badge" :class="etlClase(e.estado)" x-text="e.estado"></span></td>
+                <td x-text="e.filas ?? ''"></td>
+                <td class="suave" x-text="etlDuracion(e)"></td>
+                <td class="suave ancho" x-text="resumenParametros(e)"></td>
+                <td class="suave" x-text="e.creado_por_alias"></td>
+                <td>
+                  <button @click="verEtl(e)">Ver log</button>
+                  <button class="peligro" x-show="['en_cola','corriendo'].includes(e.estado)" @click="cancelarEtl(e)">Cancelar</button>
+                  <button class="primario" x-show="puedeAplicar(e)" @click="repetirAplicando(e)">Importar de verdad</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('etl', -1)" :disabled="sec.etl.offset === 0">←</button>
+          <button @click="pagina('etl', 1)" :disabled="sec.etl.offset + sec.etl.limit >= sec.etl.total">→</button>
+        </div>
+
+        <div class="caja" x-show="etlDetalle">
+          <h3>
+            <span x-text="etlDetalle ? etlTitulo(etlDetalle) + ' · ' + etlDetalle.estado : ''"></span>
+            <button @click="etlDetalle = null">Cerrar</button>
+          </h3>
+          <template x-if="etlDetalle && etlDetalle.reporte">
+            <details open><summary>Reporte</summary><pre x-text="JSON.stringify(etlDetalle.reporte, null, 2)"></pre></details>
+          </template>
+          <pre class="mono" style="max-width:100%;max-height:420px;overflow:auto" x-text="etlDetalle ? (etlDetalle.log || '(sin salida todavía)') : ''"></pre>
+        </div>
+      </section>
+
       <!-- ========================================================= LOCALES -->
       <section x-show="vista === 'locales'">
         <div class="filtros">
@@ -540,7 +631,7 @@
         <div class="filtros">
           <select x-model="sec.auditoria.f.entidad" @change="cargar('auditoria', true)">
             <option value="">Todo</option>
-            <template x-for="e in ['local','precio','config','producto','conflicto','usuario','invitacion']"><option :value="e" x-text="e"></option></template>
+            <template x-for="e in ['local','precio','config','producto','conflicto','usuario','invitacion','sugerencia','etl']"><option :value="e" x-text="e"></option></template>
           </select>
           <span class="suave" x-text="rango('auditoria')"></span>
         </div>

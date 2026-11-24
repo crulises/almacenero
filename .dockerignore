@@ -1,0 +1,17 @@
+# Contexto de build del backend (la raíz del repo): solo hace falta backend/ y etl/.
+.git
+.claude
+.env
+app
+admin-web
+docs
+supabase
+backups
+backend/.venv
+backend/tests
+backend/**/__pycache__
+etl/data
+etl/tests
+etl/**/__pycache__
+**/.pytest_cache
+**/.ruff_cache

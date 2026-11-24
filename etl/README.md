@@ -55,3 +55,15 @@ make catalogo-csv-importar ARCHIVO=etl/data/catalogo-curado.csv.gz APLICAR=1
 
 Después de importar el archivo se puede borrar: `catalogo_lotes` guarda su hash, la versión del
 normalizador y el hash de las fuentes con que se armó. Detalle: `docs/04` §10-B.
+
+## Desde el panel de admin (sección ETL)
+
+Cada ETL se define en `etl/definiciones.py` con la descripción de sus parámetros; el panel arma el
+formulario con ella. Lo liviano (importar CSV curado, renormalizar, medir calidad) corre dentro del
+backend; lo pesado (OFF, SEPA, OSM, armar el CSV curado) queda en cola y lo toma tu máquina:
+
+```bash
+make etl-worker     # con DATABASE_URL de la base que mira el panel (local o remota); Ctrl-C para salir
+```
+
+Los archivos de esas rutas (`etl/data/…`) tienen que existir en la máquina del worker. Doc 4 §10-A.
