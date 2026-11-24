@@ -997,7 +997,9 @@ Decisiones en `docs/04` §9.
 - **Causa posible:** es **a propósito silencioso**: la cola de la app descarta el lote si no hay red, si
   el servidor tarda más de 10 s o si responde error (docs/04 §11.2). Además `producto.escaneado` solo se
   anota cuando la app **sabe** si el producto existe (200 o 404); sin red al buscar el producto no hay
-  evento, y los eventos se mandan cada 60 s o al irse la app a segundo plano.
+  evento, y los eventos se mandan ~5 s después del primero (o al irse la app a segundo plano).
+  Ojo: **los tests de backend usan la misma base** que el celular; los de eventos limpian lo que
+  crean, pero filas viejas de antes del fixture (con `ocurrio_en_cliente` de 2001) son de pruebas.
 - **Solución:** para depurar, mirar los logs del backend (`docker compose logs backend | grep eventos`):
   un 400 `evento_tipo_desconocido` / 422 `evento_datos_invalidos` explica qué regla se violó. Probar
   con red, escanear un producto, mandar la app a segundo plano y esperar unos segundos.

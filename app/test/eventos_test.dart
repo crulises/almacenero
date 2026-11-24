@@ -48,15 +48,11 @@ AppDeps _deps({
 Future<void> _abrir(
   WidgetTester tester,
   AppDeps deps, {
-  bool escaneado = true,
+  String? via = 'camara',
 }) async {
   await tester.pumpWidget(
     MaterialApp(
-      home: ProductScreen(
-        ean: '7790070411112',
-        deps: deps,
-        escaneado: escaneado,
-      ),
+      home: ProductScreen(ean: '7790070411112', deps: deps, via: via),
     ),
   );
   await tester.pumpAndSettle();
@@ -81,7 +77,11 @@ void main() {
         _deps(loadProducto: (_) async => _aceite, eventos: eventos),
       );
       expect(eventos.map((e) => e.$1), ['producto.escaneado']);
-      expect(eventos.single.$2, {'ean': '7790070411112', 'encontrado': true});
+      expect(eventos.single.$2, {
+        'ean': '7790070411112',
+        'encontrado': true,
+        'via': 'camara',
+      });
     });
 
     testWidgets('404 → encontrado: false', (tester) async {
@@ -94,7 +94,11 @@ void main() {
         ),
       );
       expect(eventos.map((e) => e.$1), ['producto.escaneado']);
-      expect(eventos.single.$2, {'ean': '7790070411112', 'encontrado': false});
+      expect(eventos.single.$2, {
+        'ean': '7790070411112',
+        'encontrado': false,
+        'via': 'camara',
+      });
     });
 
     testWidgets('sin red: no anota nada y la pantalla sigue sin romperse', (
@@ -112,14 +116,31 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('si se tipeó el código (no escaneado) no anota', (
+    testWidgets('si se tipeó el código, también anota, con via: manual', (
       tester,
     ) async {
       final eventos = <(String, Map<String, Object?>)>[];
       await _abrir(
         tester,
+        _deps(
+          loadProducto: (_) async => throw ApiException('no', statusCode: 404),
+          eventos: eventos,
+        ),
+        via: 'manual',
+      );
+      expect(eventos.single.$2, {
+        'ean': '7790070411112',
+        'encontrado': false,
+        'via': 'manual',
+      });
+    });
+
+    testWidgets('sin via (otra entrada a la ficha) no anota', (tester) async {
+      final eventos = <(String, Map<String, Object?>)>[];
+      await _abrir(
+        tester,
         _deps(loadProducto: (_) async => _aceite, eventos: eventos),
-        escaneado: false,
+        via: null,
       );
       expect(eventos, isEmpty);
     });

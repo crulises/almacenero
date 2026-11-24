@@ -19,14 +19,14 @@ class ProductScreen extends StatefulWidget {
     super.key,
     required this.ean,
     required this.deps,
-    this.escaneado = false,
+    this.via,
   });
 
   final String ean;
 
-  /// Se llegó escaneando con la cámara (no tipeando el código): se anota el evento
-  /// `producto.escaneado` cuando se sabe si el producto está en el catálogo.
-  final bool escaneado;
+  /// Cómo se llegó al código: `camara` o `manual` (tipeado). Si viene, se anota el evento
+  /// `producto.escaneado` (con esa `via`) cuando se sabe si el producto está en el catálogo.
+  final String? via;
   final AppDeps deps;
 
   @override
@@ -39,7 +39,7 @@ class _ProductScreenState extends State<ProductScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.escaneado) _anotarEscaneo();
+    if (widget.via != null) _anotarEscaneo();
   }
 
   /// `encontrado` se sabe recién con la respuesta: 200 = sí, 404 = no. Cualquier otro
@@ -47,16 +47,19 @@ class _ProductScreenState extends State<ProductScreen> {
   /// pantalla no repiten el evento.
   void _anotarEscaneo() {
     final ean = widget.ean;
+    final via = widget.via;
     _producto.then<void>(
       (_) => widget.deps.registrarEvento('producto.escaneado', {
         'ean': ean,
         'encontrado': true,
+        'via': via,
       }),
       onError: (Object e) {
         if (clasificarError(e) == ProductoError.noEncontrado) {
           widget.deps.registrarEvento('producto.escaneado', {
             'ean': ean,
             'encontrado': false,
+            'via': via,
           });
         }
       },

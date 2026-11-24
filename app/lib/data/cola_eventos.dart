@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'authed_api.dart';
 
 /// Cola en memoria de eventos de producto (docs/04 §11.2): `producto.escaneado`,
@@ -15,7 +17,13 @@ class ColaEventos {
     required this.enviar,
     this.maxEnCola = 200,
     this.esperaMaxima = const Duration(seconds: 10),
+    this.envioEn = const Duration(seconds: 5),
   });
+
+  /// Cuánto se junta antes de mandar solo (se cuenta desde el primer evento nuevo): así
+  /// llega todo junto en un pedido y el celular no manda uno por escaneo. `null` = no manda
+  /// solo (los tests llaman a [vaciar]).
+  final Duration? envioEn;
 
   /// Manda un lote al backend. Puede fallar como quiera: acá se ignora.
   final Future<void> Function(List<Map<String, Object?>> lote) enviar;
@@ -31,6 +39,7 @@ class ColaEventos {
   final _cola = Queue<Map<String, Object?>>();
   Future<void>? _vaciando;
   Timer? _timer;
+  int _descartados = 0;
 
   int get pendientes => _cola.length;
 
@@ -45,6 +54,14 @@ class ColaEventos {
       });
       while (_cola.length > maxEnCola) {
         _cola.removeFirst();
+        _descartados++;
+      }
+      final espera = envioEn;
+      if (espera != null && _timer == null) {
+        _timer = Timer(espera, () {
+          _timer = null;
+          vaciar();
+        });
       }
     } catch (_) {
       // Nada de esto puede romper la app.
@@ -63,21 +80,15 @@ class ColaEventos {
       }
       try {
         await Future<void>.sync(() => enviar(lote)).timeout(esperaMaxima);
-      } catch (_) {
-        // Sin red, timeout, 4xx, 5xx, sesión vencida…: se descarta y se sigue.
+      } catch (e) {
+        // Sin red, timeout, 4xx, 5xx, sesión vencida…: se descarta y se sigue. En la
+        // compilación de prueba queda en el log (`adb logcat | grep eventos`).
+        _descartados += lote.length;
+        debugPrint(
+          'eventos: se descartaron ${lote.length} (total $_descartados): $e',
+        );
       }
     }
-  }
-
-  /// Vacía cada tanto mientras la app está abierta (la app llama también a `vaciar` al
-  /// irse a segundo plano). Un solo timer.
-  void iniciar({Duration cada = const Duration(seconds: 60)}) {
-    _timer ??= Timer.periodic(cada, (_) => vaciar());
-  }
-
-  void detener() {
-    _timer?.cancel();
-    _timer = null;
   }
 }
 

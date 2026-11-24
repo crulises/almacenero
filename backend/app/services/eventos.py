@@ -13,6 +13,7 @@ ese criterio antes de entrar al registro.
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,6 +29,23 @@ class DatosEscaneo(BaseModel):
     model_config = ConfigDict(extra="forbid")
     ean: str = Field(pattern=r"^\d{8,14}$")
     encontrado: bool
+    # Cómo se llegó al código: con la cámara o tipeándolo. Opcional por las apps ya instaladas.
+    via: Literal["camara", "manual"] | None = None
+
+
+class DatosAppAbierta(BaseModel):
+    """Qué celular y en qué condiciones abrió la app (docs/04 §11.2). Todo opcional: si el
+    celular no pudo leer algo, llega el resto. Sin nada que identifique a la persona: ni red por
+    nombre (SSID), ni ubicación, ni batería, ni identificadores del aparato."""
+
+    model_config = ConfigDict(extra="forbid")
+    app_version: str | None = Field(default=None, max_length=40)
+    android: str | None = Field(default=None, max_length=20)  # «14»
+    sdk: int | None = Field(default=None, ge=1, le=100)
+    marca: str | None = Field(default=None, max_length=40)
+    modelo: str | None = Field(default=None, max_length=60)
+    idioma: str | None = Field(default=None, max_length=20)  # «es-AR»
+    red: Literal["wifi", "movil", "ethernet", "otra", "ninguna"] | None = None
 
 
 @dataclass(frozen=True)
@@ -44,7 +62,7 @@ TIPOS: dict[str, TipoEvento] = {
         DatosEscaneo,
         entidad=lambda d: ("producto", d.ean),  # type: ignore[attr-defined]
     ),
-    "app.abierta": TipoEvento(DatosVacios),
+    "app.abierta": TipoEvento(DatosAppAbierta),
 }
 
 
@@ -66,7 +84,7 @@ def preparar(tipo: TipoEvento, nombre: str, datos: dict, cliente: datetime | Non
     """Valida `datos` con el esquema del tipo (puede levantar ValidationError)."""
     validos = tipo.datos.model_validate(datos)
     entidad, ref = tipo.entidad(validos)
-    final = validos.model_dump(mode="json")
+    final = validos.model_dump(mode="json", exclude_none=True)
     if cliente is not None:
         # El reloj del celular miente: se guarda aparte y nunca se usa para agrupar.
         final["ocurrio_en_cliente"] = cliente.isoformat()

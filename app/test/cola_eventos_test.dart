@@ -10,6 +10,7 @@ void main() {
     Future<void> Function(List<Map<String, Object?>>)? enviar,
     int maxEnCola = 200,
     Duration espera = const Duration(milliseconds: 50),
+    Duration? envioEn, // null: no se manda solo (los tests llaman a vaciar)
   }) => ColaEventos(
     enviar:
         enviar ??
@@ -18,6 +19,7 @@ void main() {
         },
     maxEnCola: maxEnCola,
     esperaMaxima: espera,
+    envioEn: envioEn,
   );
 
   setUp(() => enviados = []);
@@ -125,4 +127,47 @@ void main() {
     await c.vaciar();
     expect(enviados, isEmpty);
   });
+
+  test(
+    'manda solo, poco después del último evento, y en un único lote',
+    () async {
+      final c = cola(envioEn: const Duration(milliseconds: 40));
+      c.registrar('app.abierta');
+      c.registrar('producto.escaneado', {
+        'ean': '7790070411112',
+        'encontrado': true,
+      });
+      expect(enviados, isEmpty); // todavía no: junta un ratito
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(enviados, hasLength(1));
+      expect(enviados.single.map((e) => e['tipo']), [
+        'app.abierta',
+        'producto.escaneado',
+      ]);
+      // y un evento posterior arma otro envío
+      c.registrar('app.abierta');
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(enviados, hasLength(2));
+    },
+  );
+
+  test(
+    'si falla el envío automático, tampoco hay error ni se traba el próximo',
+    () async {
+      var llamadas = 0;
+      final c = cola(
+        envioEn: const Duration(milliseconds: 20),
+        enviar: (_) async {
+          llamadas++;
+          throw Exception('sin red');
+        },
+      );
+      c.registrar('app.abierta');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      c.registrar('app.abierta');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(llamadas, 2);
+      expect(c.pendientes, 0);
+    },
+  );
 }

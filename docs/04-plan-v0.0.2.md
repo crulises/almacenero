@@ -1411,11 +1411,23 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
   escaneo se valida de 8 a 14 dígitos (un código escaneado no hallado en el catálogo igual es válido).
 - **Zona horaria (reglas 1 y 2 de §11.3):** pool y ETL en UTC, `verificar_utc` al arrancar y test de
   columnas `timestamp`. Las reglas 3 a 6 (conversión, buckets) siguen para 19a.
-- **App:** `ColaEventos` en memoria (tope 200, lotes de 50, envío cada 60 s y al irse a segundo plano,
+- **App:** `ColaEventos` en memoria (tope 200, lotes de 50, envío ~5 s después del primer evento nuevo y al irse a segundo plano,
   timeout de 10 s por lote, descarte sin reintentar). `app.abierta` se anota al arrancar el proceso (no
   al volver de segundo plano). `producto.escaneado` se anota **solo si se escaneó con la cámara** (no al
   tipear el código) y **cuando se sabe `encontrado`** (200 → true, 404 → false); si el pedido falla por
   red no se anota nada. El pedido es «silencioso»: no prende «Despertando servidor…».
+- **Ajustes tras la primera prueba en el celular (2026-11-24):**
+  - `producto.escaneado` ahora lleva `via` (`camara` | `manual`, opcional): un código **tipeado** también
+    se anota, porque un EAN inexistente no se puede escanear y no había forma de probar `encontrado:
+    false`. El dashboard de productos estrella podrá contar solo `camara`, o ambas.
+  - `app.abierta` lleva datos del celular, todos opcionales y **sin pedir permisos al usuario**:
+    `app_version`, `android`, `sdk`, `marca`, `modelo`, `idioma` y `red` (`wifi|movil|ethernet|otra|ninguna`).
+    Nunca: ubicación, nombre de la red (SSID), batería ni identificadores del aparato. `red` usa
+    `connectivity_plus`, que declara `ACCESS_NETWORK_STATE` (permiso «normal» de instalación, sin cartel).
+  - **Envío:** la cola manda solo ~5 s después del primer evento nuevo (antes: cada 60 s o al irse a
+    segundo plano, y por eso los eventos «aparecían» recién al salir de la app). También sigue mandando al
+    pasar a segundo plano. Si falla, se descarta y queda una línea en el log (`adb logcat | grep eventos`).
+  - Los tests de backend borran los eventos que crean (comparten base con el celular).
 - **Pendiente de 19b: productos estrella** (`GET .../estrellas`) van con el dashboard (19a/19c), porque
   dependen del endpoint `/dashboard/*`; acá solo se guardan los datos.
 - Qué no se probó: nada contra un celular real ni contra el contenedor del backend (los tests de

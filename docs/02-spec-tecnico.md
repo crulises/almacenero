@@ -153,8 +153,8 @@ Los eventos llevan el id de usuario y nada más personal (sin ubicación ni text
   (`evento_datos_invalidos`). Rate limit por usuario: `config.max_lotes_eventos_por_hora` (120).
 - `ocurrio_en` lo pone el servidor; el reloj del celular se guarda en `datos.ocurrio_en_cliente` y no se
   usa para agrupar. Tipos iniciales: `producto.escaneado` y `app.abierta`.
-- **La app** (`app/lib/data/cola_eventos.dart`) junta los eventos en memoria y los manda cada 60 s o al
-  pasar a segundo plano. **Nunca estorba:** `registrar` es síncrono, el pedido es «silencioso» (no prende
+- **La app** (`app/lib/data/cola_eventos.dart`) junta los eventos en memoria y los manda ~5 s después del
+  primero nuevo (o al pasar a segundo plano). **Nunca estorba:** `registrar` es síncrono, el pedido es «silencioso» (no prende
   «Despertando servidor…») y, si falla por lo que sea (sin red, timeout de 10 s, 4xx/5xx), el lote se
   **descarta**, sin errores ni reintentos. No hay persistencia en disco: si el sistema mata la app, lo
   pendiente se pierde (son estadísticas).
