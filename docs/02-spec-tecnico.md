@@ -118,6 +118,35 @@ portabilidad de CI.
 - `make migrate`, `make seed`.
 - `make test`, `make lint`, `make build`.
 
+## Tiempo y zona horaria
+
+Regla para todo el proyecto (decidida el 2026-11-24, a pedido del dueño; detalle y tests en
+`docs/04` §11.3):
+
+- **Todo instante se guarda en UTC y como `timestamptz`.** No existen columnas `timestamp` sin zona
+  (un test lo verifica sobre `information_schema`).
+- **No se confía en la zona por defecto del servidor de base de datos.** Cada conexión (backend y ETL)
+  se abre con `timezone = UTC` fijado por nosotros, así cambiar de proveedor no cambia resultados.
+- **La hora local (`America/Buenos_Aires`, configurable en `config.panel_zona_horaria`) se aplica una sola
+  vez, al mostrar** (por ejemplo para agrupar por día argentino en el dashboard). La API devuelve
+  instantes ISO-8601 con `Z`. Con `timestamptz` convertir a hora local solo la expresa; no la
+  reinterpreta, y por eso no hay riesgo de convertir «argentino a argentino».
+- Los relojes de los celulares **no** se usan para agrupar ni ordenar: el instante lo pone el servidor.
+
+## Eventos de producto
+
+Lo que hace la gente en la app y conviene analizar (escanear, abrir la app…) se registra en **una tabla
+genérica `eventos`** con un registro de tipos en el backend, no una tabla por concepto. Un evento nuevo
+es una entrada en el registro, no una migración. Diseño completo en `docs/04` §11.2 (corte 19, aún no
+implementado). Los eventos llevan el id de usuario y nada más personal.
+
+## Versionado de releases
+
+El esquema de versiones cambió: la 0.0.1 fue una compilación vieja y **ya no está vigente**; el próximo
+release es **0.1.x**. Donde estos docs dicen «v0.0.1» o «v0.0.2» se refieren a los **planes** históricos
+(alcance de entonces), no a versiones de release. La validación colaborativa llega, probablemente, en
+0.2.x o posterior.
+
 ## Testing
 
 - Backend: pytest. Integración contra el Postgres local real (el del CLI), no mocks.

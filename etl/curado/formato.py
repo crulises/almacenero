@@ -1,4 +1,9 @@
-"""Formato `catalogo_curado_v1` del CSV curado (docs/04 §10-B).
+"""Formatos `catalogo_curado_v1` y `catalogo_curado_v2` del CSV curado (docs/04 §10-B, docs/09).
+
+v1 (lo que arma `make catalogo-csv-exportar` desde las fuentes crudas) trae solo los datos del
+producto. v2 (lo que arma `make catalogo-csv-exportar-base` desde la base) suma los **metadatos
+del tratamiento** de cada producto: de dónde viene, qué campos tiene bloqueados, si lo cargó o
+corrigió una persona, sugerencias, avisos del normalizador, conflictos. El importador lee los dos.
 
 CSV UTF-8 con separador `,`. Arriba lleva comentarios `# clave: valor` (formato, generado,
 normalizador, fuentes, contenido_sha256) y después la fila de columnas y los datos.
@@ -14,15 +19,18 @@ import gzip
 import hashlib
 import io
 import json
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from etl.comun.catalogo import Producto
 from etl.comun.ean import normalizar_ean
+from etl.comun.paquete import PaqueteInvalido, contenido_csv, escribir_zip
 
 FORMATO = "catalogo_curado_v1"
+FORMATO_V2 = "catalogo_curado_v2"
+FORMATOS = (FORMATO, FORMATO_V2)
 COLUMNAS = (
     "ean",
     "nombre",
@@ -34,6 +42,40 @@ COLUMNAS = (
     "imagen_url",
     "fuente_origen",
     "nota",
+)
+# Metadatos de v2. Se **restauran** al importar: origen, campos_bloqueados. El resto es
+# informativo (queda en `producto_fuentes.datos.intercambio`): la calidad la recalcula siempre el
+# normalizador de quien importa, no se confía en la de otro proyecto.
+COLUMNAS_META = (
+    "origen",
+    "campos_bloqueados",
+    "calidad",
+    "estado_calidad",
+    "calidad_motivos",
+    "normalizador_version",
+    "cargado_a_mano",
+    "revisado",
+    "ediciones_admin",
+    "sugerencias_aprobadas",
+    "sugerencias_rechazadas",
+    "sugerencias_pendientes",
+    "avisos_normalizador",
+    "conflictos_resueltos",
+    "conflictos_pendientes",
+)
+COLUMNAS_V2 = COLUMNAS + COLUMNAS_META
+COLUMNAS_DE = {FORMATO: COLUMNAS, FORMATO_V2: COLUMNAS_V2}
+ORIGENES = {"off", "sepa", "curado", "manual"}
+BLOQUEABLES = {"nombre", "marca", "tamano", "presentacion"}
+SEP_LISTA = "|"  # separador dentro de una celda (campos_bloqueados, calidad_motivos)
+_CONTADORES = (
+    "ediciones_admin",
+    "sugerencias_aprobadas",
+    "sugerencias_rechazadas",
+    "sugerencias_pendientes",
+    "avisos_normalizador",
+    "conflictos_resueltos",
+    "conflictos_pendientes",
 )
 UNIDADES = {"g", "kg", "ml", "l", "u"}
 MAX_NOMBRE = 200
@@ -56,9 +98,21 @@ def _texto(fila: dict[str, str], col: str) -> str:
     return (fila.get(col) or "").strip()
 
 
-def fila_a_producto(fila: dict[str, str], datos_extra: dict | None = None) -> Producto:
-    """Valida una fila y la convierte en `Producto`. Lanza `FilaInvalida`."""
+def _ean_de_catalogo(crudo: str) -> str | None:
+    """EAN que una persona ya aceptó en el catálogo (origen manual): solo se exige el largo."""
+    return crudo if crudo.isdigit() and 8 <= len(crudo) <= 14 else None
+
+
+def fila_a_producto(
+    fila: dict[str, str], datos_extra: dict | None = None, ean_confiable: bool = False
+) -> Producto:
+    """Valida una fila y la convierte en `Producto`. Lanza `FilaInvalida`.
+
+    `ean_confiable`: la fila es de un producto cargado a mano (v2, `origen = manual`) y el catálogo
+    de origen ya lo aceptó; se le perdona el dígito verificador para que el intercambio sea fiel."""
     ean, motivo = normalizar_ean(_texto(fila, "ean"))
+    if motivo == "ean_digito_verificador" and ean_confiable:
+        ean, motivo = _ean_de_catalogo(_texto(fila, "ean")), None
     if motivo:
         raise FilaInvalida(motivo)
     nombre = _texto(fila, "nombre")
@@ -121,13 +175,65 @@ def producto_a_fila(p: Producto, fuente_origen: str, nota: str = "") -> dict[str
     }
 
 
-def _cuerpo(filas: Iterable[dict[str, str]]) -> str:
+@dataclass(frozen=True)
+class Meta:
+    """Lo que el v2 dice del tratamiento de un producto. `bloqueados` y `origen` se restauran."""
+
+    origen: str | None
+    bloqueados: tuple[str, ...]
+    info: dict  # el resto, tal cual (informativo)
+
+    @property
+    def hay_trabajo_humano(self) -> bool:
+        return self.origen == "manual" or bool(self.bloqueados)
+
+
+def meta_de_fila(fila: dict[str, str]) -> Meta | None:
+    """Los metadatos v2 de una fila, validados. `None` si la fila no los trae (v1).
+    Lanza `FilaInvalida` (`origen_invalido`, `bloqueo_invalido`, `meta_invalida`)."""
+    if "origen" not in fila:
+        return None
+    origen = _texto(fila, "origen") or None
+    if origen is not None and origen not in ORIGENES:
+        raise FilaInvalida("origen_invalido")
+    bloqueados = tuple(sorted({x for x in _texto(fila, "campos_bloqueados").split(SEP_LISTA) if x}))
+    if not set(bloqueados) <= BLOQUEABLES:
+        raise FilaInvalida("bloqueo_invalido")
+    info: dict = {}
+    for c in _CONTADORES:
+        v = _texto(fila, c)
+        if not v:
+            continue
+        if not v.isdigit():
+            raise FilaInvalida("meta_invalida")
+        info[c] = int(v)
+    for c in ("cargado_a_mano", "revisado"):
+        v = _texto(fila, c)
+        if v not in ("", "0", "1"):
+            raise FilaInvalida("meta_invalida")
+        if v:
+            info[c] = v == "1"
+    for c in ("calidad", "normalizador_version"):
+        v = _texto(fila, c)
+        if v and not v.isdigit():
+            raise FilaInvalida("meta_invalida")
+        if v:
+            info[c] = int(v)
+    if _texto(fila, "estado_calidad"):
+        info["estado_calidad"] = _texto(fila, "estado_calidad")
+    motivos = [x for x in _texto(fila, "calidad_motivos").split(SEP_LISTA) if x]
+    if motivos:
+        info["calidad_motivos"] = motivos
+    return Meta(origen, bloqueados, info)
+
+
+def _cuerpo(filas: Iterable[dict[str, str]], columnas: tuple[str, ...] = COLUMNAS) -> str:
     """Columnas + datos, ordenados por EAN, con `\\n`: el contenido que se hashea."""
     salida = io.StringIO()
-    w = csv.DictWriter(salida, fieldnames=COLUMNAS, lineterminator="\n", extrasaction="ignore")
+    w = csv.DictWriter(salida, fieldnames=columnas, lineterminator="\n", extrasaction="ignore")
     w.writeheader()
     for f in sorted(filas, key=lambda f: f["ean"]):
-        w.writerow({c: f.get(c, "") for c in COLUMNAS})
+        w.writerow({c: f.get(c, "") for c in columnas})
     return salida.getvalue()
 
 
@@ -135,14 +241,24 @@ def _sha256(texto: str) -> str:
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
-def escribir(ruta: Path, filas: Iterable[dict[str, str]], cabecera: dict[str, str]) -> str:
-    """Escribe el CSV curado (`.gz` si la ruta lo pide). -> sha256 del contenido."""
-    cuerpo = _cuerpo(filas)
+def escribir(
+    ruta: Path,
+    filas: Iterable[dict[str, str]],
+    cabecera: dict[str, str],
+    formato: str = FORMATO,
+    leeme: Callable[[str], str] | None = None,
+) -> str:
+    """Escribe el CSV curado. Según la extensión de `ruta`: `.zip` (paquete: el CSV + un
+    `LEEME.txt` que arma `leeme(sha256)`), `.gz` o CSV pelado. -> sha256 del contenido."""
+    cuerpo = _cuerpo(filas, COLUMNAS_DE[formato])
     sha = _sha256(cuerpo)
-    comentarios = {"formato": FORMATO, **cabecera, "contenido_sha256": sha}
+    comentarios = {"formato": formato, **cabecera, "contenido_sha256": sha}
     texto = "".join(f"# {k}: {v}\n" for k, v in comentarios.items()) + cuerpo
     datos = texto.encode("utf-8")
-    ruta.write_bytes(gzip.compress(datos, mtime=0) if ruta.suffix == ".gz" else datos)
+    if ruta.suffix == ".zip":
+        escribir_zip(ruta, f"{ruta.stem}.csv", datos, leeme(sha) if leeme else None)
+    else:
+        ruta.write_bytes(gzip.compress(datos, mtime=0) if ruta.suffix == ".gz" else datos)
     return sha
 
 
@@ -154,13 +270,12 @@ class Lectura:
 
 
 def leer(ruta: Path) -> Lectura:
-    """Lee el CSV curado. Tolera `.gz`, BOM y `\\r\\n`. Lanza `FormatoInvalido`."""
-    crudo = ruta.read_bytes()
-    if ruta.suffix == ".gz":
-        try:
-            crudo = gzip.decompress(crudo)
-        except (OSError, EOFError) as e:
-            raise FormatoInvalido(f"el .gz está roto: {e}") from None
+    """Lee el CSV curado: `.zip` (paquete), `.gz` o CSV pelado (se reconoce por el contenido,
+    no por la extensión). Tolera BOM y `\\r\\n`. Lanza `FormatoInvalido`."""
+    try:
+        crudo = contenido_csv(ruta.read_bytes())
+    except PaqueteInvalido as e:
+        raise FormatoInvalido(str(e)) from None
     texto = crudo.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
     lineas = texto.split("\n")
     cabecera: dict[str, str] = {}
@@ -169,9 +284,9 @@ def leer(ruta: Path) -> Lectura:
         clave, _, valor = lineas[i][1:].partition(":")
         cabecera[clave.strip()] = valor.strip()
         i += 1
-    if cabecera.get("formato") != FORMATO:
+    if cabecera.get("formato") not in FORMATOS:
         raise FormatoInvalido(
-            f"falta la cabecera `# formato: {FORMATO}` (el archivo dice "
+            f"falta la cabecera `# formato: {FORMATO}` o `{FORMATO_V2}` (el archivo dice "
             f"{cabecera.get('formato')!r}): no es un CSV curado de este proyecto"
         )
     cuerpo = "\n".join(lineas[i:])

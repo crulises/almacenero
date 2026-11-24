@@ -21,11 +21,18 @@ Además:
 
 - `docs/08-estandares-de-carga.md` — estándares de carga del catálogo (los que cita el sistema
   cuando ajusta lo que cargó una persona; espejo de `backend/app/services/estandares.py`).
+- `docs/09-formato-intercambio-catalogo.md` — formato `catalogo_curado_v1/v2` para intercambiar
+  catálogos (autocontenido: se reutiliza en otro proyecto). Tocá `etl/curado/` solo de acuerdo a él.
 - `docs/03-problemas-soluciones.md` — cómo armar el entorno desde cero y los
   problemas ya vividos (con su solución). **Leelo antes de debuggear un problema
   de entorno, de build o de auth**, y agregale lo nuevo que aparezca (formato
   Síntoma → Causa → Solución). No es fuente de verdad: si contradice al Doc 1 o 2,
   ganan ellos.
+
+> **Versionado:** «v0.0.1» y «v0.0.2» son nombres históricos de **planes**; la 0.0.1 ya no está vigente
+> y el próximo release es **0.1.x** (la validación colaborativa, 0.2.x o posterior). Ver Doc 2.
+> **Zona horaria:** todo en UTC (`timestamptz`) y la hora local solo al mostrar (Doc 2, «Tiempo y zona
+> horaria»). Corte 19 (dashboard de admin con eventos y mapa): planificado en `docs/04` §11, sin implementar.
 
 ## Alcance de v0.0.1 (NO te pases de esto)
 
@@ -104,8 +111,15 @@ Toda la lógica operativa va en el Makefile. CI solo llama a estos targets.
 - `make build` — build de imágenes.
 - `make catalogo-calidad` / `make catalogo-renormalizar [APLICAR=1]` — mide / aplica el
   normalizador del catálogo (Doc 7).
-- `make catalogo-csv-exportar` / `make catalogo-csv-importar ARCHIVO=... [APLICAR=1]` — arma el CSV
-  curado desde OFF/SEPA locales (reproducible) / lo valida en seco o lo importa (Doc 4 §10-B).
+- `make catalogo-csv-exportar` / `make catalogo-csv-exportar-base` / `make catalogo-csv-importar
+  ARCHIVO=... [APLICAR=1]` — arma el CSV curado desde OFF/SEPA locales (reproducible) / vuelca el
+  catálogo de la base con sus metadatos (formato v2, Doc 9) / lo valida en seco o lo importa (Doc 4
+  §10-B). Los exports piden solo un **nombre** (sin extensión): dejan un `.zip` (CSV + `LEEME.txt`)
+  en `ETL_EXPORT_DIR`.
+- `make locales-exportar [TODOS=1]` / `make locales-importar ARCHIVO=... [APLICAR=1]` — llevan los
+  locales verificados de una instalación a otra (Doc 9 §8).
+- `make etl-worker` — worker local: toma de la cola (DATABASE_URL) los ETL pesados que se lanzan desde el
+  panel web (sección ETL; Doc 4 §10-A).
 - `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel
   web (http://localhost:8080; `make admin-web` lo reconstruye).
 - `make apk` — APK debug para probar en un celular de la misma red (apunta a la

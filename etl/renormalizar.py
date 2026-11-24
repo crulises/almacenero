@@ -19,7 +19,9 @@ from collections import Counter
 from decimal import Decimal
 
 from etl.comun.catalogo import _PEGAJOSOS, conectar, evaluar_fila
-from etl.comun.normalizar import Entrada, clave, normalizar
+from etl.comun.normalizar import NORMALIZADOR_VERSION, Entrada, clave, normalizar
+from etl.comun.reglas_texto import reglas_en_orden
+from etl.comun.resumen import Trazas
 
 _LOTE = 5000
 
@@ -131,7 +133,16 @@ def nueva_fila(r) -> dict:
     fila.update(calidad=calidad, estado_calidad=estado, calidad_motivos=motivos)
     fila["normalizador_version"] = version
     fila["_estandares"] = estandares_incumplidos(r, s, fila) if humano else []
+    fila["_salida"] = s  # qué reglas se aplicaron (para el informe)
     return fila
+
+
+def _distinto(a, b) -> bool:
+    if isinstance(a, Decimal) or isinstance(b, Decimal):
+        return (None if a is None else Decimal(a).normalize()) != (
+            None if b is None else Decimal(b).normalize()
+        )
+    return a != b
 
 
 def _clave(f) -> tuple:
@@ -171,10 +182,13 @@ def _json(v):
     return str(v) if isinstance(v, Decimal) else v
 
 
-async def renormalizar(aplicar: bool) -> str:
+async def renormalizar(aplicar: bool, prefijo_ean: str | None = None) -> str:
+    """`prefijo_ean`: solo para tests (renormalizar un subconjunto)."""
     lectura, escritura = await conectar(), await conectar()
     total = cambian = avisados = 0
     estados: Counter = Counter()
+    trazas = Trazas()
+    campos: Counter = Counter()
     try:
         await escritura.execute(
             "create temp table renorm (id uuid primary key, nombre text, marca text, tv numeric,"
@@ -182,7 +196,11 @@ async def renormalizar(aplicar: bool) -> str:
             " version integer)"
         )
         async with lectura.transaction():
-            cur = await lectura.cursor(f"select {_COLUMNAS} from productos_canonicos")
+            cur = await lectura.cursor(
+                f"select {_COLUMNAS} from productos_canonicos"
+                " where ($1::text is null or ean like $1 || '%')",
+                prefijo_ean,
+            )
             while lote := await cur.fetch(_LOTE):
                 cambios = []
                 humanos: dict = {}  # ean -> (fila vieja, fila nueva) de lo que cargó una persona
@@ -191,6 +209,9 @@ async def renormalizar(aplicar: bool) -> str:
                     n = nueva_fila(r)
                     estados[n["estado_calidad"]] += 1
                     if _clave(n) != _clave(r):
+                        trazas.agregar(n["_salida"], r["nombre"], n["nombre"])
+                        for campo in _CAMPOS_AVISO:
+                            campos[campo] += _distinto(r[campo], n[campo])
                         if n["_estandares"]:
                             humanos[r["ean"]] = (r, n)
                         cambios.append(
@@ -214,14 +235,31 @@ async def renormalizar(aplicar: bool) -> str:
         await lectura.close()
         await escritura.close()
     out = [
+        f"RENORMALIZAR EL CATÁLOGO (normalizador v{NORMALIZADOR_VERSION}) — "
+        + ("ESCRIBE los cambios" if aplicar else "simulacro, no escribe nada"),
+        "",
+        "Cómo leerlo: le pasa el normalizador a cada producto y, si el resultado difiere de lo",
+        "guardado, lo actualiza. Respeta los campos bloqueados por un admin (salvo el nombre que",
+        "cargó una persona fuera del estándar, Doc 8). Idempotente: sobre lo ya normalizado no",
+        "cambia nada. Hace falta al cambiar la versión del normalizador o un diccionario.",
+        "",
         f"Productos: {total}",
         f"{'Actualizados' if aplicar else 'Cambiarían'}: {cambian}",
         f"Avisos a quien cargó a mano: {avisados if aplicar else '(solo al aplicar)'}",
         "Estados: "
         + ", ".join(f"{e} {estados[e]}" for e in ("completo", "parcial", "dudoso", "descartado")),
+        "",
     ]
-    if not aplicar:
-        out.append("(simulacro: no se escribió nada; agregá --aplicar)")
+    if cambian:
+        out.append(
+            "Campos que cambian: "
+            + ", ".join(f"{c}: {n}" for c, n in campos.items() if n)
+            + "  (un producto puede cambiar varios)"
+        )
+    out += [trazas.texto(total) if cambian else trazas.texto(0), ""]
+    out += ["Reglas que aplica el normalizador, en orden:", reglas_en_orden()]
+    if not aplicar and cambian:
+        out += ["", "(simulacro: no se escribió nada; marcá «aplicar» para escribir)"]
     return "\n".join(out)
 
 

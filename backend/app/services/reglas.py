@@ -102,6 +102,38 @@ REGLAS: dict[str, Regla] = {
             409,
         ),
         Regla(
+            "etl_parametro_invalido",
+            "Parámetro del ETL inválido",
+            "Uno de los parámetros del formulario no cumple lo que pide ese ETL.",
+            "Corregí el campo indicado: la ayuda del formulario dice qué espera.",
+        ),
+        Regla(
+            "etl_archivo_vacio",
+            "Archivo vacío",
+            "El archivo que subiste está vacío.",
+            "Elegí un archivo con contenido.",
+        ),
+        Regla(
+            "etl_archivo_grande",
+            "Archivo demasiado grande",
+            "El archivo supera el máximo de 25 MB que acepta el panel.",
+            "Comprimilo (.csv.gz) o partilo; los archivos pesados se cargan con el worker local.",
+            413,
+        ),
+        Regla(
+            "etl_archivo_inexistente",
+            "El archivo ya no está",
+            "Ese archivo ya no existe: se borra al importar de verdad o a las 24 h.",
+            "Subilo de nuevo.",
+        ),
+        Regla(
+            "etl_ya_terminada",
+            "La ejecución ya terminó",
+            "Esa ejecución ya terminó, no se puede cancelar.",
+            "Si hace falta, lanzá otra.",
+            409,
+        ),
+        Regla(
             "error_interno",
             "Error interno",
             "Algo falló del lado del servidor y no pudimos completar la acción.",

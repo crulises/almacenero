@@ -877,3 +877,108 @@ Decisiones en `docs/04` §9.
 - **Causa:** `catalogo_lotes` ya tiene ese `sha256` con la misma `NORMALIZADOR_VERSION`: importar
   de nuevo no aportaría nada (la importación es idempotente).
 - **Solución:** si hace falta igual (p. ej. otra fuente pisó lo curado), `FORZAR=1`.
+
+### Un ETL lanzado desde el panel se queda «en cola» para siempre
+
+- **Síntoma:** en la sección ETL el estado no sale de `en_cola`.
+- **Causa:** (a) el ETL es de ejecutor **local** y no hay un `make etl-worker` corriendo contra esa base;
+  o (b) es **web** y el backend se levantó con `ETL_WEB_ACTIVO=false`, o con una imagen vieja sin `etl/`.
+- **Solución:** (a) correr `make etl-worker` con el `DATABASE_URL` de la base que mira el panel; (b)
+  `make up` (reconstruye la imagen con el contexto en la raíz del repo) y no desactivar el ejecutor.
+
+### Una ejecución quedó «corriendo» y no avanza
+
+- **Causa:** el ejecutor murió (se apagó el backend o se cortó el worker) a mitad de camino.
+- **Solución:** no hay que hacer nada: sin latido por 2 minutos pasa sola a `fallo` y el ejecutor puede
+  tomar la siguiente. Cada lote es una transacción, así que no quedan datos a medias; volver a lanzar es
+  seguro (los ETL son idempotentes).
+
+### `docker compose build` no encuentra `etl/` (o la imagen vieja no tiene `etl`)
+
+- **Síntoma:** el backend arranca pero el ejecutor web falla con `No module named 'etl'`.
+- **Causa:** el Dockerfile del backend se construía con `./backend` como contexto, que no incluye `etl/`.
+- **Solución:** el contexto es la raíz del repo (`docker-compose.yml`: `context: .`, `dockerfile:
+  backend/Dockerfile`; `.dockerignore` deja afuera `app/`, `etl/data/` y los tests). Cualquier otro build
+  (CI, Fly) tiene que usar ese mismo contexto.
+
+### `asyncio.TimeoutError` no se atrapa como `TimeoutError` en Python 3.10
+
+- **Síntoma:** un `except TimeoutError` alrededor de `asyncio.wait_for` no atrapa nada en la Mac (3.10).
+- **Causa:** recién desde 3.11 `asyncio.TimeoutError` es el mismo `TimeoutError`.
+- **Solución:** `except asyncio.TimeoutError` (vale en las dos).
+
+### `auditoria_admin_entidad_check` al auditar una acción nueva
+
+- **Síntoma:** una acción nueva del panel falla con 422 `dato_invalido (auditoria_admin_entidad_check)`.
+- **Causa:** la entidad de auditoría es una lista cerrada en la base.
+- **Solución:** sumarla al check en una migración (el corte 18 sumó `etl`).
+
+### «Medir la calidad» da siempre lo mismo, cambie lo que cambie en los parámetros
+
+- **Síntoma:** en el panel (ETL → Medir la calidad) el resultado es idéntico con `muestra` 1000 o
+  130000 y con `estado` descartado o completo.
+- **Causa:** (1) los parámetros solo afectaban la lista de ejemplos, y (2) esa lista solo incluía
+  productos cuyo nombre el normalizador cambiaría; como el catálogo ya está renormalizado, no había
+  ninguno y la lista salía vacía. Además el reporte no decía qué reglas se aplicaban.
+- **Solución:** los ejemplos son ahora productos al azar del estado pedido (con puntaje y motivos), el
+  informe aclara cómo leerlo («cambiaría: 0» = ya normalizado) e incluye qué reglas se aplicaron y por qué
+  bajan de puntaje (Doc 7 §14). Para ver las reglas sobre un dato crudo: ETL → «Probar el normalizador».
+
+### `ruff format` sobre `etl/` reescribe medio repo
+
+- **Síntoma:** después de formatear, `git status` muestra decenas de archivos de `etl/` modificados que no
+  tocaste (comas finales, líneas partidas distinto).
+- **Causa:** `ruff` suelto usa su configuración por defecto (88 columnas), no la del proyecto
+  (`backend/pyproject.toml`, 100).
+- **Solución:** correr siempre `make lint` o `ruff … --config backend/pyproject.toml etl`. Si ya pasó,
+  `git checkout -- <archivos que no editaste>` y reformatear los tuyos con esa config.
+
+### `campos_bloqueados solo se modifica al resolver un conflicto` (o «nombre bloqueado…») desde un script
+
+- **Síntoma:** un `UPDATE` de `campos_bloqueados` o de un campo bloqueado falla aunque hiciste
+  `select set_config('app.catalogo_write', 'on', true)`.
+- **Causa:** `set_config(..., true)` vale solo dentro de la transacción; en una conexión en autocommit
+  cada sentencia es su propia transacción y el permiso se pierde antes del `UPDATE`.
+- **Solución:** `async with conn.transaction():` alrededor de las dos sentencias (lo hace
+  `services.catalogo.aplicar` y `etl/curado/importar.py::_restaurar`).
+
+### Un export no se puede volver a importar: «ean_digito_verificador» en un producto cargado a mano
+
+- **Síntoma:** reimportar un export de la base informa 1 fila inválida por dígito verificador.
+- **Causa:** un producto `manual` (demo/código interno) tiene un EAN con verificador inválido; la base lo
+  acepta (solo exige 8–14 dígitos) pero el importador validaba todo con GS1.
+- **Solución:** en un v2 las filas `origen = manual` se aceptan con solo el largo (Doc 9 §5.4).
+
+### «Pasan a figurar como `curado`: 134503» al reimportar un export de la base
+
+- **Síntoma:** el simulacro de reimportar un v2 decía que casi todos cambiaban de origen.
+- **Causa:** la fusión con `fuente = 'curado'` sube el origen a `curado`, pero en un v2 cada fila ya trae el
+  suyo (`off`, `sepa`…).
+- **Solución:** el importador restaura el `origen` del archivo (sin degradar nunca un `manual` local); Doc 9
+  §5.2. Ahora da 0.
+
+### Una migración aplicada «a mano» en la base compartida y `make migrate` en otras ramas
+
+- **Síntoma:** `remote migration versions not found in local migrations directory` en una rama que no
+  tiene la migración.
+- **Causa:** `supabase migration up` registra la versión en la base; las ramas sin ese archivo no la
+  conocen. La base local es una sola para todos los worktrees.
+- **Solución:** cambiar a la rama que la tiene (`git switch feat/etl-panel`). Para cambios aditivos que
+  hay que probar desde otro lado, escribir la migración idempotente y aplicarla con `psql -f` (no
+  registra la versión; el `make migrate` posterior de la rama correcta la reaplica sin daño).
+
+### El usuario tenía que saber la extensión del export (`.csv.gz`)
+
+- **Síntoma:** el formulario de export rechazaba `catalogo` por no terminar en `.csv`/`.csv.gz`.
+- **Causa:** el nombre validaba la extensión en vez de decidir nosotros el formato.
+- **Solución:** el export pide solo un nombre y siempre escribe `.zip` (CSV + `LEEME.txt`); si el nombre
+  trae `.zip`/`.csv`/`.csv.gz`, se ignora. Al importar se reconoce el formato por los primeros bytes, no
+  por la extensión (Doc 9 §2.1).
+
+### Sin migración: dos datos de un mismo local en dos instalaciones
+
+- **Síntoma:** al llevar locales de una base a otra se duplicaban o se pisaba lo que el admin de destino
+  ya había corregido.
+- **Causa:** no hay un id común entre instalaciones (los uuid son locales a cada base).
+- **Solución:** se cruza por los vínculos con OSM/SEPA y, si no, por nombre + distancia (la regla del alta
+  de locales); un local existente no se pisa (solo se verifica y se le suman vínculos). Doc 9 §8.

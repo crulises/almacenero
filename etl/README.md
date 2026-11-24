@@ -11,6 +11,7 @@ etl/off/     Open Food Facts (CSV): Argentina y vecinos por defecto
 etl/osm/     OpenStreetMap (extracto de Geofabrik) -> locales
 etl/sepa/locales.py   sucursales de SEPA -> locales
 etl/curado/  CSV curado: exportar desde las fuentes crudas e importar con simulacro
+etl/locales_intercambio.py   exportar/importar locales validados entre instalaciones
 etl/conflictos.py   revisión manual de desacuerdos entre fuentes
 ```
 
@@ -46,12 +47,52 @@ Cargar siempre es idempotente: repetir una corrida no duplica ni pisa lo resuelt
 
 ```bash
 # 1. Armarlo en tu máquina desde las fuentes crudas (reproducible: mismo hash con las mismas fuentes)
+#    CURADO_SALIDA es solo un NOMBRE (sin extensión): deja un .zip (CSV + LEEME.txt con las reglas
+#    aplicadas) en ETL_EXPORT_DIR (por defecto etl/data/exports/)
 make catalogo-csv-exportar OFF_ARCHIVO=etl/data/off-muestra.csv.gz \
-     SEPA_ARCHIVOS="etl/data/sepa/sepa_miercoles.zip" CURADO_SALIDA=etl/data/catalogo-curado.csv.gz
+     SEPA_ARCHIVOS="etl/data/sepa/sepa_miercoles.zip" CURADO_SALIDA=catalogo-curado
 # 2. Ver qué haría (simulacro, no escribe) y después importarlo (con DATABASE_URL local o remota)
-make catalogo-csv-importar ARCHIVO=etl/data/catalogo-curado.csv.gz
-make catalogo-csv-importar ARCHIVO=etl/data/catalogo-curado.csv.gz APLICAR=1
+make catalogo-csv-importar ARCHIVO=etl/data/exports/catalogo-curado.zip
+make catalogo-csv-importar ARCHIVO=etl/data/exports/catalogo-curado.zip APLICAR=1
 ```
+
+### Intercambiar catálogos (con todos los metadatos)
+
+```bash
+# Volcar el catálogo de la base al formato v2: datos + origen, campos bloqueados, revisiones,
+# sugerencias, avisos del normalizador y conflictos de cada producto (sin ids de personas)
+make catalogo-csv-exportar-base CURADO_SALIDA=catalogo-intercambio
+# Importarlo en otra base (o la misma): restaura origen y bloqueos, recalcula la calidad
+make catalogo-csv-importar ARCHIVO=etl/data/exports/catalogo-intercambio.zip   # simulacro
+```
+
+### Locales validados
+
+```bash
+make locales-exportar LOCALES_SALIDA=locales-intercambio        # solo los verificados (TODOS=1: todos)
+make locales-importar ARCHIVO=etl/data/exports/locales-intercambio.zip [APLICAR=1]   # simulacro / real
+```
+
+Un local que ya existe en el destino no se pisa: se le suman vínculos y, si venía verificado, se lo
+verifica. Doc 9 §8.
+
+El formato (v1 y v2), sus reglas de importación y cómo implementarlo en otro proyecto:
+`docs/09-formato-intercambio-catalogo.md`.
 
 Después de importar el archivo se puede borrar: `catalogo_lotes` guarda su hash, la versión del
 normalizador y el hash de las fuentes con que se armó. Detalle: `docs/04` §10-B.
+
+## Desde el panel de admin (sección ETL)
+
+Cada ETL se define en `etl/definiciones.py` con la descripción de sus parámetros; el panel arma el
+formulario con ella. Lo liviano (importar CSV curado, renormalizar, medir calidad) corre dentro del
+backend; lo pesado (OFF, SEPA, OSM, armar el CSV curado) queda en cola y lo toma tu máquina:
+
+```bash
+make etl-worker     # con DATABASE_URL de la base que mira el panel (local o remota); Ctrl-C para salir
+```
+
+Los archivos de esas rutas (`etl/data/…`) tienen que existir en la máquina del worker. Doc 4 §10-A.
+
+Los ETL de **importar** (catálogo y locales) tienen un selector de archivo: se sube el `.zip` del export al
+servidor (hasta 25 MB) y después se ejecuta; el simulacro conserva el archivo para confirmar.

@@ -47,6 +47,100 @@
         </button>
       </div>
 
+      <!-- ============================================================= ETL -->
+      <section x-show="vista === 'etl'">
+        <div class="caja">
+          <h3>Lanzar un ETL</h3>
+          <div class="form">
+            <label>ETL
+              <select :value="etlClave" @change="elegirEtl($event.target.value)">
+                <option value="">— elegí uno —</option>
+                <template x-for="d in etlDefs" :key="d.clave"><option :value="d.clave" x-text="d.titulo + (d.ejecutor === 'local' ? ' (worker local)' : '')"></option></template>
+              </select>
+            </label>
+          </div>
+          <template x-if="etlDef">
+            <div>
+              <p x-text="etlDef.descripcion"></p>
+              <p class="suave" x-show="etlDef.ejecutor === 'local'">Es pesado: lo toma el <b>worker local</b>. Tenés que tener <span class="mono">make etl-worker</span> corriendo en tu máquina (con <span class="mono">DATABASE_URL</span> apuntando a esta base); el botón solo lo deja en cola.</p>
+              <p class="suave" x-show="etlDef.ejecutor === 'web'">Es liviano: corre como proceso del backend, de a uno por vez.</p>
+              <div class="form">
+                <template x-for="p in etlDef.parametros" :key="p.nombre">
+                  <label>
+                    <span><span x-text="p.nombre"></span><b class="error" x-show="p.obligatorio"> *</b></span>
+                    <template x-if="p.tipo === 'booleano'"><input type="checkbox" x-model="etlForm[p.nombre]"></template>
+                    <template x-if="p.tipo === 'entero'"><input type="number" x-model="etlForm[p.nombre]"></template>
+                    <template x-if="p.tipo === 'fecha'"><input type="date" x-model="etlForm[p.nombre]"></template>
+                    <template x-if="p.tipo === 'texto'"><input type="text" x-model="etlForm[p.nombre]"></template>
+                    <template x-if="p.tipo === 'nombre_archivo'"><input type="text" x-model="etlForm[p.nombre]" placeholder="mi-export (sin extensión)" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" title="Solo un nombre: letras, números, punto y guion. La extensión la pone el sistema."></template>
+                    <template x-if="p.tipo === 'opcion'">
+                      <select x-model="etlForm[p.nombre]"><option value="">—</option><template x-for="o in p.opciones" :key="o"><option :value="o" x-text="o"></option></template></select>
+                    </template>
+                    <template x-if="p.tipo === 'archivo'">
+                      <span>
+                        <input type="file" accept=".zip,.csv,.gz,application/zip,text/csv" :disabled="etlSubiendo" @change="subirArchivoEtl(p, $event)">
+                        <small class="suave" x-show="etlSubiendo" style="display:block">Subiendo al servidor…</small>
+                        <small class="suave" x-show="!etlSubiendo && !etlArchivos[p.nombre]" style="display:block">Se sube apenas lo elegís.</small>
+                        <small class="suave" x-show="etlArchivos[p.nombre]" style="display:block" x-text="etlArchivos[p.nombre] ? 'Subido: ' + etlArchivos[p.nombre].nombre + ' (' + kb(etlArchivos[p.nombre].tamano) + ')' : ''"></small>
+                      </span>
+                    </template>
+                    <span x-text="p.ayuda"></span>
+                  </label>
+                </template>
+              </div>
+              <button class="primario" :disabled="etlEnviando" @click="ejecutarEtl()">Ejecutar</button>
+            </div>
+          </template>
+        </div>
+
+        <h3>Historial</h3>
+        <div class="filtros">
+          <select x-model="sec.etl.f.estado" @change="cargar('etl', true)">
+            <option value="">Todos los estados</option>
+            <template x-for="e in ['en_cola','corriendo','ok','fallo','cancelada']"><option :value="e" x-text="e"></option></template>
+          </select>
+          <button @click="cargar('etl')">Actualizar</button>
+          <span class="suave" x-text="rango('etl')"></span>
+        </div>
+        <div class="tabla"><table>
+          <thead><tr><th>Cuándo</th><th>ETL</th><th>Dónde</th><th>Estado</th><th>Filas</th><th>Duración</th><th>Parámetros</th><th>Quién</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="e in sec.etl.items" :key="e.id">
+              <tr>
+                <td class="suave" x-text="fecha(e.creado_en)"></td>
+                <td x-text="etlTitulo(e)"></td>
+                <td class="suave" x-text="e.ejecutor === 'local' ? 'worker local' : 'backend'"></td>
+                <td><span class="badge" :class="etlClase(e.estado)" x-text="e.estado"></span></td>
+                <td x-text="e.filas ?? ''"></td>
+                <td class="suave" x-text="etlDuracion(e)"></td>
+                <td class="suave ancho" x-text="resumenParametros(e)"></td>
+                <td class="suave" x-text="e.creado_por_alias"></td>
+                <td>
+                  <button @click="verEtl(e)">Ver log</button>
+                  <button class="peligro" x-show="['en_cola','corriendo'].includes(e.estado)" @click="cancelarEtl(e)">Cancelar</button>
+                  <button class="primario" x-show="puedeAplicar(e)" @click="repetirAplicando(e)">Importar de verdad</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table></div>
+        <div class="pag">
+          <button @click="pagina('etl', -1)" :disabled="sec.etl.offset === 0">←</button>
+          <button @click="pagina('etl', 1)" :disabled="sec.etl.offset + sec.etl.limit >= sec.etl.total">→</button>
+        </div>
+
+        <div class="caja" x-show="etlDetalle">
+          <h3>
+            <span x-text="etlDetalle ? etlTitulo(etlDetalle) + ' · ' + etlDetalle.estado : ''"></span>
+            <button @click="etlDetalle = null">Cerrar</button>
+          </h3>
+          <template x-if="etlDetalle && etlDetalle.reporte">
+            <details open><summary>Reporte</summary><pre x-text="JSON.stringify(etlDetalle.reporte, null, 2)"></pre></details>
+          </template>
+          <pre class="mono" style="max-width:100%;max-height:420px;overflow:auto" x-text="etlDetalle ? (etlDetalle.log || '(sin salida todavía)') : ''"></pre>
+        </div>
+      </section>
+
       <!-- ========================================================= LOCALES -->
       <section x-show="vista === 'locales'">
         <div class="filtros">
@@ -391,6 +485,27 @@
           </select>
           <span class="suave" x-text="rango('conflictos')"></span>
         </div>
+        <section class="caja" x-show="edicion">
+          <template x-if="edicion">
+            <div>
+              <h3>Editar y resolver · <span class="mono" x-text="edicion.c.ean"></span></h3>
+              <p class="suave">Conflicto en <b x-text="edicion.c.campo"></b>: A = <b x-text="edicion.c.valor_a"></b>, B = <b x-text="edicion.c.valor_b"></b>. Corregí los datos; lo que cargues queda <b>bloqueado</b> contra el ETL y se cierran los conflictos de ese campo.</p>
+              <div class="form">
+              <label><span>Nombre</span><input type="text" x-model="edicion.f.nombre" maxlength="200"></label>
+              <label><span>Marca</span><input type="text" x-model="edicion.f.marca" maxlength="100"></label>
+              <label><span>Tamaño</span><input type="number" step="any" min="0" x-model="edicion.f.tamano_valor"></label>
+              <label><span>Unidad</span><select x-model="edicion.f.tamano_unidad"><option value="">—</option><option value="g">g</option><option value="kg">kg</option><option value="ml">ml</option><option value="l">l</option><option value="u">u</option></select></label>
+              <label><span>Pack de</span><input type="number" min="2" x-model="edicion.f.pack_cantidad"></label>
+              <label><span>Presentación</span><input type="text" x-model="edicion.f.presentacion" maxlength="40"></label>
+              <label><span>Motivo (opcional)</span><input type="text" x-model="edicion.f.motivo" maxlength="300"></label>
+              <div>
+                <button class="primario" @click="guardarEdicion()">Guardar y resolver</button>
+                <button @click="edicion = null">Cancelar</button>
+              </div>
+            </div>
+            </div>
+          </template>
+        </section>
         <div class="tabla"><table>
           <thead><tr><th>EAN</th><th>Producto</th><th>Campo</th><th>A (catálogo)</th><th>B (otra fuente)</th><th></th></tr></thead>
           <tbody>
@@ -403,9 +518,9 @@
                 <td><span x-text="c.valor_b"></span> <span class="suave" x-text="'(' + c.fuente_b + ')'"></span></td>
                 <td>
                   <template x-if="c.estado === 'pendiente'">
-                    <span><button @click="resolver(c, 'a')">Dejar A</button> <button class="primario" @click="resolver(c, 'b')">Usar B</button></span>
+                    <span><button @click="resolver(c, 'a')">Dejar A</button> <button class="primario" @click="resolver(c, 'b')">Usar B</button> <button @click="editarConflicto(c)" title="Ni A ni B: corregir los datos a mano">Editar y resolver</button></span>
                   </template>
-                  <span x-show="c.estado === 'resuelto'" class="suave" x-text="'eligió ' + c.elegido.toUpperCase()"></span>
+                  <span x-show="c.estado === 'resuelto'" class="suave" x-text="c.elegido === 'manual' ? 'se editó a mano' : 'eligió ' + c.elegido.toUpperCase()"></span>
                 </td>
               </tr>
             </template>
@@ -540,7 +655,7 @@
         <div class="filtros">
           <select x-model="sec.auditoria.f.entidad" @change="cargar('auditoria', true)">
             <option value="">Todo</option>
-            <template x-for="e in ['local','precio','config','producto','conflicto','usuario','invitacion']"><option :value="e" x-text="e"></option></template>
+            <template x-for="e in ['local','precio','config','producto','conflicto','usuario','invitacion','sugerencia','etl']"><option :value="e" x-text="e"></option></template>
           </select>
           <span class="suave" x-text="rango('auditoria')"></span>
         </div>
@@ -807,14 +922,36 @@
           <section class="caja">
             <h3>Conflictos</h3>
             <p class="suave" x-show="!ficha.d.conflictos.length">Sin conflictos.</p>
+        <section class="caja" x-show="edicion" style="margin-top:.5rem">
+              <template x-if="edicion">
+                <div>
+                  <h3>Editar y resolver · <span class="mono" x-text="edicion.c.ean"></span></h3>
+                  <p class="suave">Conflicto en <b x-text="edicion.c.campo"></b>: A = <b x-text="edicion.c.valor_a"></b>, B = <b x-text="edicion.c.valor_b"></b>. Corregí los datos; lo que cargues queda <b>bloqueado</b> contra el ETL y se cierran los conflictos de ese campo.</p>
+                  <div class="form">
+                  <label><span>Nombre</span><input type="text" x-model="edicion.f.nombre" maxlength="200"></label>
+                  <label><span>Marca</span><input type="text" x-model="edicion.f.marca" maxlength="100"></label>
+                  <label><span>Tamaño</span><input type="number" step="any" min="0" x-model="edicion.f.tamano_valor"></label>
+                  <label><span>Unidad</span><select x-model="edicion.f.tamano_unidad"><option value="">—</option><option value="g">g</option><option value="kg">kg</option><option value="ml">ml</option><option value="l">l</option><option value="u">u</option></select></label>
+                  <label><span>Pack de</span><input type="number" min="2" x-model="edicion.f.pack_cantidad"></label>
+                  <label><span>Presentación</span><input type="text" x-model="edicion.f.presentacion" maxlength="40"></label>
+                  <label><span>Motivo (opcional)</span><input type="text" x-model="edicion.f.motivo" maxlength="300"></label>
+                  <div>
+                    <button class="primario" @click="guardarEdicion()">Guardar y resolver</button>
+                    <button @click="edicion = null">Cancelar</button>
+                  </div>
+                </div>
+                </div>
+              </template>
+            </section>
+
             <table x-show="ficha.d.conflictos.length"><tbody>
               <template x-for="c in ficha.d.conflictos" :key="c.id">
                 <tr><td x-text="c.campo"></td>
                   <td>A: <b x-text="c.valor_a"></b> <span class="suave" x-text="'(' + c.fuente_a + ')'"></span></td>
                   <td>B: <b x-text="c.valor_b"></b> <span class="suave" x-text="'(' + c.fuente_b + ')'"></span></td>
                   <td>
-                    <template x-if="c.estado === 'pendiente'"><span><button @click="resolverFicha(c, 'a')">Dejar A</button> <button class="primario" @click="resolverFicha(c, 'b')">Usar B</button></span></template>
-                    <span x-show="c.estado === 'resuelto'" class="suave" x-text="'resuelto: ' + c.elegido.toUpperCase()"></span>
+                    <template x-if="c.estado === 'pendiente'"><span><button @click="resolverFicha(c, 'a')">Dejar A</button> <button class="primario" @click="resolverFicha(c, 'b')">Usar B</button> <button @click="editarConflicto(c)">Editar y resolver</button></span></template>
+                    <span x-show="c.estado === 'resuelto'" class="suave" x-text="c.elegido === 'manual' ? 'resuelto: editado a mano' : 'resuelto: ' + c.elegido.toUpperCase()"></span>
                   </td></tr>
               </template>
             </tbody></table>

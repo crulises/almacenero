@@ -90,3 +90,24 @@ def test_cada_fila_es_punto_fijo_del_normalizador(tmp_path):
         )
         assert isinstance(p, Producto) and p.tamano_valor in (None, p.tamano_valor)
         assert p.tamano_valor is None or p.tamano_valor > Decimal(0)
+
+
+def test_el_zip_trae_el_csv_y_un_leeme_con_las_reglas_aplicadas(tmp_path):
+    import zipfile
+
+    from etl.comun.paquete import LEEME
+
+    a, *_, off, sepa = fuentes(tmp_path)
+    r = exportar(tmp_path / "armado.zip", off=off, sepa=[sepa], paises=None)
+    with zipfile.ZipFile(tmp_path / "armado.zip") as z:
+        assert z.namelist() == [LEEME, "armado.csv"]
+        leeme = z.read(LEEME).decode()
+    assert r.sha256 in leeme
+    assert "Qué se hizo con los datos" in leeme and "Transformaciones" in leeme
+    assert "Cómo importarlo" in leeme and "Columnas" in leeme
+    # el reporte del log cuenta lo mismo que el LEEME
+    assert r.reglas and r.reglas in leeme
+    # y el zip se lee igual que el csv: mismo hash de contenido
+    assert productos(tmp_path / "armado.zip")[a]["nombre"] == "Aceite Girasol"
+    exportar(tmp_path / "armado.csv", off=off, sepa=[sepa], paises=None)
+    assert leer(tmp_path / "armado.zip").sha256 == leer(tmp_path / "armado.csv").sha256

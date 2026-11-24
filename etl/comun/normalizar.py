@@ -49,6 +49,8 @@ class Salida:
     estado: str
     motivos: tuple[str, ...]
     version: int = NORMALIZADOR_VERSION
+    # Qué reglas aplicó (ids de etl/comun/reglas_texto.py), en orden; para explicar los reportes.
+    transformaciones: tuple[str, ...] = ()
 
 
 # ----------------------------------------------------------------------- datos
@@ -441,12 +443,20 @@ def puntuar(
 # --------------------------------------------------------------------- principal
 def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una receta lineal
     motivos: list[str] = []
-    original = _GAT_SIN_UNIDAD.sub(r"Gat \1 ml", _limpiar(e.nombre or ""))
+    trazas: list[str] = []  # qué reglas se aplicaron (ids de reglas_texto.TRANSFORMACIONES)
+    limpio = _limpiar(e.nombre or "")
+    if limpio != (e.nombre or "").strip():
+        trazas.append("limpieza_texto")
+    original = _GAT_SIN_UNIDAD.sub(r"Gat \1 ml", limpio)
     texto = original
 
     # 1-3. Códigos de ERP al principio y sufijo de envase de SEPA («BOT-750-ml.»).
-    texto = _CODIGO_LIDER.sub("", texto)
-    texto, presentacion, tam_sufijo = _quitar_sufijos(texto)
+    sin_codigo = _CODIGO_LIDER.sub("", texto)
+    if sin_codigo != texto:
+        trazas.append("codigo_erp")
+    texto, presentacion, tam_sufijo = _quitar_sufijos(sin_codigo)
+    if presentacion or tam_sufijo:
+        trazas.append("sufijo_envase_sepa")
     texto = _PUNTO_ENTRE_LETRAS.sub(" ", texto)
 
     # Nombre inservible: sin letras, con fecha/hora de vencimiento o demasiado corto.
@@ -495,6 +505,8 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
         tamano = campo
         quitar_del_nombre = False
         motivos.append("tamano_en_conflicto")
+    if tam_nombre is not None and quitar_del_nombre:
+        trazas.append("tamano_del_nombre")
     if not quitar_del_nombre:
         texto = original
         texto = _quitar_sufijos(_CODIGO_LIDER.sub("", texto))[0]
@@ -504,6 +516,13 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
     # 6. Marca.
     marca, fabricante, mot_marca = _marca_desde_fuente(e.marca)
     motivos += mot_marca
+    marca_fuente = (e.marca or "").strip()
+    if fabricante:
+        trazas.append("razon_social_a_fabricante")
+    elif marca_fuente and marca is None:
+        trazas.append("marca_placeholder")
+    elif marca and marca_fuente and marca != marca_fuente:
+        trazas.append("marca_canonica")
     tokens = texto.split()
     confiable = marca is not None and marca in _claves_de_marca()
     if marca is None or not confiable:
@@ -512,6 +531,8 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
         # marca prioritaria que el nombre trae entera («… lysoform …»).
         if encontrada and (marca is None or encontrada in _marcas_prioritarias()):
             marca, confiable = encontrada, True
+            if not marca_fuente or marca_fuente != marca:
+                trazas.append("marca_desde_nombre")
     # 7. Marca fuera del nombre (solo si es confiable o la fuente la trae entera).
     if marca is not None:
         alias = {
@@ -524,11 +545,13 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
             and _tiene_palabra(restante)
         ):
             tokens = restante
+            trazas.append("marca_fuera_del_nombre")
         elif confiable is False and alias and any(a in clave(texto) for a in alias):
             motivos.append("marca_en_nombre")
 
     # 8. Capitalización (antes de expandir: las expansiones heredan el estilo).
     nombre = _tokens_a_texto(tokens) or _recortar(original)
+    nombre_antes_de_capitalizar = nombre
     latino = _es_latino(nombre)
     if latino and _letras(nombre):
         if nombre == nombre.upper() or nombre == nombre.lower():
@@ -547,6 +570,8 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
     if not latino:
         motivos.append("no_latino")
     nombre = _mayuscula_inicial(nombre)
+    if nombre != nombre_antes_de_capitalizar:
+        trazas.append("mayusculas")
     tokens = nombre.split(" ")
 
     # 9. Abreviaturas inequívocas, envase suelto, ambiguas.
@@ -566,6 +591,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
             and (tam_nombre or suelto_al_final)
         ):
             presentacion = envase_nombre[bajo]
+            trazas.append("envase_a_presentacion")
             continue
         if (
             bajo in envase_nombre
@@ -576,9 +602,11 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
             continue
         if bajo in abrev:
             nuevos.append(_expandir(abrev[bajo], t))
+            trazas.append(f"abreviatura_expandida:{bajo}")
             continue
         if (ctx := _expandir_contextual(bajo, t, contexto, titulado)) is not None:
             nuevos.append(ctx)
+            trazas.append(f"abreviatura_expandida:{bajo}")
             continue
         if "/" in bajo and not re.match(r"^[pcs]/", bajo):
             partes = t.split("/")
@@ -586,6 +614,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
                 _expandir_contextual(p.lower().rstrip("."), p, contexto, titulado) for p in partes
             ]
             if any(x is not None for x in exp):
+                trazas.append(f"abreviatura_expandida:{bajo}")
                 nuevos.append(
                     "/".join(
                         _mayuscula_inicial(x if x is not None else p)
@@ -597,6 +626,7 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
                 continue
         mm = re.match(r"^([pcs])/([^\s/]+)$", bajo)
         if mm:
+            trazas.append(f"abreviatura_expandida:{mm.group(1)}/")
             nuevos += [_expandir(abrev[mm.group(1) + "/"], t), mm.group(2)]
             continue
         nuevos.append(t)
@@ -605,6 +635,9 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
     # Lo que no se pudo resolver no se inventa: queda dudoso para que lo mire una persona.
     if any(t.lower().rstrip(".") in _ambiguas() for t in tokens):
         motivos.append("abreviado")
+
+    if pack and pack > 1 and quitar_del_nombre:
+        trazas.append("pack_detectado")
 
     # 10. Puntaje y estado.
     presentacion = presentacion or e.presentacion
@@ -622,4 +655,5 @@ def normalizar(e: Entrada) -> Salida:  # noqa: PLR0912, PLR0915 — es una recet
         calidad=calidad,
         estado=estado,
         motivos=motivos,
+        transformaciones=tuple(dict.fromkeys(trazas)),
     )
