@@ -346,3 +346,26 @@ simulacro e importación: `docs/04` §10-B. Lo que importa para la normalizació
   `NORMALIZADOR_VERSION` desde que se armó el CSV, el simulacro muestra qué cambiaría.
 - Si cambia un diccionario o la versión, el hash del CSV regenerado **cambia a propósito**: la
   versión del normalizador va en la cabecera y en `catalogo_lotes`.
+
+## 14. Qué transformó el normalizador: reportes legibles (ajuste del corte 18)
+
+Un reporte con solo totales no dice **qué se le hizo a los datos**. Por eso:
+
+- `normalizar()` devuelve en `Salida.transformaciones` los ids de las reglas que aplicó, en orden
+  (`limpieza_texto`, `codigo_erp`, `sufijo_envase_sepa`, `tamano_del_nombre`, `pack_detectado`,
+  `marca_placeholder`, `razon_social_a_fabricante`, `marca_canonica`, `marca_desde_nombre`,
+  `marca_fuera_del_nombre`, `mayusculas`, `envase_a_presentacion`, `abreviatura_expandida:<abrev>`).
+  No cambia el resultado ni `NORMALIZADOR_VERSION`: solo lo explica. Normalizar lo ya normalizado
+  da `()` (lo prueba `etl/tests/test_transformaciones.py`).
+- `etl/comun/reglas_texto.py` tiene, para cada regla y cada motivo de puntaje, el texto en lenguaje
+  llano (qué hace y un ejemplo). **Regla del equipo:** al sumar una regla al normalizador, sumar su
+  id a `TRANSFORMACIONES` y su texto acá; si falta, el test de cobertura falla.
+- `etl/comun/resumen.py` arma el informe: cuántos productos tocó cada regla, ejemplos «antes →
+  después», las abreviaturas más usadas y por qué bajan de puntaje.
+- `make catalogo-calidad` y `make catalogo-renormalizar` (y las mismas ejecuciones del panel) lo
+  imprimen, junto con la lista de reglas en orden. En la calidad, `muestra` y `estado` eligen los
+  **ejemplos** (productos al azar de ese estado, con puntaje y motivos); el resumen es siempre del
+  catálogo entero. Si «cambiaría» da 0, el catálogo ya está normalizado.
+- «Probar el normalizador con un producto» (panel → ETL) corre un nombre/marca/tamaño a mano y
+  muestra el paso a paso: es la forma de ver las reglas actuando sobre un dato crudo.
+

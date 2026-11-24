@@ -79,3 +79,25 @@ def test_describir_es_json_para_el_panel():
         d["parametros"][0]
     )
     assert "ejecutar" not in d
+
+
+def test_probar_el_normalizador_explica_paso_a_paso():
+    import asyncio
+
+    class Ctx:
+        def __init__(self):
+            self.lineas = []
+
+        def log(self, t):
+            self.lineas.append(t)
+
+    ctx = Ctx()
+    rep = asyncio.run(
+        obtener("normalizador_probar").ejecutar(
+            {"nombre": "ACEITE GIRASOL COCINERO 900 CC", "marca": "COCINERO"}, ctx
+        )
+    )
+    texto = "\n".join(ctx.lineas)
+    assert rep["nombre"] == "Aceite Girasol" and rep["marca"] == "Cocinero"
+    assert "Reglas que se aplicaron" in texto and "Capitalización" in texto
+    assert "puntaje" in texto and "estado" in texto

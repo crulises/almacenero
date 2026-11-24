@@ -912,3 +912,15 @@ Decisiones en `docs/04` §9.
 - **Síntoma:** una acción nueva del panel falla con 422 `dato_invalido (auditoria_admin_entidad_check)`.
 - **Causa:** la entidad de auditoría es una lista cerrada en la base.
 - **Solución:** sumarla al check en una migración (el corte 18 sumó `etl`).
+
+### «Medir la calidad» da siempre lo mismo, cambie lo que cambie en los parámetros
+
+- **Síntoma:** en el panel (ETL → Medir la calidad) el resultado es idéntico con `muestra` 1000 o
+  130000 y con `estado` descartado o completo.
+- **Causa:** (1) los parámetros solo afectaban la lista de ejemplos, y (2) esa lista solo incluía
+  productos cuyo nombre el normalizador cambiaría; como el catálogo ya está renormalizado, no había
+  ninguno y la lista salía vacía. Además el reporte no decía qué reglas se aplicaban.
+- **Solución:** los ejemplos son ahora productos al azar del estado pedido (con puntaje y motivos), el
+  informe aclara cómo leerlo («cambiaría: 0» = ya normalizado) e incluye qué reglas se aplicaron y por qué
+  bajan de puntaje (Doc 7 §14). Para ver las reglas sobre un dato crudo: ETL → «Probar el normalizador».
+

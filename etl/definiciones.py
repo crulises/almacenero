@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Las definiciones de cada ETL que se puede disparar desde el panel (docs/04 §10-A).
 
 Cada `ejecutar(parametros, ctx)` llama al mismo código que corren los `make etl-*` de siempre.
@@ -73,6 +74,32 @@ async def _calidad(p: dict, ctx) -> dict:
     texto = await medir(p.get("muestra", 0), p.get("estado"))
     ctx.log(texto)
     return {"resumen": texto}
+
+
+async def _probar(p: dict, ctx) -> dict:
+    from etl.comun.normalizar import Entrada, normalizar
+    from etl.comun.reglas_texto import MOTIVOS, TRANSFORMACIONES, base
+    from etl.comun.tamano import parsear_tamano
+
+    tam = parsear_tamano(p["tamano"]) if p.get("tamano") else None
+    s = normalizar(Entrada(p["nombre"], p.get("marca") or None, tam))
+    ctx.log(
+        f"Entrada:   nombre={p['nombre']!r} marca={p.get('marca')!r} tamaño={p.get('tamano')!r}"
+    )
+    t = f"{s.tamano[0].normalize():f} {s.tamano[1]}" if s.tamano else "(sin tamaño)"
+    ctx.log(f"Resultado: nombre={s.nombre!r} marca={s.marca!r} tamaño={t} pack={s.pack_cantidad}")
+    ctx.log(f"           presentación={s.presentacion!r} fabricante={s.fabricante!r}")
+    ctx.log(f"           puntaje {s.calidad} → estado {s.estado}")
+    ctx.log("\nReglas que se aplicaron:" if s.transformaciones else "\nNo se aplicó ninguna regla.")
+    for id_ in s.transformaciones:
+        titulo, que, ejemplo = TRANSFORMACIONES[base(id_)]
+        detalle = f" [{id_.split(':', 1)[1]}]" if ":" in id_ else ""
+        ctx.log(f"  • {titulo}{detalle}: {que}\n      ej.: {ejemplo}")
+    if s.motivos:
+        ctx.log("\nMotivos del puntaje:")
+        for m in s.motivos:
+            ctx.log(f"  • {m}: {MOTIVOS.get(m, '')}")
+    return {"nombre": s.nombre, "marca": s.marca, "estado": s.estado, "calidad": s.calidad}
 
 
 async def _off(p: dict, ctx) -> dict:
@@ -160,10 +187,36 @@ DEFINICIONES: dict[str, Definicion] = {
             consume_archivo_con="aplicar",
         ),
         Definicion(
+            "normalizador_probar",
+            "Probar el normalizador con un producto",
+            "Escribí un nombre (y opcionalmente marca y tamaño) tal como lo diría una fuente y mirá "
+            "qué hace el normalizador paso a paso: qué reglas aplica, qué queda y qué puntaje saca. "
+            "No toca la base.",
+            "web",
+            (
+                Param(
+                    "nombre", "texto", True, "Nombre crudo, p. ej. ACEITE GIRASOL COCINERO 900 CC."
+                ),
+                Param(
+                    "marca",
+                    "texto",
+                    ayuda="Marca que traería la fuente (opcional), p. ej. COCINERO.",
+                ),
+                Param(
+                    "tamano",
+                    "texto",
+                    ayuda="Tamaño que traería el campo de la fuente (opcional), p. ej. 900 ml.",
+                ),
+            ),
+            _probar,
+        ),
+        Definicion(
             "catalogo_renormalizar",
             "Renormalizar el catálogo",
-            "Pasa el normalizador por todo el catálogo y recalcula la calidad (Doc 7). Hace falta "
-            "al cambiar la versión del normalizador o un diccionario.",
+            "Pasa el normalizador por todo el catálogo, actualiza lo que difiera y recalcula la "
+            "calidad (Doc 7). Hace falta al cambiar la versión del normalizador o un diccionario. "
+            "El log dice qué reglas se aplicaron, a cuántos productos y con qué ejemplos. Sin "
+            "«aplicar» es un simulacro.",
             "web",
             (_APLICAR,),
             _renormalizar,
@@ -171,7 +224,9 @@ DEFINICIONES: dict[str, Definicion] = {
         Definicion(
             "catalogo_calidad",
             "Medir la calidad del catálogo",
-            "Corre el normalizador sin escribir nada y muestra cómo quedaría el catálogo.",
+            "Mide el catálogo actual con el normalizador, sin escribir nada: estados, qué reglas "
+            "aplicaría y por qué los productos bajan de puntaje. Si «cambiaría» da 0, el catálogo ya "
+            "está normalizado. Los parámetros solo cambian la lista de ejemplos del final.",
             "web",
             (
                 Param(
@@ -183,7 +238,7 @@ DEFINICIONES: dict[str, Definicion] = {
                 Param(
                     "estado",
                     "opcion",
-                    ayuda="Mostrar ejemplos solo de este estado.",
+                    ayuda="Listar ejemplos solo de este estado (no afecta el resumen, que es del catálogo entero).",
                     opciones=("completo", "parcial", "dudoso", "descartado"),
                 ),
             ),
