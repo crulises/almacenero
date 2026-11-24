@@ -45,3 +45,10 @@ create table etl_archivos (
 alter table catalogo_lotes
     add constraint catalogo_lotes_etl_ejecucion_fk
     foreign key (etl_ejecucion_id) references etl_ejecuciones (id) on delete set null;
+
+-- Las acciones del panel sobre los ETL (iniciar, cancelar, subir/borrar archivo) se auditan.
+alter table auditoria_admin drop constraint auditoria_admin_entidad_check;
+alter table auditoria_admin
+    add constraint auditoria_admin_entidad_check
+    check (entidad in ('local', 'precio', 'config', 'producto', 'conflicto', 'usuario',
+                       'invitacion', 'sugerencia', 'etl'));

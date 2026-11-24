@@ -50,6 +50,10 @@ CAPACIDADES: dict[str, frozenset[str]] = {
             # Invitaciones / PINs (corte 9)
             "invitacion.ver",
             "invitacion.emitir",
+            # ETL desde el panel (corte 18): solo admin
+            "etl.ver",
+            "etl.ejecutar",
+            "etl.cancelar",
         }
     ),
 }

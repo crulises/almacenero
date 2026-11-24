@@ -17,6 +17,7 @@ from app.api.v1.admin import (
     auditoria,
     catalogo,
     config,
+    etl,
     invitaciones,
     locales,
     precios,
@@ -92,4 +93,5 @@ router.include_router(reglas.router, dependencies=_acceso)
 router.include_router(catalogo.router, dependencies=_acceso)
 router.include_router(sugerencias.router, dependencies=_acceso)
 router.include_router(invitaciones.router, dependencies=_acceso)
+router.include_router(etl.router, dependencies=_acceso)
 router.include_router(auditoria.router, dependencies=_acceso)

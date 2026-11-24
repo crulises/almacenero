@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # X-Forwarded-For. Mal puesto, el rate limit por IP se puede esquivar o frena a todos.
     proxy_hops: int = 0
 
+    # ETL liviano desde el panel (docs/04 §10-A): subproceso del backend, de a uno por vez.
+    etl_web_activo: bool = True
+    etl_web_mem_mb: int = 1024  # tope de memoria virtual del subproceso (solo Linux)
+    etl_web_max_s: int = 1800  # tope de tiempo: pasado esto se corta y queda en fallo
+
     # Orígenes web que pueden llamar a la API (panel de admin), separados por coma.
     # La app móvil no usa CORS. Con HTTPS en producción: poner el origen real del panel.
     cors_origins: str = "http://localhost:8080,http://127.0.0.1:8080"
