@@ -854,3 +854,26 @@ Decisiones en `docs/04` §9.
   edita en Configuración → «Mensajes de error». Si falta una regla para un constraint nuevo, cae
   en `dato_invalido` mostrando el nombre de la restricción: agregalo a `POR_CONSTRAINT` y a
   `REGLAS` en `backend/app/services/reglas.py`.
+
+### `ImportError: cannot import name 'UTC' from 'datetime'` al correr el ETL local
+
+- **Síntoma:** un módulo de `etl/` falla al importar con `cannot import name 'UTC'`.
+- **Causa:** `backend/.venv` usa el Python del sistema (3.10 en esta Mac) y `datetime.UTC` es de
+  3.11+. La imagen Docker usa 3.12, así que el error solo aparece en local.
+- **Solución:** `datetime.timezone.utc` (el proyecto declara `requires-python >= 3.10`).
+
+### El simulacro del CSV curado dice «se actualizan» todo el catálogo
+
+- **Síntoma:** `make catalogo-csv-importar ARCHIVO=…` muestra casi todos los EAN como actualizados,
+  y el ejemplo es `origen: 'sepa' → 'curado'`.
+- **Causa:** al importar, el origen pasa a `curado` (prioridad más alta que SEPA y OFF) aunque los
+  datos sean iguales; se contaba como cambio.
+- **Solución:** «actualizados» cuenta solo cambios de datos; el cambio de fuente sale aparte
+  («pasan a figurar como `curado`»).
+
+### «Este archivo ya se importó» al reimportar un CSV curado
+
+- **Síntoma:** `APLICAR=1` no hace nada y avisa el lote anterior.
+- **Causa:** `catalogo_lotes` ya tiene ese `sha256` con la misma `NORMALIZADOR_VERSION`: importar
+  de nuevo no aportaría nada (la importación es idempotente).
+- **Solución:** si hace falta igual (p. ej. otra fuente pisó lo curado), `FORZAR=1`.

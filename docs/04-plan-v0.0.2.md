@@ -941,6 +941,43 @@ los productos relevantes y guardar ese extracto como CSV**.
 - **Periodicidad:** el dueño decide; recomendación: OFF cada 3-6 meses (cambia poco para
   Argentina), SEPA mensual (cada corrida solo toca lo que cambió, ya es idempotente).
 
+**Implementado en el corte 17 (así quedó, con lo que se precisó):**
+
+- **Migración** `20261127000001_catalogo_curado.sql`: `curado` es origen/fuente válida
+  (`productos_canonicos.origen`, `producto_fuentes.fuente`, `conflictos_catalogo`), `prioridad_fuente()`
+  queda `manual > curado > sepa > off` (si la config guardada no nombra `curado`, queda justo
+  después de `manual`) y nace `catalogo_lotes`.
+- **Código** en `etl/curado/`: `formato.py` (columnas, validación fila a fila, lectura/escritura),
+  `exportar.py` y `importar.py`. Comandos: `make catalogo-csv-exportar` y
+  `make catalogo-csv-importar ARCHIVO=… [APLICAR=1] [FORZAR=1]` (sin `APLICAR` es un simulacro).
+- **Hash del contenido, no del archivo.** El `sha256` se calcula sobre la fila de columnas + los
+  datos (ordenados por EAN, `\n`, sin BOM), no sobre el archivo entero: así el `# generado:` de la
+  cabecera, el `.gz` o un `\r\n` no lo cambian y el exportador es **reproducible** (dos corridas
+  con las mismas fuentes y la misma `NORMALIZADOR_VERSION` dan el mismo hash; medido con SEPA de un
+  día + la muestra de OFF: 77 316 filas, mismo hash las dos veces). La cabecera trae también
+  `contenido_sha256` (el declarado): si alguien edita el CSV a mano el importador avisa que no
+  coincide, lo importa igual y guarda ambos hashes.
+- **Exportador sin base de datos:** lee OFF (filtra países como `make etl-off`) y los zips de SEPA
+  (`SEPA_MIN_FILAS` descarta EAN con pocas filas), normaliza cada fuente, y por EAN gana SEPA y OFF
+  completa lo que falte (`fuente_origen` = `sepa`, `off` o `sepa+off`). Lo que ya está en la base (lo
+  manual, lo con precios) **no** se exporta: ya está ahí.
+- **Validación en seco = la importación real, revertida.** Cada lote corre `fusionar_lote` con
+  `fuente = 'curado'` dentro de una transacción que se deshace (en `APLICAR=1` se confirma). El
+  reporte dice: inválidas con motivo y número de línea, repetidas en el archivo (gana la última),
+  EAN nuevos, actualizados (con ejemplos «campo: antes → después»), sin cambios y conflictos
+  nuevos. «Actualizados» cuenta solo cambios de datos; pasar un producto de `sepa` a `curado`
+  sin cambiar nada se informa aparte («pasan a figurar como `curado`»).
+- **Respeta lo humano:** lo cargado a mano y los campos bloqueados no se pisan (prioridad +
+  trigger existentes); el curado sí pisa a SEPA y OFF.
+- **Trazabilidad:** `producto_fuentes` (fuente `curado`) guarda por EAN `fuente_origen`, `nota`,
+  `archivo_sha256` y `formato`; `catalogo_lotes` guarda, por importación aplicada, hash,
+  versión del normalizador, conteos y el hash de cada archivo crudo de entrada. El CSV **no** se
+  guarda. Importar el mismo archivo con la misma versión del normalizador no hace nada (avisa el
+  lote anterior); `FORZAR=1` lo corre igual.
+- **Receta para reconstruir (y poder borrar el CSV):** volver a correr `make catalogo-csv-exportar`
+  con las mismas fuentes (nombre + hash en `fuentes_entrada`) y la misma versión; el `sha256` tiene
+  que coincidir con el del lote.
+
 ### C. Calidad y normalización
 
 Todo en `docs/07-normalizacion-catalogo.md` (reglas, puntaje, casos). Resumen de lo que se
@@ -1077,7 +1114,7 @@ reventó con un 500 mudo (`pack_cantidad_check`) y el panel solo mostraba «Fail
 | 14 | ✅ **Integración + calidad en la base + tablero** | Migración (columnas del Doc 7 §3 y estado `descartado`), el normalizador dentro de `fusionar_lote`, `make catalogo-renormalizar`, la búsqueda por EAN oculta los `descartado`, `ProductoOut` con campos nuevos (compatibles), panel: columna/filtro/orden por calidad y **tablero de control** (conteo por estado y motivo). | grande |
 | 15 | ✅ **Rol moderador + sugerencias + alta simple** | migración (rol, `sugerencias_catalogo`), capacidades, API; panel: solapa Sugerencias y formulario simple de alta/corrección por EAN (Doc 7 §5.1) con aplicación directa del admin. | grande |
 | 16 | ✅ **App: ficha normalizada y sugerir** (`app/`) | nombre limpio + marca · tamaño · presentación; acción «Sugerir / dar de alta» solo para moderadores. Se acuerda el diseño antes de tocar. | medio |
-| 17 | **CSV curado por CLI** | `catalogo_lotes`, fuente `curado`, formato `catalogo_curado_v1`, `make catalogo-curado` (genera) y `make catalogo-importar` (valida en seco + importa), hashes. | medio |
+| 17 | ✅ **CSV curado por CLI** | `catalogo_lotes`, fuente `curado`, formato `catalogo_curado_v1`, `make catalogo-curado` (genera) y `make catalogo-importar` (valida en seco + importa), hashes. | medio |
 | 18 | **ETL desde el panel** | `etl_ejecuciones`, registro de definiciones, worker `web` y `local`, API `/v1/admin/etl`, sección ETL con formularios generados, cancelación, auditoría, subida del CSV por el panel. | grande |
 
 **Orden y por qué:** 13 → 14 → 15 → 16 → (release) → 17 → 18. Hasta el 16 inclusive el release

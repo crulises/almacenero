@@ -140,6 +140,12 @@ sigue funcionando (es manual) pero el ETL nunca lo va a emparejar.
   Un zip de otro día puede tener otros comercios: conviene correr los 7 días de vez en
   cuando para cubrir más EAN.
 
+## 2c. La fuente `curado` (corte 17)
+
+No es una fuente nueva de datos sino un **formato de intercambio**: el extracto normalizado de OFF
+y SEPA que el dueño arma en su máquina y se importa donde haga falta (otra base, producción).
+Prioridad `manual > curado > sepa > off`. Detalle en `docs/04` §10-B.
+
 ## 3. Otras fuentes que van de la mano con OFF
 
 | Fuente | Qué aporta | Licencia | Estado |

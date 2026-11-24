@@ -104,6 +104,8 @@ Toda la lógica operativa va en el Makefile. CI solo llama a estos targets.
 - `make build` — build de imágenes.
 - `make catalogo-calidad` / `make catalogo-renormalizar [APLICAR=1]` — mide / aplica el
   normalizador del catálogo (Doc 7).
+- `make catalogo-csv-exportar` / `make catalogo-csv-importar ARCHIVO=... [APLICAR=1]` — arma el CSV
+  curado desde OFF/SEPA locales (reproducible) / lo valida en seco o lo importa (Doc 4 §10-B).
 - `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel
   web (http://localhost:8080; `make admin-web` lo reconstruye).
 - `make apk` — APK debug para probar en un celular de la misma red (apunta a la
