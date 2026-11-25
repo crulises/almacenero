@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
         await app.state.pool.close()
 
 
-app = FastAPI(title="Almacenero API", version="0.0.1", lifespan=lifespan)
+app = FastAPI(title="Almacenero API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in get_settings().cors_origins.split(",") if o.strip()],
