@@ -2,7 +2,8 @@
 
 El mismo conjunto de pruebas corre contra **tres almacenes**: disco, el Storage S3 local de Supabase
 (el de `make up`) y un S3 alternativo, SeaweedFS (`make s3-alt-up`, perfil opcional). Los dos S3
-se saltean con un aviso si no están disponibles, para que el resto no dependa de ellos. Postgres es el real."""
+se saltean con un aviso si no están disponibles, para que el resto no dependa de ellos.
+Postgres es el real."""
 
 import asyncio
 import io
