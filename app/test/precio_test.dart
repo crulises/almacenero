@@ -70,5 +70,9 @@ void main() {
   test('formatearDistancia: metros o kilómetros', () {
     expect(formatearDistancia(350.4), '350 m');
     expect(formatearDistancia(1449), '1,4 km');
+    expect(
+      formatearDistancia(120000),
+      '120 km',
+    ); // lejos no hace falta el decimal
   });
 }

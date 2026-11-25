@@ -42,7 +42,7 @@ AppDeps _deps({
     required ubicacion,
   }) async => throw UnimplementedError(),
   loadHistorial: (_) async => const [],
-  loadVigentes: (_, {ubicacion}) async => const [],
+  loadVigentes: (_, {ubicacion, referencia = false}) async => const [],
 );
 
 Future<void> _abrir(

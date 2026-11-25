@@ -1086,3 +1086,19 @@ Decisiones en `docs/04` §9.
 - **Causa:** el valor del modelo se asigna antes de que existan las opciones.
 - **Solución:** para listas fijas, escribir las `<option>` a mano; para listas que llegan de la API, asignar
   el valor después de `await this.$nextTick()`.
+
+### `make test` falla con «Connect call failed ('127.0.0.1', 54322)» y Postgres se reinicia en bucle
+
+- **Síntoma:** todos los tests del backend dan `ConnectionRefusedError`; `docker ps -a` muestra
+  `supabase_db_almacenero` en «Restarting».
+- **Causa:** el disco virtual de Docker se llenó (casi siempre por el caché de build: se juntaron 11 GB).
+  `docker logs supabase_db_almacenero` dice `could not write lock file "postmaster.pid": No space left on
+  device`. Es el disco **de Docker**, no el de la Mac (`df -h /` puede mostrar mucho libre).
+- **Solución:** `docker system df` para ver qué ocupa y `docker builder prune -f` (solo borra caché de
+  compilación; se regenera). No hace falta tocar volúmenes: ahí están los datos.
+
+### Un worktree nuevo no tiene `.env` y los tests no encuentran la base
+
+- **Causa:** `.env` está en `.gitignore`, así que un `git worktree` (checkout aparte) no lo trae.
+- **Solución:** copiar el del checkout principal a la raíz del worktree (`cp ../../../.env .env`, según
+  dónde esté). No se commitea.
