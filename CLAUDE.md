@@ -23,8 +23,9 @@ Además:
   cuando ajusta lo que cargó una persona; espejo de `backend/app/services/estandares.py`).
 - `docs/09-formato-intercambio-catalogo.md` — formato `catalogo_curado_v1/v2` para intercambiar
   catálogos (autocontenido: se reutiliza en otro proyecto). Tocá `etl/curado/` solo de acuerdo a él.
-- `docs/10-roadmap.md` — releases planeados (0.1.x, 0.2.x…) y principios del producto (la app
-  es guía, no tracker financiero; el orden de precios no se vende).
+- `docs/10-roadmap.md` — releases (0.1.x cerrado; 0.2.x en adelante planificados) y principios del
+  producto (la app es guía, no tracker financiero; el orden de precios no se vende). Cada release
+  tiene su plan: `docs/04-plan-v0.1.md` (el cerrado), `04-plan-v0.2.md`, `04-plan-v0.3.md`…
 - `docs/03-problemas-soluciones.md` — cómo armar el entorno desde cero y los
   problemas ya vividos (con su solución). **Leelo antes de debuggear un problema
   de entorno, de build o de auth**, y agregale lo nuevo que aparezca (formato
@@ -32,7 +33,7 @@ Además:
   ganan ellos.
 
 > **Versionado:** «v0.0.1» y «v0.0.2» son nombres históricos de **planes**; la 0.0.1 ya no está vigente
-> y el próximo release es **0.1.x** (la validación colaborativa, 0.2.x o posterior). Ver Doc 2.
+> y el release **0.1.x** está cerrado y el siguiente es **0.2.x** (`docs/04-plan-v0.2.md`). Ver Doc 2 y el roadmap.
 > **Zona horaria:** todo en UTC (`timestamptz`) y la hora local solo al mostrar (Doc 2, «Tiempo y zona
 > horaria»). Corte 19 (dashboard de admin con eventos; el mapa de zonas se postergó): planificado en `docs/04` §11; 19b (eventos desde la app) y 19a (dashboard: tarjetas, series, rankings, estrellas, zona horaria) ya están hechas; 19c (exportar/vaciar eventos, programación) también.
 
@@ -57,9 +58,9 @@ Fuera (NO implementar todavía, aunque se modele o se deje el cableado):
 - OAuth (dejar el cableado preparado, pero NO activarlo).
 - Productos pesables / genéricos (modelar en el esquema, pero desactivados por config).
 
-## Alcance de v0.0.2 (en curso)
+## Alcance de v0.0.2 (= release 0.1.x, cerrado)
 
-Plan en `docs/04-plan-v0.0.2.md`: roles y alta de local (corte 5), geofence,
+Plan en `docs/04-plan-v0.1.md`: roles y alta de local (corte 5), geofence,
 panel web de admin (corte 11), ETL por fuente, frescura visible, anti-spam, moderación
 por karma y baja de cuentas (corte 12, `docs/04` §9) y preparación del release. El Doc 1
 sigue mandando: el alta de locales por cualquier usuario es solo un interruptor de

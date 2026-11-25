@@ -242,9 +242,9 @@ principios en `docs/10-roadmap.md` (la app es una guía, no un tracker financier
 ## Versionado de releases
 
 El esquema de versiones cambió: la 0.0.1 fue una compilación vieja y **ya no está vigente**; el próximo
-release es **0.1.x**. Donde estos docs dicen «v0.0.1» o «v0.0.2» se refieren a los **planes** históricos
-(alcance de entonces), no a versiones de release. La validación colaborativa llega, probablemente, en
-0.2.x o posterior.
+release fue el **0.1.x** (cerrado el 2026-11-25; plan en `docs/04-plan-v0.1.md`). Donde estos docs dicen «v0.0.1» o «v0.0.2» se refieren a los **planes** históricos
+(alcance de entonces), no a versiones de release. El resto de releases (0.2.x en adelante) está en `docs/10-roadmap.md`, con un plan por release
+(`docs/04-plan-v0.2.md` …).
 
 ## Testing
 

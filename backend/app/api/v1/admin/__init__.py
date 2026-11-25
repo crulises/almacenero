@@ -1,4 +1,4 @@
-"""Panel web de admin: `/v1/admin/...` (docs/04-plan-v0.0.2.md, §8).
+"""Panel web de admin: `/v1/admin/...` (docs/04-plan-v0.1.md, §8).
 
 Todo exige la capacidad `admin.acceder` y, además, la de cada acción (ver
 `app/services/permisos.py`). Las correcciones dejan rastro en `auditoria_admin`.

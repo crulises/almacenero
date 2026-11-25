@@ -4,7 +4,7 @@ Los endpoints no preguntan «¿es admin?»: preguntan por una **capacidad con no
 (`puede(usuario, "local.verificar")`). Hoy el rol sale de una columna y el mapa
 rol → capacidades es un diccionario. Si el modelo crece (moderadores, permisos por
 local, permisos editables), se cambia ESTE módulo y una migración; los endpoints
-no se tocan. Ver docs/04-plan-v0.0.2.md, §1.
+no se tocan. Ver docs/04-plan-v0.1.md, §1.
 """
 
 from typing import Protocol
