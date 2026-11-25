@@ -246,6 +246,8 @@ release es **0.1.x**. Donde estos docs dicen «v0.0.1» o «v0.0.2» se refieren
 (alcance de entonces), no a versiones de release. La validación colaborativa llega, probablemente, en
 0.2.x o posterior.
 
+La serie 0.1 está en `app/pubspec.yaml` (`version: 0.1.0+1`); `make apk` arma 0.1.0, 0.1.1… (Doc 4, «Versión del APK»).
+
 ## Testing
 
 - Backend: pytest. Integración contra el Postgres local real (el del CLI), no mocks.

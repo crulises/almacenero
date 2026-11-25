@@ -1647,7 +1647,7 @@ Hacerlo **antes de cargar datos reales** y repasarlo cada tanto.
 
 **Versionado.** La serie (`0.0`, `0.1`, …) es el `version:` de `app/pubspec.yaml`: se
 cambia a mano cuando se cierra un ciclo de pruebas. El último número sube solo en cada
-`make apk` (`0.0.1`, `0.0.2`, …) y vuelve a 0 al cambiar de serie (`0.1.0`, `0.1.1`, …).
+`make apk` (`0.0.1`, `0.0.2`, …) y vuelve a 0 al cambiar de serie (`0.1.0`, `0.1.1`, …). La serie vigente es **0.1** (desde el cierre del 0.1.x).
 `app/tool/version.sh` lleva la cuenta en el `.git` compartido (no en el árbol de
 trabajo) para no generar cambios ni conflictos entre worktrees. El APK lleva además el
 commit (con `+local` si había cambios sin commitear) y la hora de compilación, y el

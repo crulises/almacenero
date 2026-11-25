@@ -265,7 +265,7 @@ s3-alt-down: ## Baja el S3 alternativo (los datos quedan en el volumen s3-alt-da
 
 # --- app en un celular -----------------------------------------------------
 # API_TIMEOUT_S=40 make apk -> espera 40 s por intento (default de la app: 20 s).
-apk: ## APK debug (arm64) para el celular: sube la versión sola (0.0.1, 0.0.2, ...) y la muestra en la app
+apk: ## APK debug (arm64) para el celular: sube la versión sola (0.1.0, 0.1.1, ...) y la muestra en la app
 	@# El celular no puede usar 10.0.2.2 (solo existe en el emulador): la app apunta
 	@# a la IP de esta máquina. Se puede forzar con `make apk LAN_IP=192.168.1.50`.
 	@# La versión (serie del pubspec + contador local) la calcula app/tool/version.sh.
