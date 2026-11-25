@@ -47,7 +47,11 @@ insert into config (clave, valor, rubro) values
     -- Dashboard de admin (docs/04 §11)
     ('panel_zona_horaria',        '"America/Buenos_Aires"', null),
     ('dashboard_activo_dias',     '7', null),
-    ('eventos_export_filas_por_archivo', '500000', null)
+    ('eventos_export_filas_por_archivo', '500000', null),
+    -- Alias: quién puede cambiarlo (sumar "usuario" para abrirlo a todos), tope diario, bloqueados
+    ('alias_editable_por_rol',    '["moderador", "admin"]', null),
+    ('alias_max_cambios_por_dia', '3', null),
+    ('alias_bloqueados',          '[]', null)
 on conflict do nothing;
 
 -- Invitación de desarrollo (en producción se crea otra: `make invitacion`).

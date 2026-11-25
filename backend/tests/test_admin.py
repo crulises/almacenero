@@ -208,20 +208,23 @@ def test_usuarios_muestra_cargas_y_se_edita_el_alias(client, admin):
     uid = _mi_id(client, admin)
     u = client.get(f"/v1/admin/usuarios?q={uid}", headers=admin).json()["items"][0]
     assert u["id"] == uid and u["cargas"] == 0
-    r = client.patch(f"/v1/admin/usuarios/{uid}", headers=admin, json={"alias": "adm-alias"})
-    assert r.status_code == 200 and r.json()["alias"] == "adm-alias"
+    nuevo = f"adm-{uuid.uuid4().hex[:8]}"  # único: el alias no se puede repetir
+    r = client.patch(f"/v1/admin/usuarios/{uid}", headers=admin, json={"alias": nuevo})
+    assert r.status_code == 200 and r.json()["alias"] == nuevo
     assert (
         client.patch(f"/v1/admin/usuarios/{uid}", headers=admin, json={"alias": "  "}).status_code
         == 422
     )
     log = client.get(f"/v1/admin/auditoria?entidad=usuario&entidad_id={uid}", headers=admin).json()
-    assert log["items"][0]["despues"] == {"alias": "adm-alias"}
+    assert log["items"][0]["despues"] == {"alias": nuevo}
 
 
 def test_el_rol_no_se_cambia_por_la_api(client, admin):
     uid = _mi_id(client, admin)
     r = client.patch(
-        f"/v1/admin/usuarios/{uid}", headers=admin, json={"alias": "x", "rol": "usuario"}
+        f"/v1/admin/usuarios/{uid}",
+        headers=admin,
+        json={"alias": f"adm-{uuid.uuid4().hex[:8]}", "rol": "usuario"},
     )
     assert r.status_code == 200
     assert client.get("/v1/admin/me", headers=admin).json()["rol"] == "admin"
