@@ -1,12 +1,15 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show Widget;
 
 import 'data/app_info.dart';
 import 'data/local_repository.dart';
 import 'data/location_service.dart';
 import 'data/price_repository.dart';
 import 'data/product_repository.dart';
+import 'data/recientes.dart';
 import 'data/sugerencia_repository.dart';
 import 'data/user_repository.dart';
+import 'ui/scan_screen.dart';
 
 /// Lo que las pantallas necesitan del backend, como funciones. Así los tests
 /// reemplazan solo lo que les importa, sin armar una red falsa.
@@ -29,8 +32,20 @@ void _sinEventos(String tipo, [Map<String, Object?> datos = const {}]) {}
 
 Future<void> _sinVaciar() async {}
 
+Future<List<Reciente>> _sinRecientes() async => const [];
+
+Future<void> _sinGuardar(Reciente reciente) async {}
+
+Future<Reciente?> _sinRefrescar(Reciente reciente) async => null;
+
+Widget _escaner() => const ScanScreen();
+
 class AppDeps {
   const AppDeps({
+    this.pantallaEscaneo = _escaner,
+    this.leerRecientes = _sinRecientes,
+    this.guardarReciente = _sinGuardar,
+    this.refrescarReciente = _sinRefrescar,
     this.registrarEvento = _sinEventos,
     this.vaciarEventos = _sinVaciar,
     this.sugerir = _sinSugerir,
@@ -111,6 +126,20 @@ class AppDeps {
   })
   cargarPrecio;
   final Future<List<PrecioHistorial>> Function(String ean) loadHistorial;
-  final Future<List<PrecioVigente>> Function(String ean, {Ubicacion? ubicacion})
+  final Future<List<PrecioVigente>> Function(
+    String ean, {
+    Ubicacion? ubicacion,
+    bool referencia,
+  })
   loadVigentes;
+
+  /// La pantalla que lee el código de barras: vuelve con el EAN (`pop`) o con nada si se
+  /// cancela. Los tests ponen una de mentira (no hay cámara).
+  final Widget Function() pantallaEscaneo;
+
+  /// Recientes (corte 20): lo guardado en el celular, anotar una consulta y refrescar una
+  /// con red. Ninguna lanza: sin red se ve lo guardado.
+  final Future<List<Reciente>> Function() leerRecientes;
+  final Future<void> Function(Reciente reciente) guardarReciente;
+  final Future<Reciente?> Function(Reciente reciente) refrescarReciente;
 }

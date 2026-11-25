@@ -6,12 +6,14 @@ import 'package:almacenero/data/local_repository.dart';
 import 'package:almacenero/data/location_service.dart';
 import 'package:almacenero/data/price_repository.dart';
 import 'package:almacenero/data/product_repository.dart';
+import 'package:almacenero/data/recientes.dart';
 import 'package:almacenero/data/user_repository.dart';
 import 'package:almacenero/main.dart';
 import 'package:almacenero/ui/acerca_screen.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _aceite = Producto(
   id: 'p1',
@@ -24,6 +26,29 @@ const _aceite = Producto(
 
 const _local = Local(id: 'l1', nombre: 'Local del admin');
 const _aca = Ubicacion(lat: -34.6, lng: -58.4, precisionM: 12);
+
+/// La cámara de mentira: «lee» el código al abrirse y vuelve con él (o cancelado).
+class _EscanerFalso extends StatefulWidget {
+  const _EscanerFalso(this.ean);
+
+  final String? ean;
+
+  @override
+  State<_EscanerFalso> createState() => _EscanerFalsoState();
+}
+
+class _EscanerFalsoState extends State<_EscanerFalso> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(widget.ean);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const Scaffold(body: Text('escáner'));
+}
 
 /// Backend de mentira: el karma sube con cada precio cargado, como en el real.
 class _Backend {
@@ -49,14 +74,80 @@ class _Backend {
   final creados = <({String nombre, String? direccion, Ubicacion ubicacion})>[];
   final precios = <PrecioHistorial>[];
 
-  AppDeps deps({Future<Producto> Function(String)? loadProducto}) => AppDeps(
+  /// Lo que devuelve `referencia: true` (radio ampliado) cuando se pide con ubicación.
+  final referencia = <PrecioVigente>[];
+
+  /// Sin red: todo lo que va al servidor falla (lo guardado en el celular sigue).
+  bool sinRed = false;
+  final pedidosReferencia = <String>[];
+
+  /// Lo que «escanea» la cámara de mentira (EAN); `null` = se cancela.
+  String? escaneo;
+
+  AppDeps deps({Future<Producto> Function(String)? loadProducto}) {
+    final store = RecientesStore();
+    final servicio = RecientesService(
+      loadProducto: (ean) => _producto(loadProducto, ean),
+      loadVigentes: _vigentes,
+      obtenerUbicacion: () async => _ubicar(),
+    );
+    return _deps(loadProducto, store, servicio);
+  }
+
+  Future<Producto> _producto(
+    Future<Producto> Function(String)? loadProducto,
+    String ean,
+  ) async {
+    if (sinRed) throw ApiException('Sin conexión');
+    return (loadProducto ?? (_) async => _aceite)(ean);
+  }
+
+  Ubicacion _ubicar() {
+    if (sinRed) throw ApiException('Sin conexión');
+    return _aca;
+  }
+
+  Future<List<PrecioVigente>> _vigentes(
+    String ean, {
+    Ubicacion? ubicacion,
+    bool referencia = false,
+  }) async {
+    if (sinRed) throw ApiException('Sin conexión');
+    ubicacionesVigentes.add(ubicacion);
+    if (referencia) {
+      pedidosReferencia.add(ean);
+      return List.of(this.referencia);
+    }
+    if (soloLejos && ubicacion != null) return [];
+    final error = errorVigentes;
+    if (error != null) {
+      errorVigentes = null; // falla una sola vez
+      throw error;
+    }
+    return List.of(vigentes);
+  }
+
+  AppDeps _deps(
+    Future<Producto> Function(String)? loadProducto,
+    RecientesStore store,
+    RecientesService servicio,
+  ) => AppDeps(
+    leerRecientes: store.leer,
+    guardarReciente: store.registrar,
+    refrescarReciente: (r) async {
+      final nuevo = await servicio.refrescar(r);
+      if (nuevo != null) await store.registrar(nuevo, moverAlTope: false);
+      return nuevo;
+    },
+    pantallaEscaneo: () => _EscanerFalso(escaneo),
     abrirEnlace: (url) async => enlaces.add(url),
     loadMe: () async {
+      if (sinRed) throw ApiException('Sin conexión');
       final error = errorMe;
       if (error != null) throw error;
       return Me(id: 'u1', alias: 'anon-abc123', karma: karma, escalon: escalon);
     },
-    loadProducto: loadProducto ?? (_) async => _aceite,
+    loadProducto: (ean) => _producto(loadProducto, ean),
     obtenerUbicacion: () async {
       final error = errorUbicacion;
       if (error != null) {
@@ -85,17 +176,9 @@ class _Backend {
       cerca.insert(0, local);
       return local;
     },
-    loadVigentes: (_, {ubicacion}) async {
-      ubicacionesVigentes.add(ubicacion);
-      if (soloLejos && ubicacion != null) return [];
-      final error = errorVigentes;
-      if (error != null) {
-        errorVigentes = null; // falla una sola vez
-        throw error;
-      }
-      return List.of(vigentes);
-    },
+    loadVigentes: _vigentes,
     loadHistorial: (_) async {
+      if (sinRed) throw ApiException('Sin conexión');
       final error = errorHistorial;
       if (error != null) {
         errorHistorial = null; // falla una sola vez
@@ -146,8 +229,14 @@ class _Backend {
               fecha: DateTime.now(),
             ),
           );
+          final primero =
+              precios.length == 1; // recién agregado: no había ninguno
           karma++;
-          return PrecioCargado(precioId: 'pr${cargas.length}', karma: karma);
+          return PrecioCargado(
+            precioId: 'pr${cargas.length}',
+            karma: karma,
+            primerPrecio: primero,
+          );
         },
   );
 }
@@ -158,11 +247,15 @@ Future<void> _buscar(WidgetTester tester, String ean) async {
   await tester.pumpAndSettle();
 }
 
+/// El botón del formulario de carga.
 final _botonCargar = find.widgetWithText(FilledButton, 'Cargar precio');
+
+/// El de la ficha del producto (dice «Cargar precio» o «Sé el primero en cargarlo»).
+final _botonFicha = find.widgetWithIcon(FilledButton, Icons.sell);
 
 Future<void> _irAlFormulario(WidgetTester tester) async {
   await _buscar(tester, _aceite.ean);
-  await tester.tap(_botonCargar);
+  await tester.tap(_botonFicha);
   await tester.pumpAndSettle();
 }
 
@@ -197,7 +290,10 @@ void main() {
     expect(find.text('Despertando servidor…'), findsNothing);
   });
 
-  setUp(() => backend = _Backend());
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    backend = _Backend();
+  });
 
   Future<void> abrir(WidgetTester tester, {AppDeps? deps}) async {
     await tester.pumpWidget(AlmaceneroApp(deps: deps ?? backend.deps()));
@@ -237,7 +333,7 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
-          loadVigentes: (_, {ubicacion}) async => [],
+          loadVigentes: (_, {ubicacion, referencia = false}) async => [],
           cargarPrecio: ({
             required ean,
             required localId,
@@ -282,7 +378,7 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
-          loadVigentes: (_, {ubicacion}) async => [],
+          loadVigentes: (_, {ubicacion, referencia = false}) async => [],
           cargarPrecio: ({
             required ean,
             required localId,
@@ -392,7 +488,7 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
-          loadVigentes: (_, {ubicacion}) async => [],
+          loadVigentes: (_, {ubicacion, referencia = false}) async => [],
           cargarPrecio: ({
             required ean,
             required localId,
@@ -429,7 +525,7 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
-          loadVigentes: (_, {ubicacion}) async => [],
+          loadVigentes: (_, {ubicacion, referencia = false}) async => [],
           cargarPrecio: ({
             required ean,
             required localId,
@@ -469,7 +565,7 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
-          loadVigentes: (_, {ubicacion}) async => [],
+          loadVigentes: (_, {ubicacion, referencia = false}) async => [],
           cargarPrecio: ({
             required ean,
             required localId,
@@ -520,9 +616,7 @@ void main() {
       backend.escalon = Escalon.restringido;
       await abrir(tester);
       await _buscar(tester, '7790070411112');
-      final boton = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Cargar precio'),
-      );
+      final boton = tester.widget<FilledButton>(_botonFicha);
       expect(boton.onPressed, isNull);
       expect(find.text('Por ahora solo podés consultar.'), findsOneWidget);
     });
@@ -532,9 +626,7 @@ void main() {
       backend.escalon = Escalon.aviso;
       await abrir(tester);
       await _buscar(tester, '7790070411112');
-      final boton = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Cargar precio'),
-      );
+      final boton = tester.widget<FilledButton>(_botonFicha);
       expect(boton.onPressed, isNotNull);
     });
 
@@ -573,7 +665,7 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
-          loadVigentes: (_, {ubicacion}) async => [],
+          loadVigentes: (_, {ubicacion, referencia = false}) async => [],
           cargarPrecio: ({
             required ean,
             required localId,
@@ -605,7 +697,7 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
-          loadVigentes: (_, {ubicacion}) async => [],
+          loadVigentes: (_, {ubicacion, referencia = false}) async => [],
           cargarPrecio: ({
             required ean,
             required localId,
@@ -682,7 +774,7 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) async => [],
-          loadVigentes: (_, {ubicacion}) async => [],
+          loadVigentes: (_, {ubicacion, referencia = false}) async => [],
           cargarPrecio: ({
             required ean,
             required localId,
@@ -752,7 +844,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Reintentar'), findsNothing);
-      expect(_botonCargar, findsNothing);
+      expect(_botonFicha, findsNothing);
     });
 
     testWidgets('EAN de balanza: explica que no está habilitado', (
@@ -830,9 +922,7 @@ void main() {
       await abrir(tester);
       await _irAlFormulario(tester);
       await _enviarPrecio(tester, '850');
-      // Volver atrás desde el éxito (en vez de "Listo") deja la ficha.
-      await tester.pageBack();
-      await tester.pumpAndSettle();
+      // Al guardar se vuelve solo a la ficha.
       // en «precios por local» y en el historial
       expect(find.text(r'$ 850,00'), findsNWidgets(2));
     });
@@ -982,7 +1072,7 @@ void main() {
       backend.errorUbicacion = const UbicacionException(
         UbicacionError.permisoDenegado,
       );
-      await tester.tap(_botonCargar);
+      await tester.tap(_botonFicha);
       await tester.pumpAndSettle();
       expect(find.textContaining('Necesitamos tu ubicación'), findsOneWidget);
 
@@ -999,7 +1089,7 @@ void main() {
       backend.errorUbicacion = const UbicacionException(
         UbicacionError.permisoDenegadoParaSiempre,
       );
-      await tester.tap(_botonCargar);
+      await tester.tap(_botonFicha);
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Abrir ajustes'));
@@ -1012,7 +1102,7 @@ void main() {
       backend.errorUbicacion = const UbicacionException(
         UbicacionError.servicioApagado,
       );
-      await tester.tap(_botonCargar);
+      await tester.tap(_botonFicha);
       await tester.pumpAndSettle();
       expect(find.textContaining('Prendé la ubicación'), findsOneWidget);
     });
@@ -1192,6 +1282,15 @@ void main() {
         vigente('a', '900.00'),
         vigente('b', '1000.00', lat: -34.62),
       ]);
+      // Con precios vigentes siempre hay historial (si no, el botón pasa a «Sé el primero»).
+      backend.precios.add(
+        PrecioHistorial(
+          id: 'h',
+          localNombre: 'Local a',
+          precio: '900.00',
+          fecha: DateTime.now(),
+        ),
+      );
       await abrir(tester);
       await _buscar(tester, _aceite.ean);
       expect(fila(tester, 'b').selected, isFalse);
@@ -1244,8 +1343,6 @@ void main() {
       await abrir(tester);
       await _irAlFormulario(tester);
       await _enviarPrecio(tester, '850');
-      await tester.pageBack();
-      await tester.pumpAndSettle();
 
       expect(find.byType(FlutterMap), findsOneWidget);
       expect(find.text(r'$ 850,00'), findsWidgets);
@@ -1273,10 +1370,13 @@ void main() {
       expect(backend.cargas.single.ean, '7790070411112');
       expect(backend.cargas.single.localId, 'l1');
       expect(backend.cargas.single.precio, '1234.50');
-      expect(find.text('¡Precio cargado!'), findsOneWidget);
-      expect(find.text('Tu karma ahora es 1'), findsOneWidget);
+      // Se vuelve a la ficha del producto, con el aviso; no hay pantalla de éxito.
+      expect(find.text('Precio de góndola'), findsNothing);
+      expect(find.text('Aceite de girasol'), findsOneWidget);
+      expect(find.textContaining('Precio cargado · karma 1'), findsOneWidget);
+      expect(find.text('¡Precio cargado!'), findsNothing);
 
-      await tester.tap(find.text('Listo'));
+      await tester.pageBack(); // de la ficha al inicio
       await tester.pumpAndSettle();
       expect(find.text('Karma: 1'), findsOneWidget); // el inicio se refrescó
       // y queda listo para el próximo producto
@@ -1332,12 +1432,12 @@ void main() {
         find.text('No pudimos cargar el precio. Probá de nuevo.'),
         findsOneWidget,
       );
-      expect(find.text('¡Precio cargado!'), findsNothing);
+      expect(find.textContaining('Precio cargado'), findsNothing);
       expect(backend.karma, 0);
 
       await tester.tap(_botonCargar); // el precio sigue escrito
       await tester.pumpAndSettle();
-      expect(find.text('¡Precio cargado!'), findsOneWidget);
+      expect(find.textContaining('Precio cargado · karma 1'), findsOneWidget);
       expect(backend.karma, 1);
     });
 
@@ -1366,7 +1466,7 @@ void main() {
       await _enviarPrecio(tester, '500');
 
       expect(find.textContaining('Estás a 480 m de'), findsOneWidget);
-      expect(find.text('¡Precio cargado!'), findsNothing);
+      expect(find.textContaining('Precio cargado'), findsNothing);
       expect(backend.karma, 0);
     });
 
@@ -1391,6 +1491,245 @@ void main() {
       await _enviarPrecio(tester, '500');
 
       expect(backend.cargas.single.ubicacion.lat, _aca.lat);
+    });
+  });
+
+  PrecioVigente vigenteA(
+    String local,
+    String precio, {
+    double? dist,
+    int edad = 0,
+  }) => PrecioVigente(
+    localId: local,
+    localNombre: 'Local $local',
+    localVerificado: true,
+    lat: -34.6,
+    lng: -58.4,
+    precio: precio,
+    fecha: DateTime.now().subtract(Duration(days: edad)),
+    edadDias: edad,
+    frescura: 'verde',
+    vencido: false,
+    distanciaM: dist,
+  );
+
+  Producto otro(String ean, String nombre) =>
+      Producto(id: 'x$ean', ean: ean, nombre: nombre);
+
+  Future<Producto> productos(String ean) async =>
+      ean == _aceite.ean ? _aceite : otro(ean, 'Fideos $ean');
+
+  group('flujo de carga', () {
+    testWidgets('sin precios en ningún lado: invita a ser el primero', (
+      tester,
+    ) async {
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      expect(find.text('Sé el primero en cargarlo'), findsOneWidget);
+      expect(find.text('Cargar precio'), findsNothing);
+    });
+
+    testWidgets('con precios el botón vuelve a ser «Cargar precio»', (
+      tester,
+    ) async {
+      backend.precios.add(
+        PrecioHistorial(
+          id: 'x',
+          localNombre: 'Local del admin',
+          precio: '10.00',
+          fecha: DateTime.now(),
+        ),
+      );
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      expect(find.text('Cargar precio'), findsOneWidget);
+      expect(find.text('Sé el primero en cargarlo'), findsNothing);
+    });
+
+    testWidgets('el primero en cargarlo lo ve en el aviso', (tester) async {
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      await _enviarPrecio(tester, '500');
+      expect(find.textContaining('Fuiste el primero'), findsOneWidget);
+      expect(find.textContaining('karma 1'), findsOneWidget);
+    });
+
+    testWidgets('si no se guarda nada, atrás vuelve a la ficha sin aviso', (
+      tester,
+    ) async {
+      await abrir(tester);
+      await _irAlFormulario(tester);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('Aceite de girasol'), findsOneWidget);
+      expect(find.textContaining('Precio cargado'), findsNothing);
+    });
+
+    testWidgets(
+      '«Escanear otro» abre la ficha nueva y atrás vuelve al inicio',
+      (tester) async {
+        backend.escaneo = '7790000000017';
+        await abrir(tester, deps: backend.deps(loadProducto: productos));
+        await _buscar(tester, _aceite.ean);
+
+        await tester.tap(find.text('Escanear otro'));
+        await tester.pumpAndSettle();
+        expect(find.text('Fideos 7790000000017'), findsOneWidget);
+
+        await tester
+            .pageBack(); // un solo atrás: la ficha anterior se reemplazó
+        await tester.pumpAndSettle();
+        expect(find.text('Almacenero'), findsOneWidget);
+      },
+    );
+
+    testWidgets('«Escanear otro» cancelado deja la ficha donde estaba', (
+      tester,
+    ) async {
+      backend.escaneo = null;
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      await tester.tap(find.text('Escanear otro'));
+      await tester.pumpAndSettle();
+      expect(find.text('Aceite de girasol'), findsOneWidget);
+    });
+
+    testWidgets('quien escanea de a uno no tiene un toque de más', (
+      tester,
+    ) async {
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      await tester.pageBack(); // una sola vuelta lleva al inicio
+      await tester.pumpAndSettle();
+      expect(find.text('Escanear código'), findsOneWidget);
+    });
+  });
+
+  group('recientes', () {
+    testWidgets('lo consultado queda bajo el campo: qué, dónde y a cuánto', (
+      tester,
+    ) async {
+      backend.vigentes.add(vigenteA('l1', '900.00', dist: 350));
+      await abrir(tester);
+      expect(find.text('Recientes'), findsNothing); // nada que mostrar todavía
+      await _buscar(tester, _aceite.ean);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Recientes'), findsOneWidget);
+      expect(find.text('Aceite de girasol'), findsOneWidget);
+      expect(find.textContaining(r'$ 900,00'), findsOneWidget);
+      expect(find.textContaining('Local l1'), findsOneWidget);
+      expect(find.textContaining('350 m'), findsOneWidget);
+      expect(find.textContaining('Referencia'), findsNothing);
+    });
+
+    testWidgets('sin repetir y con el tope configurado: lo último arriba', (
+      tester,
+    ) async {
+      await RecientesStore().fijarMaximo(4);
+      // La lista de recientes se arma a medida que se ve: con pantalla alta entran las 4.
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 2400);
+      addTearDown(tester.view.reset);
+      await abrir(tester, deps: backend.deps(loadProducto: productos));
+      for (final e in [
+        '70000001',
+        '70000002',
+        '70000003',
+        '70000004',
+        '70000005',
+      ]) {
+        await _buscar(tester, e);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+      }
+      await _buscar(tester, '70000003'); // reconsultar lo sube
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      final nombres = [
+        for (final t in tester.widgetList<Text>(find.textContaining('Fideos')))
+          t.data,
+      ];
+      expect(nombres, [
+        'Fideos 70000003',
+        'Fideos 70000005',
+        'Fideos 70000004',
+        'Fideos 70000002',
+      ]);
+    });
+
+    testWidgets('tocar uno abre su ficha', (tester) async {
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Aceite de girasol'));
+      await tester.pumpAndSettle();
+      expect(find.text('EAN ${_aceite.ean}'), findsOneWidget);
+    });
+
+    testWidgets(
+      'nada en la zona: usa un precio lejano marcado como referencia',
+      (tester) async {
+        backend.referencia.add(vigenteA('lejos', '800.00', dist: 120000));
+        backend.soloLejos = true; // en la zona no hay nada
+        await abrir(tester);
+        await _buscar(tester, _aceite.ean);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('Referencia'), findsOneWidget);
+        expect(find.textContaining('120 km'), findsOneWidget);
+        expect(find.textContaining(r'$ 800,00'), findsOneWidget);
+        expect(backend.pedidosReferencia, isNotEmpty);
+      },
+    );
+
+    testWidgets('sin ningún precio: dice que no hay y no deja la fila vacía', (
+      tester,
+    ) async {
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Sin precios'), findsOneWidget);
+    });
+
+    testWidgets('sin red se ven igual, sin errores ni esperas', (tester) async {
+      backend.vigentes.add(vigenteA('l1', '900.00', dist: 350));
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      // Se corta la red y se reabre la app: lo guardado en el celular sigue ahí.
+      backend.sinRed = true;
+      await tester.pumpWidget(const SizedBox());
+      await abrir(tester);
+
+      expect(find.text('Aceite de girasol'), findsOneWidget);
+      expect(find.textContaining(r'$ 900,00'), findsOneWidget);
+      expect(find.textContaining('350 m'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('con red se refresca el precio guardado', (tester) async {
+      backend.vigentes.add(vigenteA('l1', '900.00', dist: 350));
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      backend.vigentes
+        ..clear()
+        ..add(vigenteA('l1', '950.00', dist: 350));
+      await tester.pumpWidget(const SizedBox());
+      await abrir(tester);
+
+      expect(find.textContaining(r'$ 950,00'), findsOneWidget);
+      expect(find.textContaining(r'$ 900,00'), findsNothing);
     });
   });
 }

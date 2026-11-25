@@ -83,7 +83,8 @@ void main() {
           crearLocal: ({required nombre, direccion, required ubicacion}) =>
               throw UnimplementedError(),
           loadHistorial: (_) => throw UnimplementedError(),
-          loadVigentes: (_, {ubicacion}) => throw UnimplementedError(),
+          loadVigentes: (_, {ubicacion, referencia = false}) =>
+              throw UnimplementedError(),
           cargarPrecio: ({
             required ean,
             required localId,

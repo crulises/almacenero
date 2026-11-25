@@ -14,11 +14,13 @@ import 'data/local_repository.dart';
 import 'data/location_service.dart';
 import 'data/price_repository.dart';
 import 'data/product_repository.dart';
+import 'data/recientes.dart';
 import 'data/session.dart';
 import 'data/sugerencia_repository.dart';
 import 'data/user_repository.dart';
 import 'ui/home_screen.dart';
 import 'ui/moderacion.dart';
+import 'ui/recientes.dart';
 
 /// URL del backend. Desde el emulador Android, el host es 10.0.2.2.
 /// Se cambia con `--dart-define=API_URL=...` (`make apk` lo hace para un celular).
@@ -47,9 +49,32 @@ void main() {
   armarDatosApertura(lectoresReales())
       .catchError((_) => <String, Object?>{})
       .then((datos) => eventos.registrar('app.abierta', datos));
+  final productos = ProductRepository(api: authed);
+  final precios = PriceRepository(api: authed);
+  // Recientes: solo en el celular. Con red se refrescan; sin red se ve lo guardado.
+  final recientes = RecientesStore();
+  // Cuántos recientes mostrar lo decide el servidor (`config.recientes_max`); sin red se usa lo
+  // último que se supo, o el valor por defecto.
+  _leerMaximoRecientes(authed).then((n) {
+    if (n != null) recientes.fijarMaximo(n);
+  }).ignore();
+  final recientesService = RecientesService(
+    loadProducto: productos.porEan,
+    loadVigentes: precios.vigentes,
+    obtenerUbicacion: location.actual,
+  );
   runApp(
     AlmaceneroApp(
       deps: AppDeps(
+        leerRecientes: recientes.leer,
+        guardarReciente: recientes.registrar,
+        refrescarReciente: (r) async {
+          final nuevo = await recientesService.refrescar(r);
+          if (nuevo != null) {
+            await recientes.registrar(nuevo, moverAlTope: false);
+          }
+          return nuevo;
+        },
         registrarEvento: eventos.registrar,
         vaciarEventos: eventos.vaciar,
         cuentaBaja: cuentaBaja,
@@ -68,17 +93,28 @@ void main() {
         sugerir: SugerenciaRepository(api: authed).enviar,
         loadEstandares: SugerenciaRepository(api: authed).estandares,
         loadMe: UserRepository(api: authed).me,
-        loadProducto: ProductRepository(api: authed).porEan,
+        loadProducto: productos.porEan,
         obtenerUbicacion: location.actual,
         abrirAjustes: location.abrirAjustes,
         loadLocalesCerca: LocalRepository(api: authed).cerca,
         crearLocal: LocalRepository(api: authed).crear,
-        cargarPrecio: PriceRepository(api: authed).cargar,
-        loadHistorial: PriceRepository(api: authed).historial,
-        loadVigentes: PriceRepository(api: authed).vigentes,
+        cargarPrecio: precios.cargar,
+        loadHistorial: precios.historial,
+        loadVigentes: precios.vigentes,
       ),
     ),
   );
+}
+
+Future<int?> _leerMaximoRecientes(AuthedApi api) async {
+  try {
+    for (final c in await api.getList('/config')) {
+      if (c is Map && c['clave'] == 'recientes_max' && c['valor'] is int) {
+        return c['valor'] as int;
+      }
+    }
+  } catch (_) {}
+  return null;
 }
 
 class AlmaceneroApp extends StatelessWidget {
@@ -91,6 +127,7 @@ class AlmaceneroApp extends StatelessWidget {
     return MaterialApp(
       title: 'Almacenero',
       theme: ThemeData(colorSchemeSeed: Colors.green, useMaterial3: true),
+      navigatorObservers: [routeObserver],
       // La baja se avisa desde cualquier pantalla: reemplaza a toda la app.
       builder: (context, child) {
         final vigilado = AvisoDespertando(

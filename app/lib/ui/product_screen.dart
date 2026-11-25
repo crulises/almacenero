@@ -4,6 +4,7 @@ import '../app_deps.dart';
 import '../data/location_service.dart';
 import '../data/price_repository.dart';
 import '../data/product_repository.dart';
+import '../data/recientes.dart';
 import '../data/user_repository.dart';
 import '../domain/precio.dart';
 import 'frescura.dart';
@@ -40,6 +41,35 @@ class _ProductScreenState extends State<ProductScreen> {
   void initState() {
     super.initState();
     if (widget.via != null) _anotarEscaneo();
+    _anotarReciente();
+  }
+
+  /// Deja la consulta en «Recientes» (solo en el celular): qué es, dónde y a cuánto. Si no
+  /// hay nada en la zona busca uno de referencia (radio ampliado) para no mostrar vacío.
+  /// Silencioso: ni un fallo de red ni de almacenamiento molestan a la ficha.
+  Future<void> _anotarReciente() async {
+    try {
+      final producto = await _producto;
+      final zona = await _vigentes;
+      if (_verTodos) return; // «ver todos» no es una consulta de la zona
+      var referencia = <PrecioVigente>[];
+      if (_conUbicacion && zona.isEmpty) {
+        referencia = await widget.deps
+            .loadVigentes(widget.ean, ubicacion: _ubicacion, referencia: true)
+            .catchError((Object _) => <PrecioVigente>[]);
+      }
+      await widget.deps.guardarReciente(
+        resumirConsulta(
+          producto: producto,
+          zona: zona,
+          referencia: referencia,
+          conUbicacion: _conUbicacion,
+          ahora: DateTime.now(),
+        ),
+      );
+    } on Object {
+      // Recientes es una comodidad.
+    }
   }
 
   /// `encontrado` se sabe recién con la respuesta: 200 = sí, 404 = no. Cualquier otro
@@ -92,6 +122,7 @@ class _ProductScreenState extends State<ProductScreen> {
 
   /// Si se pudo filtrar por cercanía (hay ubicación del usuario).
   bool _conUbicacion = false;
+  Ubicacion? _ubicacion;
 
   /// Precios vigentes cerca del usuario. Sin ubicación (permiso, GPS apagado)
   /// trae todos: la ficha no se rompe por eso.
@@ -105,6 +136,7 @@ class _ProductScreenState extends State<ProductScreen> {
       }
     }
     _conUbicacion = ubicacion != null;
+    _ubicacion = ubicacion;
     return widget.deps.loadVigentes(widget.ean, ubicacion: ubicacion);
   }
 
@@ -123,18 +155,51 @@ class _ProductScreenState extends State<ProductScreen> {
   }
 
   Future<void> _cargarPrecio(Producto p) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final cargado = await Navigator.of(context).push<PrecioCargado>(
+      MaterialPageRoute<PrecioCargado>(
         builder: (_) => PriceScreen(producto: p, deps: widget.deps),
       ),
     );
+    if (!mounted) return;
     // Si se cargó un precio, tiene que aparecer en el mapa, la lista y el historial.
-    if (mounted) _recargarPrecios();
+    _recargarPrecios();
+    if (cargado == null) return; // se volvió sin guardar
+    _anotarReciente(); // la foto de Recientes, con el precio nuevo
+    final aviso = 'Precio cargado · karma ${cargado.karma}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          cargado.primerPrecio
+              ? '¡Fuiste el primero en cargarlo! $aviso'
+              : aviso,
+        ),
+      ),
+    );
+  }
+
+  /// «Escanear otro»: lee otro código sin pasar por el inicio. Reemplaza esta ficha (un solo
+  /// «atrás» lleva al inicio, por muchos que se escaneen seguidos). Cancelar la deja como está.
+  Future<void> _escanearOtro() async {
+    final ean = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(builder: (_) => widget.deps.pantallaEscaneo()),
+    );
+    if (ean == null || !mounted) return;
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ProductScreen(ean: ean, deps: widget.deps, via: 'camara'),
+      ),
+    );
   }
 
   /// Menú ⋮ de la barra: «Sugerir corrección», solo para moderadores con el producto
   /// cargado.
   List<Widget> _acciones() => [
+    TextButton.icon(
+      onPressed: _escanearOtro,
+      icon: const Icon(Icons.qr_code_scanner),
+      label: const Text('Escanear otro'),
+    ),
     FutureBuilder<Producto>(
       future: _producto,
       builder: (context, prod) => FutureBuilder<Me?>(
@@ -234,33 +299,47 @@ class _ProductScreenState extends State<ProductScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
+          child: FutureBuilder<Me?>(
+            future: _me,
+            builder: (context, me) => FutureBuilder<List<PrecioHistorial>>(
+              future: _historial,
+              builder: (context, historial) {
+                final restringido = me.data?.escalon == Escalon.restringido;
+                // Nadie cargó nada en ningún local: nunca un vacío, una invitación.
+                final primero =
+                    historial.hasData && historial.requireData.isEmpty;
+                final info = Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(p.nombre, style: texto.titleLarge),
                     if (detalle.isNotEmpty) Text(detalle),
                     Text('EAN ${p.ean}', style: texto.bodySmall),
                   ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              FutureBuilder<Me?>(
-                future: _me,
-                builder: (context, snapshot) {
-                  final restringido =
-                      snapshot.data?.escalon == Escalon.restringido;
-                  return FilledButton.icon(
-                    // Restringido: se ve, pero apagado y con el motivo abajo.
-                    onPressed: restringido ? null : () => _cargarPrecio(p),
-                    icon: const Icon(Icons.sell),
-                    label: const Text('Cargar precio'),
+                );
+                final boton = FilledButton.icon(
+                  // Restringido: se ve, pero apagado y con el motivo abajo.
+                  onPressed: restringido ? null : () => _cargarPrecio(p),
+                  icon: const Icon(Icons.sell),
+                  label: Text(
+                    primero ? 'Sé el primero en cargarlo' : 'Cargar precio',
+                  ),
+                );
+                // El botón largo va debajo: al lado le robaría el lugar al nombre.
+                if (primero) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [info, const SizedBox(height: 8), boton],
                   );
-                },
-              ),
-            ],
+                }
+                return Row(
+                  children: [
+                    Expanded(child: info),
+                    const SizedBox(width: 8),
+                    boton,
+                  ],
+                );
+              },
+            ),
           ),
         ),
         FutureBuilder<Me?>(

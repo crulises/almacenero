@@ -66,7 +66,7 @@ class _Backend {
       required ubicacion,
     }) async => throw UnimplementedError(),
     loadHistorial: (_) async => [],
-    loadVigentes: (_, {ubicacion}) async => [],
+    loadVigentes: (_, {ubicacion, referencia = false}) async => [],
     sugerir: ({required ean, required cambios, motivo}) async {
       enviadas.add((ean: ean, cambios: cambios, motivo: motivo));
       return const SugerenciaEnviada(

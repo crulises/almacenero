@@ -28,7 +28,7 @@ se detallan en su plan (`docs/04`) y en los diseños de `docs/superpowers/specs/
 
 | Release | Qué trae | Estado |
 |---|---|---|
-| **0.1.x** | Todo lo de v0.0.2 ya mergeado (roles, geofence, ETL, precios vigentes y mapa, anti-spam, panel de admin, moderación, catálogo normalizado, CSV curado, ETL desde el panel, dashboard 19a/19b/19c) **más el corte 20**: volver a la ficha tras cargar, «Escanear otro», Recientes y «Sé el primero» | en curso; **se cierra con el corte 20** y se prueba solo, en local |
+| **0.1.x** | Todo lo de v0.0.2 ya mergeado (roles, geofence, ETL, precios vigentes y mapa, anti-spam, panel de admin, moderación, catálogo normalizado, CSV curado, ETL desde el panel, dashboard 19a/19b/19c) **más el corte 20**: volver a la ficha tras cargar, «Escanear otro», Recientes y «Sé el primero» | corte 20 implementado (PR abierto), a probar en el celular; con eso **se cierra** el 0.1.x; se prueba solo, en local |
 | **0.2.x** | «Precios por refrescar» (cola priorizada por consultas, karma ponderado por frescura), validación colaborativa, línea «ahorrás X% yendo a Y» en la ficha | planificado |
 | **0.3.x** | Perfil (karma, historial propio, gamificación) y **lista de compras** en un tab propio | planificado |
 | **0.4.x** | Seguir productos y notificaciones (pocas, con tope) | planificado |

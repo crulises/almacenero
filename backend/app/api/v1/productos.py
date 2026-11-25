@@ -106,7 +106,8 @@ async def precios_vigentes(
     ean: str,
     lat: float | None = Query(None, ge=-90, le=90),
     lng: float | None = Query(None, ge=-180, le=180),
-    radio_m: int | None = Query(None, gt=0, le=100_000),
+    radio_m: int | None = Query(None, gt=0),
+    referencia: bool = Query(False),
     _: Usuario = Depends(current_user),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> list[PrecioVigenteOut]:
@@ -115,13 +116,24 @@ async def precios_vigentes(
     Con `lat` y `lng` trae solo los locales dentro de `radio_m` (por defecto
     `config.radio_precios_m`) y agrega la distancia: sin esto, precios de locales a
     miles de kilómetros se mezclarían con los de tu zona. Sin ubicación trae todos.
+
+    `radio_m` puede ampliarse hasta el radio de referencia (`config.radio_referencia_km`): es lo
+    que usa «Recientes» cuando no hay nada en la zona. `referencia=true` pide justo ese radio
+    (la app no necesita conocer el número). Lo que venga de ahí es **referencia**, no precio de
+    la zona: la app lo marca con su distancia.
     """
     if (lat is None) != (lng is None):
         raise HTTPException(422, "lat y lng van juntos")
+    if referencia and lat is None:
+        raise HTTPException(422, "referencia necesita lat y lng")
     if lat is None:
         radio = None
     else:
-        radio = radio_m or int(await config.leer(pool, "radio_precios_m"))
+        zona = int(await config.leer(pool, "radio_precios_m"))
+        tope = max(zona, int(await config.leer(pool, "radio_referencia_km")) * 1000)
+        radio = tope if referencia else (radio_m or zona)
+        if radio > tope:
+            raise HTTPException(422, f"radio_m no puede pasar de {tope} m")
     rows = await pool.fetch(
         """
         select * from (

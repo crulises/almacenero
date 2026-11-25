@@ -4,12 +4,13 @@ import '../app_deps.dart';
 import '../data/api_client.dart';
 import '../data/auth_repository.dart';
 import '../data/user_repository.dart';
+import '../data/recientes.dart';
 import '../domain/ean.dart';
 import 'acerca_screen.dart';
 import 'invitacion_screen.dart';
 import 'moderacion.dart';
 import 'product_screen.dart';
-import 'scan_screen.dart';
+import 'recientes.dart';
 
 /// Pantalla inicial: usuario actual (alias y karma) y búsqueda de un producto, ya sea
 /// escaneando el código o ingresándolo a mano.
@@ -22,17 +23,75 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
   late Future<Me> _me = _cargarMe();
   final _eanController = TextEditingController();
   bool _yaEntro =
       false; // hubo una sesión: los recargos no vuelven a la pantalla de carga
   String? _eanError;
 
+  /// Últimas consultas, de lo guardado en el celular (se ven siempre, con o sin red).
+  List<Reciente> _recientes = const [];
+
+  /// Cuándo se refrescó cada una con red: no se vuelve a pedir a cada vuelta.
+  final _refrescados = <String, DateTime>{};
+  static const _cadaCuanto = Duration(minutes: 5);
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarRecientes();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ruta = ModalRoute.of(context);
+    if (ruta != null) routeObserver.subscribe(this, ruta);
+  }
+
   @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _eanController.dispose();
     super.dispose();
+  }
+
+  /// Se volvió al inicio desde otra pantalla (la ficha, o la ficha de otro producto escaneado
+  /// desde ella): campo vacío, karma al día y recientes actualizados.
+  @override
+  void didPopNext() {
+    _eanController.clear();
+    FocusScope.of(context).unfocus();
+    _retry();
+    _cargarRecientes(alVolver: true);
+  }
+
+  /// Muestra lo guardado enseguida y, aparte, lo refresca con red. Si no hay red no pasa
+  /// nada: se ve la foto guardada, sin errores ni esperas.
+  Future<void> _cargarRecientes({bool alVolver = false}) async {
+    final guardados = await widget.deps.leerRecientes();
+    if (!mounted) return;
+    setState(() => _recientes = guardados);
+    final ahora = DateTime.now();
+    for (final r in guardados) {
+      // Recién consultado en la ficha (está al día) o ya refrescado hace poco.
+      if (alVolver &&
+          ahora.difference(r.consultadoEn) < const Duration(minutes: 1)) {
+        continue;
+      }
+      final ultimo = _refrescados[r.ean];
+      if (ultimo != null && ahora.difference(ultimo) < _cadaCuanto) continue;
+      _refrescados[r.ean] = ahora;
+      widget.deps.refrescarReciente(r).then((nuevo) {
+        if (nuevo == null || !mounted) return;
+        setState(() {
+          _recientes = [
+            for (final x in _recientes) x.ean == nuevo.ean ? nuevo : x,
+          ];
+        });
+      }).ignore();
+    }
   }
 
   /// El error lo muestra el FutureBuilder; `ignore()` evita que, si falla antes del
@@ -51,8 +110,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _escanear() async {
-    final ean = await Navigator.of(context)
-        .push<String>(MaterialPageRoute(builder: (_) => const ScanScreen()));
+    final ean = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => widget.deps.pantallaEscaneo()),
+    );
     if (ean != null && mounted) _abrirProducto(ean, via: 'camara');
   }
 
@@ -66,19 +126,15 @@ class _HomeScreenState extends State<HomeScreen> {
     _abrirProducto(ean, via: 'manual');
   }
 
-  Future<void> _abrirProducto(String ean, {required String via}) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ProductScreen(ean: ean, deps: widget.deps, via: via),
-      ),
-    );
-    if (!mounted) return;
-    // Listo para el próximo producto: campo vacío y sin teclado.
-    _eanController.clear();
-    FocusScope.of(context).unfocus();
-    // Al volver puede haber cambiado el karma (si se cargó un precio).
-    _retry();
-  }
+  /// [via] es cómo se llegó al código (`camara` / `manual`); `null` si no fue un escaneo
+  /// (se tocó un reciente): ahí no se anota el evento `producto.escaneado`.
+  /// Al volver, [didPopNext] deja el inicio al día.
+  Future<void> _abrirProducto(String ean, {String? via}) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ProductScreen(ean: ean, deps: widget.deps, via: via),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -124,33 +180,44 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          _usuario(context),
-          const SizedBox(height: 32),
-          FilledButton.icon(
-            onPressed: _escanear,
-            icon: const Icon(Icons.qr_code_scanner),
-            label: const Text('Escanear código'),
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _eanController,
-            keyboardType: TextInputType.number,
-            textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _buscarManual(),
-            decoration: InputDecoration(
-              labelText: 'O ingresá el código',
-              errorText: _eanError,
-              suffixIcon: IconButton(
-                tooltip: 'Buscar',
-                icon: const Icon(Icons.search),
-                onPressed: _buscarManual,
+      // El teclado tapa la lista en vez de apretarla: lo de arriba no cambia de tamaño.
+      resizeToAvoidBottomInset: false,
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _usuario(context),
+            const SizedBox(height: 32),
+            FilledButton.icon(
+              onPressed: _escanear,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Escanear código'),
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _eanController,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _buscarManual(),
+              decoration: InputDecoration(
+                labelText: 'O ingresá el código',
+                errorText: _eanError,
+                suffixIcon: IconButton(
+                  tooltip: 'Buscar',
+                  icon: const Icon(Icons.search),
+                  onPressed: _buscarManual,
+                ),
               ),
             ),
-          ),
-        ],
+            Expanded(
+              child: RecientesSeccion(
+                recientes: _recientes,
+                onTap: (r) => _abrirProducto(r.ean),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
