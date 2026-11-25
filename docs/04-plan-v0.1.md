@@ -1,4 +1,8 @@
-# Plan v0.0.2
+# Plan 0.1 (antes «v0.0.2»)
+
+> Este plan es el del release **0.1.x** (cerrado con el corte 20). Se llamó «v0.0.2» cuando se escribió;
+> el archivo se renombró a `04-plan-v0.1.md`. Dentro del texto, «v0.0.1» y «v0.0.2» son nombres
+> históricos de planes. Siguientes: `04-plan-v0.2.md` en adelante (`docs/10-roadmap.md`).
 
 Estado: **plan aprobado, con decisiones abiertas al final**. Parte de v0.0.1
 cerrada y probada en un celular real (escanear, cargar precio, karma,
