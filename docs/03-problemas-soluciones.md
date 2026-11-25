@@ -276,7 +276,7 @@ instalá esos.
   `./gradlew --stop`, cerrar lo que no se use, reiniciar el emulador en frío
   (`adb emu kill` y relanzar con `-no-snapshot -no-audio -no-boot-anim`).
 - **`monkey -p <paquete> 1` no abre la app** (no hay `MainActivity` con ese
-  nombre de paquete: el `applicationId` es `ar.almacenero.almacenero`). Tocar el
+  nombre de paquete: el `applicationId` es `dev.crulises.almacenero`; antes del corte 21 era `ar.almacenero.almacenero`). Tocar el
   ícono de Flutter en el launcher y esperar ~40 s en el primer arranque debug.
 - **El historial de un producto muestra precios «de más» en el entorno local:** son
   los que cargan los tests del backend (usan la misma base). No es un bug.
@@ -1116,3 +1116,42 @@ Decisiones en `docs/04` §9.
 - **Causa:** `.env` está en `.gitignore`, así que un `git worktree` (checkout aparte) no lo trae.
 - **Solución:** copiar el del checkout principal a la raíz del worktree (`cp ../../../.env .env`, según
   dónde esté). No se commitea.
+
+## Identidad de la app Android: `applicationId`, keystores y SHA-1 (corte 21)
+
+- **`applicationId` = `dev.crulises.almacenero`** (antes `ar.almacenero.almacenero`). Es el «nombre del
+  paquete» que pide Google Cloud para el cliente OAuth de Android. Quien tenía la app vieja la desinstala
+  e instala la nueva (para Android son apps distintas: se pierde la sesión, no los datos del servidor).
+- **Firma de release:** `app/android/app/build.gradle.kts` lee `app/android/key.properties` (ignorado por git,
+  como `*.jks`/`*.keystore`). Sin ese archivo `flutter build apk --release` **falla a propósito**, para no
+  firmar un «release» con la clave de debug. Formato del archivo:
+
+  ```properties
+  storeFile=/ruta/absoluta/a/almacenero-release.jks
+  storePassword=...
+  keyAlias=almacenero
+  keyPassword=...
+  ```
+
+- **Generar la keystore de release (una sola vez, la corrés vos; las contraseñas son tuyas):**
+
+  ```bash
+  /opt/homebrew/opt/openjdk@17/bin/keytool -genkeypair -v -storetype PKCS12 \
+    -keystore ~/.android-keys/almacenero-release.jks -alias almacenero \
+    -keyalg RSA -keysize 2048 -validity 10000
+  ```
+
+  Guardala **fuera del repo** y con copia (gestor de contraseñas). Si se pierde, no se puede publicar una
+  actualización de la misma app ni se recupera el SHA-1 registrado en Google.
+- **Huella SHA-1** (la pide Google Cloud; una por cada keystore con la que se firme):
+  `keytool -list -v -keystore <archivo> -alias <alias> | grep SHA1`. La de debug es
+  `~/.android/debug.keystore`, alias `androiddebugkey`, contraseña `android` (la crea Gradle sola y es
+  distinta en cada máquina).
+
+### `keytool` dice «Invalid keystore format» o «HmacPBESHA256 not available»
+
+- **Síntoma:** `keytool -list` sobre `~/.android/debug.keystore` falla.
+- **Causa:** `keytool` del PATH es de un JDK 8 (acá, el de sdkman); el keystore lo creó Gradle con el JDK 17
+  de Flutter y usa un PKCS12 que el 8 no lee.
+- **Solución:** usar el `keytool` del JDK que usa Flutter (`flutter doctor -v` lo muestra; en esta Mac
+  `/opt/homebrew/opt/openjdk@17/bin/keytool`).
