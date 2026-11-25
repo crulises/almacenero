@@ -104,6 +104,59 @@ def test_un_pin_lo_usa_una_sola_persona_una_sola_vez(client, admin, proveedor):
     assert len(proveedor) == 1  # el segundo intento ni llegó a crear un usuario
 
 
+def _usos(codigo):
+    import asyncio
+
+    import asyncpg
+
+    async def run():
+        conn = await asyncpg.connect(get_settings().database_url)
+        try:
+            return await conn.fetch(
+                "select u.auth_id, u.usada_en from invitaciones_usos u "
+                "join invitaciones i on i.id = u.invitacion_id where i.codigo = $1",
+                codigo,
+            )
+        finally:
+            await conn.close()
+
+    return asyncio.run(run())
+
+
+def test_cada_uso_queda_registrado_con_su_fecha_y_su_usuario(client, admin, proveedor):
+    """Una fila por uso en `invitaciones_usos` (serie «aceptadas» del dashboard, docs/04 §11)."""
+    [pin] = _crear(client, admin, nota="t-pin usos").json()
+    assert _usos(pin["codigo"]) == []
+    assert _alta(client, pin["codigo"]).status_code == 200
+    [uso] = _usos(pin["codigo"])
+    assert str(uso["auth_id"]) == proveedor[0]
+    assert uso["usada_en"] is not None
+
+
+def test_un_codigo_compartido_deja_una_fila_por_cada_uso(client, admin, proveedor):
+    sql(
+        "insert into invitaciones (codigo, usos_max, nota) values ('t-pin-grupo', 5, 't-pin grupo')"
+    )
+    for _ in range(3):
+        assert _alta(client, "t-pin-grupo").status_code == 200
+    assert len(_usos("t-pin-grupo")) == 3
+    assert {str(u["auth_id"]) for u in _usos("t-pin-grupo")} == set(proveedor)
+
+
+def test_si_el_alta_falla_el_uso_se_devuelve_y_no_queda_fila(client, admin, proveedor):
+    [pin] = _crear(client, admin, nota="t-pin devolver").json()
+    original = app.state.http
+    app.state.http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(500, json={}))
+    )
+    try:
+        assert _alta(client, pin["codigo"]).status_code >= 500
+    finally:
+        app.state.http = original
+    assert _usos(pin["codigo"]) == []
+    assert _ficha(client, admin, pin["codigo"])["usos"] == 0
+
+
 def test_el_panel_muestra_el_pin_usado_y_quien_lo_uso(client, admin, proveedor):
     [pin] = _crear(client, admin, nota="t-pin quien").json()
     sesion = _alta(client, pin["codigo"]).json()

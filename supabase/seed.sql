@@ -43,7 +43,10 @@ insert into config (clave, valor, rubro) values
     ('karma_umbral_restriccion', '-15', null),
     -- Eventos de producto (docs/04 §11.2)
     ('eventos_max_filas',        '100000', null),
-    ('max_lotes_eventos_por_hora', '120', null)
+    ('max_lotes_eventos_por_hora', '120', null),
+    -- Dashboard de admin (docs/04 §11)
+    ('panel_zona_horaria',        '"America/Buenos_Aires"', null),
+    ('dashboard_activo_dias',     '7', null)
 on conflict do nothing;
 
 -- Invitación de desarrollo (en producción se crea otra: `make invitacion`).

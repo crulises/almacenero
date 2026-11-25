@@ -1210,7 +1210,7 @@ todos modos), así que 17 y 18 pueden ir después del primer reparto sin bloquea
 ## 11. Dashboard de admin como landing (corte 19, planificado)
 
 Estado: diseñado el 2026-11-24 (pedido del dueño). Va en tres partes, cada una en su rama y PR:
-**19b hecho** (rama `feat/eventos-app`, ver «Hecho en 19b» al final de §11.7); 19a y 19c pendientes. El
+**19b hecho** (rama `feat/eventos-app`, ver «Hecho en 19b» al final de §11.7); **19a hecho** (rama `feat/dashboard-19a`, ver «Hecho en 19a»); 19c pendiente. El
 dueño eligió este orden: 19b primero, probarlo en local/offline, y después 19a y 19c.
 
 > **Versionado:** el esquema de versiones de release cambió. Lo que este plan llama «v0.0.1» y
@@ -1433,6 +1433,50 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
 - Qué no se probó: nada contra un celular real ni contra el contenedor del backend (los tests de
   backend corren la app en proceso contra Postgres real); ver los pasos manuales del PR.
 
+**Hecho en 19a** (2026-11-24; revisión del diseño con el dueño antes de implementar):
+
+- **Decisiones tomadas en la revisión** (cubren también al 19c):
+  - **Invitaciones aceptadas, con serie en el tiempo.** `invitaciones.usada_at`/`usada_por_auth`
+    guardaban solo el **último** uso (se pisaban), así que en un código de varios usos se perdía el
+    historial. Migración `20261201000001_invitaciones_usos.sql`: una fila por uso (`invitacion_id`,
+    `auth_id`, `usada_en`; `on delete set null` para que borrar una invitación no borre la serie).
+    Los usos viejos entran como una fila por invitación (lo único que se conocía). `consumir` devuelve
+    un `Uso`; `devolver` baja el contador y borra esa fila si el alta falla.
+  - **Productos estrella:** cuentan escaneos con cámara **y** tipeados, con filtro `via` opcional.
+  - **Almacén de exportaciones (19c):** S3-compatible. Producción: bucket de Supabase Storage (1 GB en
+    el plan Free); mudarse = cambiar `EXPORT_S3_*`. Desarrollo y tests: el **Storage local de Supabase**
+    (ya corre con `make up`, API S3 en `:54321/storage/v1/s3`, claves en `supabase status`). **MinIO**
+    queda como perfil opcional del compose (`--profile s3-alt`) y servicio de CI, para probar que no
+    dependemos de Supabase. El disco (`ETL_EXPORT_DIR`) queda para el worker local y los tests.
+  - **Cliente S3:** `boto3` en un hilo (`asyncio.to_thread`, como el ETL), no `aioboto3`: más simple y
+    estable para un volumen chico.
+  - **Programaciones (cron) en la sección ETL**; los números sueltos (`eventos_max_filas`,
+    `eventos_export_filas_por_archivo`, `panel_zona_horaria`, `dashboard_*`) en Configuración.
+- **API** `GET /v1/admin/dashboard/` `resumen | series | rankings | estrellas`, permiso `dashboard.ver`
+  (solo admin). `series` acepta `metrica=precios|validaciones|activos|invitaciones` (la de invitaciones
+  es nueva, posible gracias a `invitaciones_usos`), `granularidad=hora|dia|semana|mes`, `desde`/`hasta`
+  (ISO-8601, UTC con Z; por defecto 7 días) y `zona`. Los buckets vacíos salen en 0 y `activos` separa
+  anónimos y registrados. Máximo 1000 barras por serie (`periodo_invalido`, 422).
+- **Definiciones:** «usuario activo» = hizo una carga (precio, producto nuevo —`auditoria_admin` con
+  `producto.crear`— o sugerencia) en los últimos `config.dashboard_activo_dias` (7) hasta **ahora**, sin
+  importar el período elegido. Invitaciones: `emitidas` (códigos), `disponibles`, `usadas` (`usos >=
+  usos_max`), `vencidas` (sin agotar y con `vence` pasado) y `aceptadas` (**usos**, en el período y en
+  total). Rankings por alias (nunca email): `precios`, `productos` (altas manuales) y `sugerencias`.
+- **Zona horaria (reglas 3 a 6 de §11.3):** `config.panel_zona_horaria` (por defecto
+  `America/Buenos_Aires`), validada contra `pg_timezone_names` por nombre exacto (no valen siglas como
+  ART; `EST` sí existe en la base de zonas). Una zona inválida da 422 `zona_invalida` (también al
+  editarla en Configuración). El bucket se calcula con `date_trunc(unidad, ts AT TIME ZONE zona) AT TIME
+  ZONE zona` y vuelve como instante UTC. Tests (`test_dashboard.py`): medianoche argentina, resultado
+  idéntico con la sesión en UTC, Buenos Aires y Tokyo, semana ISO desde el lunes, hora y mes.
+  Límite conocido: en zonas con horario de verano, las barras por **hora** de la hora repetida se
+  juntan (Argentina no tiene).
+- **Panel:** el inicio es el dashboard (tarjetas, serie con barras, rankings, productos estrella),
+  con selector de período (hoy, 7 días, 30 días, mes, rango) y de granularidad. «Hoy» y «mes» arrancan
+  a la medianoche de la zona del panel, no del navegador. Sin librerías de gráficos (barras en CSS).
+- `make help` lista cada target con su descripción (lee los `## ...` del Makefile).
+- Qué no se probó: el panel en un navegador real contra el contenedor (se probó contra un backend
+  local de la rama en otro puerto); el mapa y la exportación son del 19c.
+
 ## Decisiones
 
 **Tomadas**
@@ -1467,6 +1511,12 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
     «© OpenStreetMap» en el mapa; la tarjeta de versión/servidor/IP se muda ahí.
 12. **Curación del catálogo:** corte propio, con ejemplos que reúne el dueño del proyecto
     (qué estandarizar y qué no gusta). Antes de usar el catálogo de forma permanente.
+
+13. **Dashboard (corte 19): invitaciones con serie** (tabla `invitaciones_usos`), **productos estrella
+    con ambas vías y filtro**, **almacén de exportaciones S3-compatible** (Supabase Storage en
+    producción y en desarrollo local; MinIO opcional para probar portabilidad), **`boto3` en un hilo**,
+    **programaciones en la sección ETL** y números sueltos en Configuración. Detalle en §11
+    («Hecho en 19a»).
 
 **Abiertas**
 

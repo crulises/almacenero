@@ -74,3 +74,19 @@ td.ancho { white-space: normal; }
 .ficha table td { white-space: normal; }
 details { margin: 4px 0; } details pre { max-width: 100%; margin-top: 4px; }
 b.error { color: var(--mal); }
+
+/* Dashboard (docs/04 §11) */
+.tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; padding: 10px 14px; }
+.tarjeta .num { font-size: 28px; font-weight: 600; line-height: 1.2; }
+.barras { display: flex; align-items: flex-end; gap: 2px; height: 220px; overflow-x: auto; padding-top: 6px; }
+.barra { flex: 1 0 22px; max-width: 70px; height: 100%; display: flex; flex-direction: column; align-items: center; }
+.barra .col { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.barra .relleno { width: 100%; background: var(--acento); border-radius: 3px 3px 0 0; min-height: 1px; }
+.barra .apilado { width: 100%; display: flex; flex-direction: column; min-height: 1px; }
+.relleno.anon, .leyenda.anon { background: var(--aviso); }
+.relleno.reg, .leyenda.reg { background: var(--ok); }
+.leyenda { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 2px 0 8px; }
+.barra .valor { font-size: 11px; }
+.barra .eti { font-size: 10px; color: var(--suave); white-space: nowrap; }
+.dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }

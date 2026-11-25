@@ -117,6 +117,8 @@ portabilidad de CI.
 - `make up` / `make down` — stack local.
 - `make migrate`, `make seed`.
 - `make test`, `make lint`, `make build`.
+- `make help` — lista todos los targets con una línea de explicación (sale de los `## ...` del Makefile:
+  al agregar un target, escribile su descripción ahí).
 
 ## Tiempo y zona horaria
 
@@ -137,7 +139,22 @@ Regla para todo el proyecto (decidida el 2026-11-24, a pedido del dueño; detall
   `etl/ejecucion.py`) se abren con `server_settings={"timezone": "UTC"}`; al arrancar el backend
   verifica `show timezone` y, si no es UTC, lo deja en el log (`verificar_utc`). Los tests
   `test_zona_horaria.py` fallan si aparece una columna `timestamp without time zone`. La conversión a
-  hora argentina para el dashboard (regla 3 en adelante de `docs/04` §11.3) es del corte 19a.
+  hora argentina para el dashboard se hizo en el corte 19a (ver abajo).
+- **Dashboard (corte 19a):** `GET /v1/admin/dashboard/series` agrupa en la zona de `config.panel_zona_horaria`
+  (validada contra `pg_timezone_names`; 422 si no existe) con `date_trunc(unidad, ts AT TIME ZONE zona) AT
+  TIME ZONE zona` y devuelve cada bucket como instante UTC (`inicio_utc`, con `Z`); el panel solo formatea
+  con `Intl`. Tests en `backend/tests/test_dashboard.py`: medianoche argentina, igual resultado con la
+  sesión en UTC / Buenos Aires / Tokyo, zona inválida.
+
+## Almacén de exportaciones
+
+Lo que el sistema exporta por su cuenta (eventos, corte 19c) se guarda en un almacén S3-compatible,
+porque el disco del backend desplegado es efímero. **Decidido el 2026-11-24:** producción usa un bucket de
+Supabase Storage (1 GB en el plan Free); mudarse a otro S3 = cambiar `EXPORT_S3_ENDPOINT`, `_BUCKET`,
+`_KEY` y `_SECRET`. En desarrollo y tests se usa el Storage local de Supabase (el que levanta `make up`;
+API S3 en `http://127.0.0.1:54321/storage/v1/s3`, claves en `supabase status`); MinIO queda como perfil
+opcional del compose (`--profile s3-alt`) y en CI, para probar que no hay acople a Supabase. Cliente:
+`boto3` en un hilo. El disco (`ETL_EXPORT_DIR`) solo lo usa el worker local. Diseño en `docs/04` §11.4.
 
 ## Eventos de producto
 

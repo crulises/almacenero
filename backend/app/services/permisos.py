@@ -54,6 +54,8 @@ CAPACIDADES: dict[str, frozenset[str]] = {
             "etl.ver",
             "etl.ejecutar",
             "etl.cancelar",
+            # Dashboard de admin (corte 19): solo admin
+            "dashboard.ver",
         }
     ),
 }

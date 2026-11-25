@@ -131,8 +131,8 @@ async def sesion_anonima(
             403,
             detail={"codigo": "invitacion_requerida", "mensaje": "falta el código de invitación"},
         )
-    invitacion_id = await invitaciones.consumir(pool, codigo)
-    if invitacion_id is None:
+    uso = await invitaciones.consumir(pool, codigo)
+    if uso is None:
         raise HTTPException(
             403,
             detail={"codigo": "invitacion_invalida", "mensaje": "código de invitación inválido"},
@@ -140,11 +140,11 @@ async def sesion_anonima(
     try:
         sesion = await _pedir_sesion(http, "/signup", {})
     except HTTPException:
-        await invitaciones.devolver(pool, invitacion_id)  # no se gastó una invitación en vano
+        await invitaciones.devolver(pool, uso)  # no se gastó una invitación en vano
         raise
     auth_id = _auth_id_de(sesion.access_token)
     if auth_id is not None:  # para que el panel muestre quién usó el código
-        await invitaciones.anotar_usuario(pool, invitacion_id, auth_id)
+        await invitaciones.anotar_usuario(pool, uso, auth_id)
     return await _anotar_dispositivo(pool, sesion, dispositivo)
 
 

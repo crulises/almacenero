@@ -1,8 +1,17 @@
-.PHONY: backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar locales-exportar locales-importar etl-worker
+.PHONY: help backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar locales-exportar locales-importar etl-worker
 
 SHELL := /bin/bash
 VENV := backend/.venv
 PY := $(VENV)/bin/python
+
+# `make help` arma la lista leyendo los comentarios `## ...` de cada target y los títulos
+# `# --- sección ---`: para que una descripción aparezca, escribila en la línea del target.
+help: ## Lista todos los targets con lo que hace cada uno
+	@awk 'BEGIN { FS = ":.*## " } \
+		/^# --- .* ---/ { sec = $$0; gsub(/^# --- | -+$$/, "", sec); printf "\n\033[1m%s\033[0m\n", sec } \
+		/^[a-zA-Z0-9_-]+:.*## / { printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@echo
+	@echo "Los parámetros se pasan así: make admin-crear EMAIL=vos@mail.com (están en cada descripción)."
 
 # --- stack local -----------------------------------------------------------
 up: ## Levanta Supabase (Postgres/Auth/Storage) y el backend
@@ -110,14 +119,14 @@ $(PY):
 	python3 -m venv $(VENV)
 	$(PY) -m pip install -q -e "backend[dev,etl]"
 
-venv: $(PY)
+venv: $(PY) ## Crea el entorno virtual de Python (backend/.venv) con las dependencias
 
 test: $(PY) ## Tests de backend (Postgres local real) y de la app
 	cd backend && .venv/bin/python -m pytest
 	$(PY) -m pytest etl/tests -q
 	cd app && flutter test
 
-lint: $(PY)
+lint: $(PY) ## Linter: ruff (backend y etl) y flutter analyze
 	cd backend && .venv/bin/ruff check . && .venv/bin/ruff format --check .
 	$(VENV)/bin/ruff check --config backend/pyproject.toml etl && $(VENV)/bin/ruff format --check --config backend/pyproject.toml etl
 	cd app && flutter analyze

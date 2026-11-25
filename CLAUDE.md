@@ -32,7 +32,7 @@ Además:
 > **Versionado:** «v0.0.1» y «v0.0.2» son nombres históricos de **planes**; la 0.0.1 ya no está vigente
 > y el próximo release es **0.1.x** (la validación colaborativa, 0.2.x o posterior). Ver Doc 2.
 > **Zona horaria:** todo en UTC (`timestamptz`) y la hora local solo al mostrar (Doc 2, «Tiempo y zona
-> horaria»). Corte 19 (dashboard de admin con eventos y mapa): planificado en `docs/04` §11; la parte 19b (eventos desde la app) ya está hecha, 19a y 19c no.
+> horaria»). Corte 19 (dashboard de admin con eventos y mapa): planificado en `docs/04` §11; 19b (eventos desde la app) y 19a (dashboard: tarjetas, series, rankings, estrellas, zona horaria) ya están hechas; 19c (mapa, exportar/vaciar eventos, programación) no.
 
 ## Alcance de v0.0.1 (NO te pases de esto)
 
@@ -101,7 +101,8 @@ usa `DATABASE_URL` y una capa `db` genérica.
 
 ## Comandos (Makefile)
 
-Toda la lógica operativa va en el Makefile. CI solo llama a estos targets.
+Toda la lógica operativa va en el Makefile. CI solo llama a estos targets. `make help` los lista con su
+descripción (al agregar un target, ponele su `## descripción` en la misma línea).
 
 - `make up` / `make down` — levanta / baja el stack local.
 - `make migrate` — aplica migraciones.

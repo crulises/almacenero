@@ -37,6 +37,10 @@ DEFAULTS: dict[str, Any] = {
     # de lotes por usuario por hora (la app junta los eventos y los manda de a tandas).
     "eventos_max_filas": 100000,
     "max_lotes_eventos_por_hora": 120,
+    # Dashboard de admin (docs/04 §11): zona en que se muestran y agrupan las fechas (los instantes
+    # siguen en UTC) y ventana de «usuario activo» (hizo una carga en los últimos N días).
+    "panel_zona_horaria": "America/Buenos_Aires",
+    "dashboard_activo_dias": 7,
 }
 
 
