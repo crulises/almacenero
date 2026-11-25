@@ -1518,6 +1518,24 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
   y su tope de 50 MB por archivo (la partición lo respeta por filas, no por bytes: a ~200 bytes por evento,
   500 000 filas son ~100 MB de CSV y ~10–25 MB comprimidos; si hiciera falta, bajar el valor).
 
+## 12. Cambio de alias (corte 21)
+
+Pedido del dueño (2026-11-25). Diseño: `docs/superpowers/specs/2026-11-25-alias-editable-design.md`; plan:
+`docs/superpowers/plans/2026-11-25-alias-editable.md`. Resumen técnico en el Doc 2, «Alias del usuario».
+
+- **Estado:** ✅ hecho (rama `feat/alias-editable`, un PR; el dueño prueba en el celular antes de mergear).
+- **Qué entra:** lápiz junto al alias en el inicio (edición en el lugar, se guarda al salir del campo),
+  `POST /v1/me/alias`, interruptor por rol en `config` (`alias_editable_por_rol`), tope diario, reservados y
+  lista de bloqueo, historial en tabla propia con trigger y su vista en la ficha del usuario del panel.
+  Las listas de `config` ahora se editan en el panel como JSON.
+- **Decisiones del agente que el dueño puede cambiar** (todas en `config` salvo el formato): abierto solo
+  a moderador y admin; 3 cambios por día; el alias viejo se libera; sin lista de ofensivos por defecto
+  (la arma el dueño en `alias_bloqueados`); el admin puede corregir cualquier alias desde el panel.
+- **Migración con datos viejos:** si ya había alias repetidos, el más viejo conserva el nombre y los demás
+  reciben un sufijo con el comienzo de su id (queda anotado en el historial como cambio del sistema).
+- **Pendiente / futuro:** mostrar el alias a otros usuarios (rankings) y una moderación más fina de
+  ofensivos; fusión de perfiles (reasignar por `usuario_id`) si algún día hace falta.
+
 ## Decisiones
 
 **Tomadas**

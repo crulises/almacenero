@@ -23,6 +23,8 @@ Future<SugerenciaEnviada> _sinSugerir({
   String? motivo,
 }) async => SugerenciaEnviada(id: '-', tipo: 'correccion', estado: 'pendiente');
 
+Future<String> _sinCambiarAlias(String alias) async => alias;
+
 Future<List<Estandar>> _sinEstandares() async => const [];
 
 void _sinEventos(String tipo, [Map<String, Object?> datos = const {}]) {}
@@ -34,6 +36,7 @@ class AppDeps {
     this.registrarEvento = _sinEventos,
     this.vaciarEventos = _sinVaciar,
     this.sugerir = _sinSugerir,
+    this.cambiarAlias = _sinCambiarAlias,
     this.loadEstandares = _sinEstandares,
     this.guardarInvitacion = _sinInvitacion,
     this.loadInfoApp = _infoDePrueba,
@@ -89,6 +92,10 @@ class AppDeps {
     String? motivo,
   })
   sugerir;
+
+  /// Cambia el alias propio; devuelve el que quedó guardado. Lanza `ApiException` si el
+  /// servidor lo rechaza (en uso, reservado, tope diario…).
+  final Future<String> Function(String alias) cambiarAlias;
 
   /// Los estándares de carga (ayuda para quien sugiere).
   final Future<List<Estandar>> Function() loadEstandares;
