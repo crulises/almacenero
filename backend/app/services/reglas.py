@@ -197,6 +197,46 @@ REGLAS: dict[str, Regla] = {
             404,
         ),
         Regla(
+            "alias_no_permitido",
+            "Cambiar el alias todavía no está habilitado",
+            "Por ahora tu tipo de cuenta no puede cambiar el alias.",
+            "Se va a ir abriendo de a poco; mientras tanto seguí usando el que tenés.",
+            403,
+        ),
+        Regla(
+            "alias_invalido",
+            "Formato del alias",
+            "El alias tiene que tener entre 3 y 24 caracteres: letras, números, espacio, punto, "
+            "guion o guion bajo, sin símbolos raros y sin empezar ni terminar con un separador.",
+            "Probá con otro, por ejemplo «Juan P.» o «lucia_88».",
+        ),
+        Regla(
+            "alias_reservado",
+            "Alias reservado",
+            "Ese alias está reservado (se parece a un rol o al sistema).",
+            "Elegí otro que no empiece con «anon-» ni diga «admin», «moderador», «soporte»…",
+        ),
+        Regla(
+            "alias_bloqueado",
+            "Alias no permitido",
+            "Ese alias no está permitido.",
+            "Elegí otro.",
+        ),
+        Regla(
+            "alias_en_uso",
+            "Alias en uso",
+            "Ese alias ya lo tiene otra persona (no distinguimos mayúsculas de minúsculas).",
+            "Elegí otro; si lo soltó alguien, se libera al cambiarlo.",
+            409,
+        ),
+        Regla(
+            "limite_alias",
+            "Demasiados cambios de alias",
+            "Ya cambiaste el alias muchas veces hoy.",
+            "Esperá hasta mañana para cambiarlo de nuevo.",
+            429,
+        ),
+        Regla(
             "error_interno",
             "Error interno",
             "Algo falló del lado del servidor y no pudimos completar la acción.",

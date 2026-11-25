@@ -72,7 +72,8 @@ usa service key del lado servidor).
 
 A refinar en implementación. Tablas núcleo:
 
-- `usuarios`: id (uuid, pk), auth_id (ref al usuario de Supabase Auth), alias,
+- `usuarios`: id (uuid, pk), auth_id (ref al usuario de Supabase Auth), alias (editable; historial en
+  `usuarios_alias_historial`, ver «Alias del usuario»),
   karma (int, default 0), created_at. El karma no se escribe directo; lo maneja
   el backend.
 - `locales`: id, nombre, direccion, ubicacion (PostGIS geography point),
@@ -180,6 +181,30 @@ Los eventos llevan el id de usuario y nada más personal (sin ubicación ni text
   **descarta**, sin errores ni reintentos. No hay persistencia en disco: si el sistema mata la app, lo
   pendiente se pierde (son estadísticas).
 - Retención (`config.eventos_max_filas`, 100 000): solo el valor; el aviso y la exportación son del 19c.
+
+## Alias del usuario
+
+El alias es un atributo del **perfil** (`usuarios.alias`), no de la identidad del proveedor de auth: no
+depende de cómo entró la persona (anónimo, email, Google/Apple) y sobrevive a asociar el anónimo con un
+email o a vincular un OAuth (el perfil sigue siendo el mismo `usuarios.id`). Diseño y reglas en
+`docs/superpowers/specs/2026-11-25-alias-editable-design.md`; plan de corte en `docs/04` §12.
+
+- **Nace** como `anon-XXXXXX` (6 hex del `auth_id`). **Cambiarlo:** `POST /v1/me/alias`; `GET /v1/me` trae
+  `puede_cambiar_alias`. Lo pueden usar los roles de `config.alias_editable_por_rol` (hoy
+  `["moderador","admin"]`; para abrirlo a todos se suma `"usuario"` desde Configuración del panel, sin
+  tocar código; el admin siempre puede).
+- **Reglas** (`services/alias.py`): 3 a 24 caracteres, letras (con tildes), números, espacio, `.`, `_`, `-`;
+  empieza y termina con letra o número; único **sin distinguir mayúsculas** entre alias vigentes (índice
+  único parcial en Postgres, los `anon-%` quedan afuera); reservados: prefijo `anon-` y palabras como
+  `admin` o `moderador` (también `Admin2`, `4dmin`, `A.d.m.i.n`); lista de bloqueo en
+  `config.alias_bloqueados`; tope `config.alias_max_cambios_por_dia` (3, se cuenta en el historial; el
+  admin no tiene tope); un usuario restringido por karma no puede. Al cambiar, el alias anterior **se
+  libera**. Un admin editando desde el panel solo está sujeto a formato y unicidad.
+- **Historial:** `usuarios_alias_historial` (alias anterior y nuevo, `cambiado_en` UTC, quién y origen:
+  `alta | usuario | admin | sistema`), solo se agrega, llenada por un **trigger** de Postgres (nadie cambia
+  el alias sin dejar rastro, tampoco `make admin-crear` ni el alta perezosa). Sin foreign keys a propósito
+  (como `eventos`): el rastro sobrevive a un perfil borrado. Se ve en la ficha del usuario del panel
+  (`alias_historial`).
 
 ## Flujo de carga y «Recientes» (corte 20)
 

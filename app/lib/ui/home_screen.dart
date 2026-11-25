@@ -7,6 +7,7 @@ import '../data/user_repository.dart';
 import '../data/recientes.dart';
 import '../domain/ean.dart';
 import 'acerca_screen.dart';
+import 'alias_editable.dart';
 import 'invitacion_screen.dart';
 import 'moderacion.dart';
 import 'product_screen.dart';
@@ -262,7 +263,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         final me = snapshot.requireData;
         return Column(
           children: [
-            Text(me.alias, style: Theme.of(context).textTheme.headlineSmall),
+            AliasEditable(me: me, onGuardar: widget.deps.cambiarAlias),
             const SizedBox(height: 8),
             Text('Karma: ${me.karma}'),
             if (me.escalon != Escalon.normal) ...[

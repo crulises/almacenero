@@ -11,6 +11,7 @@ from app.api.v1.admin.consulta import Consulta, escapar_like
 from app.api.v1.admin.paginas import Pagina
 from app.auth import Usuario
 from app.db import get_pool
+from app.services import alias as servicio_alias
 from app.services import auditoria, dispositivos, moderacion
 from app.services.permisos import exigir
 
@@ -67,6 +68,16 @@ class CuentaHermanaOut(BaseModel):
     estado: str
 
 
+class AliasHistorialOut(BaseModel):
+    id: UUID
+    alias_anterior: str | None  # None: es el alias con el que nació la cuenta
+    alias_nuevo: str
+    cambiado_en: datetime  # UTC
+    origen: str  # alta | usuario | admin | sistema
+    cambiado_por_id: UUID | None
+    cambiado_por_alias: str | None
+
+
 class UsuarioDetalle(UsuarioAdminOut):
     """La ficha del usuario: identidad, actividad y cambios anteriores."""
 
@@ -75,6 +86,8 @@ class UsuarioDetalle(UsuarioAdminOut):
     historial: list[AuditoriaOut]
     # Otras cuentas que usaron el mismo dispositivo (ANDROID_ID, docs/04 §9).
     mismo_dispositivo: list[CuentaHermanaOut] = []
+    # Todos los alias que tuvo (más nuevo primero), con quién y cuándo los cambió.
+    alias_historial: list[AliasHistorialOut] = []
 
 
 class RolIn(BaseModel):
@@ -92,7 +105,7 @@ class BajaIn(BaseModel):
 
 
 class UsuarioPatch(BaseModel):
-    alias: str = Field(min_length=1, max_length=50)
+    alias: str = Field(min_length=1, max_length=200)
 
 
 _SELECT = """
@@ -170,25 +183,22 @@ async def editar_usuario(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> UsuarioAdminOut:
     """Solo el alias. El rol y el karma NO se tocan desde acá (están protegidos en la base)."""
-    alias = body.alias.strip()
-    if not alias:
+    if not body.alias.strip():
         raise HTTPException(422, "el alias no puede estar vacío")
     async with pool.acquire() as conn, conn.transaction():
-        antes = await conn.fetchval(
-            "select alias from usuarios where id = $1 for update", usuario_id
+        antes, alias = await servicio_alias.cambiar_por_admin(
+            conn, pool, usuario_id, body.alias, admin.id
         )
-        if antes is None:
-            raise HTTPException(404, "usuario no encontrado")
-        await conn.execute("update usuarios set alias = $2 where id = $1", usuario_id, alias)
-        await auditoria.registrar(
-            conn,
-            admin.id,
-            "usuario.alias",
-            "usuario",
-            usuario_id,
-            {"alias": antes},
-            {"alias": alias},
-        )
+        if antes != alias:
+            await auditoria.registrar(
+                conn,
+                admin.id,
+                "usuario.alias",
+                "usuario",
+                usuario_id,
+                {"alias": antes},
+                {"alias": alias},
+            )
         row = await conn.fetchrow(f"{_SELECT} where u.id = $1", usuario_id)
     return await _salida(pool, row)
 
@@ -222,6 +232,9 @@ async def ficha_usuario(
         cargas_recientes=[CargaOut(**dict(c)) for c in cargas],
         locales_creados_lista=[LocalCreadoOut(**dict(x)) for x in locales],
         historial=await historial(pool, "usuario", usuario_id),
+        alias_historial=[
+            AliasHistorialOut(**h) for h in await servicio_alias.historial(pool, usuario_id)
+        ],
         mismo_dispositivo=[
             CuentaHermanaOut(**dict(c))
             for c in await dispositivos.cuentas_del_dispositivo(pool, usuario_id)

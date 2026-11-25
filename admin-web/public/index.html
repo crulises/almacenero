@@ -762,7 +762,10 @@
                   <template x-if="!c.rubro && typeof c.valor === 'string'">
                     <input type="text" :value="c.valor" @change="cambiarConfig(c, $event.target.value)">
                   </template>
-                  <template x-if="!c.rubro && typeof c.valor === 'object'">
+                  <template x-if="!c.rubro && Array.isArray(c.valor)">
+                    <input type="text" class="mono" :value="JSON.stringify(c.valor)" @change="cambiarConfig(c, $event.target.value)" title='Una lista en JSON, por ejemplo ["moderador", "admin"]'>
+                  </template>
+                  <template x-if="!c.rubro && c.valor !== null && typeof c.valor === 'object' && !Array.isArray(c.valor)">
                     <span class="mono" x-text="json(c.valor)"></span>
                   </template>
                 </td>
@@ -975,6 +978,18 @@
               <span x-show="!ficha.d.mismo_dispositivo || !ficha.d.mismo_dispositivo.length" class="suave">ninguna (o el celular no mandó su identificador)</span></p>
             <div class="form"><label>Alias <input type="text" x-model="ficha.b.alias"></label></div>
             <div class="filas"><button class="primario" :disabled="!hayCambios()" @click="guardarFicha()">Guardar alias</button></div>
+          </section>
+          <section class="caja">
+            <h3>Alias que tuvo</h3>
+            <p class="suave">Del más nuevo al más viejo. El primero con «alta» es con el que nació la cuenta. Un alias que se soltó lo puede tomar otra persona: acá queda quién lo tuvo y cuándo.</p>
+            <table x-show="ficha.d.alias_historial && ficha.d.alias_historial.length"><thead><tr><th>Cuándo</th><th>Antes</th><th>Después</th><th>Lo cambió</th></tr></thead><tbody>
+              <template x-for="h in ficha.d.alias_historial" :key="h.id">
+                <tr><td class="suave" x-text="fecha(h.cambiado_en)"></td>
+                  <td x-text="h.alias_anterior || '—'"></td><td><b x-text="h.alias_nuevo"></b></td>
+                  <td class="suave"><span x-text="{alta: 'alta de la cuenta', usuario: 'él mismo', admin: 'un admin', sistema: 'el sistema'}[h.origen]"></span>
+                    <a href="#" x-show="h.origen === 'admin' && h.cambiado_por_id" @click.prevent="irFicha('usuario', h.cambiado_por_id)" x-text="h.cambiado_por_alias"></a></td></tr>
+              </template>
+            </tbody></table>
           </section>
           <section class="caja">
             <h3>Rol</h3>

@@ -549,6 +549,10 @@ function panel() {
     async cambiarConfig(c, valor) {
       let v = valor;
       if (typeof c.valor === "number") v = Number(valor);
+      if (Array.isArray(c.valor)) {
+        // Las listas se editan como JSON: ["moderador", "admin"].
+        try { v = JSON.parse(valor); } catch { await this.cargarConfig(); this.avisar("No es una lista JSON válida (ej.: [\"moderador\", \"admin\"])", true); return; }
+      }
       await this.intentar(async () => {
         try {
           const r = await this.api(`/admin/config/${c.clave}`, { method: "PUT", body: { valor: v } });

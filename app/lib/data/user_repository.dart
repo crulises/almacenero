@@ -11,6 +11,7 @@ class Me {
     this.escalon = Escalon.normal,
     this.umbralRestriccion = -15,
     this.rol = 'usuario',
+    this.puedeCambiarAlias = false,
   });
 
   final String id;
@@ -26,6 +27,9 @@ class Me {
   /// usuario | moderador | admin.
   final String rol;
 
+  /// El backend habilita el cambio de alias por rol (`config.alias_editable_por_rol`).
+  final bool puedeCambiarAlias;
+
   /// Los moderadores (y admins) proponen correcciones y altas del catálogo.
   bool get puedeSugerir => rol == 'moderador' || rol == 'admin';
 
@@ -40,6 +44,7 @@ class Me {
     },
     umbralRestriccion: json['umbral_restriccion'] as int? ?? -15,
     rol: json['rol'] as String? ?? 'usuario',
+    puedeCambiarAlias: json['puede_cambiar_alias'] as bool? ?? false,
   );
 }
 
@@ -49,4 +54,10 @@ class UserRepository {
   final AuthedApi _api;
 
   Future<Me> me() async => Me.fromJson(await _api.get('/me'));
+
+  /// Guarda el alias nuevo y devuelve el que quedó (el servidor lo normaliza).
+  Future<String> cambiarAlias(String alias) async {
+    final r = await _api.post('/me/alias', {'alias': alias});
+    return r['alias'] as String;
+  }
 }

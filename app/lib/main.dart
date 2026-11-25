@@ -93,6 +93,7 @@ void main() {
         sugerir: SugerenciaRepository(api: authed).enviar,
         loadEstandares: SugerenciaRepository(api: authed).estandares,
         loadMe: UserRepository(api: authed).me,
+        cambiarAlias: UserRepository(api: authed).cambiarAlias,
         loadProducto: productos.porEan,
         obtenerUbicacion: location.actual,
         abrirAjustes: location.abrirAjustes,

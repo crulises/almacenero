@@ -48,6 +48,12 @@ DEFAULTS: dict[str, Any] = {
     "dashboard_activo_dias": 7,
     # Exportar eventos (docs/04 §11.4): tope por archivo (el plan Free de Supabase admite 50 MB).
     "eventos_export_filas_por_archivo": 500000,
+    # Alias (docs/superpowers/specs/2026-11-25-alias-editable-design.md): qué roles pueden cambiarlo
+    # (para abrirlo a todos, sumar "usuario"; el admin siempre puede), tope de cambios por día,
+    # y fragmentos prohibidos (sin tildes ni mayúsculas; vacía hasta que el dueño la arme).
+    "alias_editable_por_rol": ["moderador", "admin"],
+    "alias_max_cambios_por_dia": 3,
+    "alias_bloqueados": [],
 }
 
 

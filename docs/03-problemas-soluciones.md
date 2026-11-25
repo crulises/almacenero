@@ -1071,6 +1071,20 @@ Decisiones en `docs/04` §9.
 - **Causa:** regla de negocio: un admin tiene que estar registrado con email (un anónimo no puede entrar al
   panel y pierde la sesión al reinstalar). El backend responde 422; el panel ahora deshabilita la opción.
 
+### En un worktree nuevo: `make test` o `make migrate` no encuentran nada
+
+- **Síntoma:** `backend/.venv/bin/python: no such file`, o el backend no arranca por falta de `.env`.
+- **Causa:** un worktree es una copia limpia del repo: `backend/.venv` y `.env` no están versionados, así
+  que no vienen con él. La base de Supabase local, en cambio, es una sola y la comparten todos los worktrees.
+- **Solución:** `cp <repo principal>/.env .env` y `make venv`; después `make migrate` aplica a la base
+  compartida (las migraciones de otra rama que no estén en la tuya figuran como aplicadas).
+
+### La migración de alias falla con «could not create unique index usuarios_alias_unico_idx»
+
+- **Causa:** había dos usuarios con el mismo alias (sin distinguir mayúsculas), cosa que el panel permitía.
+- **Solución:** la migración ya lo arregla sola antes de crear el índice (el más viejo conserva el nombre,
+  los otros reciben `-<6 caracteres del id>`). Si copiaste una versión vieja del archivo, usá la actual.
+
 ### SeaweedFS en `localhost:8333` solo muestra XML
 
 - **Causa:** `:8333` es la API S3 (para el backend), no tiene pantalla.

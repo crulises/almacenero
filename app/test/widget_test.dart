@@ -54,6 +54,8 @@ class _EscanerFalsoState extends State<_EscanerFalso> {
 class _Backend {
   int karma = 0;
   Escalon escalon = Escalon.normal;
+  bool puedeCambiarAlias = false;
+  final aliasGuardados = <String>[];
   final cargas =
       <({String ean, String localId, String precio, Ubicacion ubicacion})>[];
   Object? errorAlCargar;
@@ -145,7 +147,17 @@ class _Backend {
       if (sinRed) throw ApiException('Sin conexión');
       final error = errorMe;
       if (error != null) throw error;
-      return Me(id: 'u1', alias: 'anon-abc123', karma: karma, escalon: escalon);
+      return Me(
+        id: 'u1',
+        alias: 'anon-abc123',
+        karma: karma,
+        escalon: escalon,
+        puedeCambiarAlias: puedeCambiarAlias,
+      );
+    },
+    cambiarAlias: (alias) async {
+      aliasGuardados.add(alias);
+      return alias;
     },
     loadProducto: (ean) => _producto(loadProducto, ean),
     obtenerUbicacion: () async {
@@ -307,6 +319,25 @@ void main() {
       expect(find.text('Almacenero'), findsOneWidget);
       expect(find.text('anon-abc123'), findsOneWidget);
       expect(find.text('Karma: 3'), findsOneWidget);
+    });
+
+    testWidgets('el lápiz del alias guarda el nuevo alias en el backend', (
+      tester,
+    ) async {
+      backend.puedeCambiarAlias = true;
+      await abrir(tester);
+      await tester.tap(find.byTooltip('Cambiar alias'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField).first, 'Lucía');
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      expect(backend.aliasGuardados, ['Lucía']);
+      expect(find.text('Lucía'), findsOneWidget);
+    });
+
+    testWidgets('sin permiso el alias no tiene lápiz', (tester) async {
+      await abrir(tester);
+      expect(find.byTooltip('Cambiar alias'), findsNothing);
     });
 
     testWidgets('pide el código de invitación y reintenta con él', (
