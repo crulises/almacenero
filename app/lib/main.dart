@@ -53,6 +53,11 @@ void main() {
   final precios = PriceRepository(api: authed);
   // Recientes: solo en el celular. Con red se refrescan; sin red se ve lo guardado.
   final recientes = RecientesStore();
+  // Cuántos recientes mostrar lo decide el servidor (`config.recientes_max`); sin red se usa lo
+  // último que se supo, o el valor por defecto.
+  _leerMaximoRecientes(authed).then((n) {
+    if (n != null) recientes.fijarMaximo(n);
+  }).ignore();
   final recientesService = RecientesService(
     loadProducto: productos.porEan,
     loadVigentes: precios.vigentes,
@@ -99,6 +104,17 @@ void main() {
       ),
     ),
   );
+}
+
+Future<int?> _leerMaximoRecientes(AuthedApi api) async {
+  try {
+    for (final c in await api.getList('/config')) {
+      if (c is Map && c['clave'] == 'recientes_max' && c['valor'] is int) {
+        return c['valor'] as int;
+      }
+    }
+  } catch (_) {}
+  return null;
 }
 
 class AlmaceneroApp extends StatelessWidget {

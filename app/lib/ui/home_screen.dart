@@ -180,37 +180,44 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          _usuario(context),
-          const SizedBox(height: 32),
-          FilledButton.icon(
-            onPressed: _escanear,
-            icon: const Icon(Icons.qr_code_scanner),
-            label: const Text('Escanear código'),
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _eanController,
-            keyboardType: TextInputType.number,
-            textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _buscarManual(),
-            decoration: InputDecoration(
-              labelText: 'O ingresá el código',
-              errorText: _eanError,
-              suffixIcon: IconButton(
-                tooltip: 'Buscar',
-                icon: const Icon(Icons.search),
-                onPressed: _buscarManual,
+      // El teclado tapa la lista en vez de apretarla: lo de arriba no cambia de tamaño.
+      resizeToAvoidBottomInset: false,
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _usuario(context),
+            const SizedBox(height: 32),
+            FilledButton.icon(
+              onPressed: _escanear,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Escanear código'),
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _eanController,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _buscarManual(),
+              decoration: InputDecoration(
+                labelText: 'O ingresá el código',
+                errorText: _eanError,
+                suffixIcon: IconButton(
+                  tooltip: 'Buscar',
+                  icon: const Icon(Icons.search),
+                  onPressed: _buscarManual,
+                ),
               ),
             ),
-          ),
-          RecientesSeccion(
-            recientes: _recientes,
-            onTap: (r) => _abrirProducto(r.ean),
-          ),
-        ],
+            Expanded(
+              child: RecientesSeccion(
+                recientes: _recientes,
+                onTap: (r) => _abrirProducto(r.ean),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

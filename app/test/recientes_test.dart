@@ -123,13 +123,32 @@ void main() {
   group('RecientesStore', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
-    test('guarda hasta 4, el último consultado primero', () async {
+    test('por defecto guarda 10, el último consultado primero', () async {
       final s = RecientesStore();
-      for (final e in ['1', '2', '3', '4', '5']) {
-        await s.registrar(rec(e));
+      for (var i = 1; i <= 12; i++) {
+        await s.registrar(rec('$i'));
       }
-      expect((await s.leer()).map((r) => r.ean), ['5', '4', '3', '2']);
+      final eans = (await s.leer()).map((r) => r.ean).toList();
+      expect(eans, hasLength(10));
+      expect(eans.first, '12');
     });
+
+    test(
+      'el máximo es configurable, queda guardado y un valor malo se ignora',
+      () async {
+        final s = RecientesStore();
+        for (var i = 1; i <= 5; i++) {
+          await s.registrar(rec('$i'));
+        }
+        await s.fijarMaximo(3);
+        expect((await s.leer()).map((r) => r.ean), ['5', '4', '3']);
+        // una instancia nueva (otro arranque) lo conserva
+        expect(await RecientesStore().leer(), hasLength(3));
+        await s.fijarMaximo(0);
+        await s.fijarMaximo(-2);
+        expect(await s.leer(), hasLength(3));
+      },
+    );
 
     test('reconsultar un EAN no lo repite: lo mueve al tope', () async {
       final s = RecientesStore();

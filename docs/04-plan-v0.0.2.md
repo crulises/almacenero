@@ -1650,8 +1650,8 @@ Qué quedó y dónde: Doc 2, «Flujo de carga y “Recientes” (corte 20)».
 «Recientes» guardados en el celular con precio de referencia a hasta `radio_referencia_km`, «Sé el
 primero en cargarlo» y bonus de karma `karma_primer_precio` (una vez por producto).
 
-**Config nueva** (`services/config.py` y `supabase/seed.sql`): `radio_referencia_km` (300) y
-`karma_primer_precio` (5).
+**Config nueva** (`services/config.py` y `supabase/seed.sql`): `radio_referencia_km` (300),
+`karma_primer_precio` (5) y `recientes_max` (10: cuántos Recientes guarda y muestra la app).
 
 **Decisiones del que construyó (el diseño las dejaba libres):**
 - `referencia=true` en `precios/vigentes` además de subir el tope de `radio_m`: así la app no

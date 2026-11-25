@@ -25,25 +25,42 @@ class RecientesSeccion extends StatelessWidget {
     // Sin nada que mostrar no ocupa lugar: la primera vez no hay un título huérfano.
     if (recientes.isEmpty) return const SizedBox.shrink();
     final ahora = DateTime.now();
+    // Ocupa el alto que le deja el inicio y se desplaza solo ella: lo de arriba no se mueve.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 24),
         Text('Recientes', style: Theme.of(context).textTheme.titleMedium),
-        for (final r in recientes) _fila(context, r, ahora),
+        const SizedBox(height: 8),
+        Expanded(
+          child: ListView.builder(
+            key: const ValueKey('lista-recientes'),
+            itemCount: recientes.length,
+            itemBuilder: (context, i) => _fila(context, recientes[i], ahora),
+          ),
+        ),
       ],
     );
   }
 
   Widget _fila(BuildContext context, Reciente r, DateTime ahora) {
     final tema = Theme.of(context);
-    return ListTile(
+    // Una tarjeta por producto: se ve dónde termina uno y empieza el otro.
+    return Card(
       key: ValueKey('reciente-${r.ean}'),
-      contentPadding: EdgeInsets.zero,
-      onTap: () => onTap(r),
-      title: Text(r.nombre),
-      isThreeLine: true,
-      subtitle: _detalle(context, r, ahora, tema),
+      margin: const EdgeInsets.only(bottom: 8),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        onTap: () => onTap(r),
+        title: Text(
+          r.nombre,
+          style: tema.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        isThreeLine: true,
+        subtitle: _detalle(context, r, ahora, tema),
+      ),
     );
   }
 

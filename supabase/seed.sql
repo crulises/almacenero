@@ -25,6 +25,7 @@ insert into config (clave, valor, rubro) values
     ('geofence_precision_max_m', '100', null),
     ('radio_precios_m',       '5000', null),
     ('radio_referencia_km',   '300', null),
+    ('recientes_max',         '10',  null),
     ('karma_por_carga',       '1',   null),
     ('karma_primer_precio',   '5',   null),
     -- Alta de locales por cualquier usuario: solo mientras se prueba (Doc 1: la

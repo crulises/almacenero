@@ -1624,9 +1624,14 @@ void main() {
       expect(find.textContaining('Referencia'), findsNothing);
     });
 
-    testWidgets('sin repetir y con tope de 4: lo último arriba', (
+    testWidgets('sin repetir y con el tope configurado: lo último arriba', (
       tester,
     ) async {
+      await RecientesStore().fijarMaximo(4);
+      // La lista de recientes se arma a medida que se ve: con pantalla alta entran las 4.
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 2400);
+      addTearDown(tester.view.reset);
       await abrir(tester, deps: backend.deps(loadProducto: productos));
       for (final e in [
         '70000001',

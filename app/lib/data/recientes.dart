@@ -115,11 +115,26 @@ Reciente resumirConsulta({
 /// Las últimas consultas, guardadas en el celular (SharedPreferences). **Nunca lanza**: si el
 /// almacenamiento falla o los datos están rotos, se ve una lista vacía y la app sigue.
 class RecientesStore {
-  static const maximo = 4;
+  /// Cuántos se guardan si el servidor no dijo otra cosa (`config.recientes_max`).
+  static const maximoPorDefecto = 10;
   static const _clave = 'recientes_v1';
+  static const _claveMaximo = 'recientes_max_v1';
 
   // Leer-modificar-escribir en fila: dos anotaciones a la vez no se pisan.
   Future<void> _fila = Future.value();
+
+  /// Guarda cuántos recientes mostrar (lo que dice el servidor en `config.recientes_max`);
+  /// queda en el celular para que valga también sin red. Un valor inválido se ignora.
+  Future<void> fijarMaximo(int n) async {
+    if (n < 1 || n > 100) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_claveMaximo, n);
+    } catch (_) {}
+  }
+
+  Future<int> _maximo(SharedPreferences prefs) async =>
+      prefs.getInt(_claveMaximo) ?? maximoPorDefecto;
 
   Future<List<Reciente>> leer() async {
     try {
@@ -129,13 +144,13 @@ class RecientesStore {
       return [
         for (final j in jsonDecode(crudo) as List<dynamic>)
           Reciente.fromJson(j as Map<String, dynamic>),
-      ];
+      ].take(await _maximo(prefs)).toList();
     } catch (_) {
       return [];
     }
   }
 
-  /// Anota una consulta: sin repetir EAN (reconsultar lo mueve al tope), hasta [maximo].
+  /// Anota una consulta: sin repetir EAN (reconsultar lo mueve al tope), hasta el máximo configurado.
   /// Con `moverAlTope: false` solo reemplaza la foto de uno que ya está (el refresco con red);
   /// si ya no estaba, lo ignora.
   Future<void> registrar(Reciente r, {bool moverAlTope = true}) {
@@ -154,7 +169,9 @@ class RecientesStore {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(
           _clave,
-          jsonEncode([for (final x in lista.take(maximo)) x.toJson()]),
+          jsonEncode([
+            for (final x in lista.take(await _maximo(prefs))) x.toJson(),
+          ]),
         );
       } catch (_) {
         // Recientes es una comodidad: si no se puede guardar, no pasa nada.

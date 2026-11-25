@@ -16,6 +16,7 @@ DEFAULTS: dict[str, Any] = {
     # Recientes de la app (corte 20): si no hay precio dentro de `radio_precios_m`, se amplía a
     # este radio y el precio se muestra como referencia (con su distancia), no como de la zona.
     "radio_referencia_km": 300,
+    "recientes_max": 10,  # cuántas consultas guarda «Recientes» en el celular
     "ventana_frescura_dias": 30,
     "umbral_verde_dias": 7,
     "umbral_amarillo_dias": 21,

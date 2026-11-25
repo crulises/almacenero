@@ -193,7 +193,7 @@ principios en `docs/10-roadmap.md` (la app es una guía, no un tracker financier
   la ficha (`pushReplacement`): un solo «atrás» lleva al inicio por más productos que se escaneen. El
   inicio se entera de cualquier vuelta con un `RouteObserver` (`routeObserver` en `ui/recientes.dart`),
   no con el `await` del `push`.
-- **«Recientes»** (`app/lib/data/recientes.dart`, `ui/recientes.dart`): hasta **4** consultas bajo el
+- **«Recientes»** (`app/lib/data/recientes.dart`, `ui/recientes.dart`): hasta **`config.recientes_max`** (10 por defecto; la app lo lee de `/v1/config` y lo recuerda en el celular) consultas, en una lista con scroll propio y una tarjeta por producto, bajo el
   campo de EAN, sin repetir EAN (reconsultar lo sube al tope). Se guardan **solo en el celular**
   (`shared_preferences`, clave `recientes_v1`): EAN, instante y una **foto** (nombre, detalle y el
   `PrecioVigente` visto: precio, local, distancia, fecha). Nunca falla ni demora: leer/escribir
