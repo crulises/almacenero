@@ -41,6 +41,8 @@ DEFAULTS: dict[str, Any] = {
     # siguen en UTC) y ventana de «usuario activo» (hizo una carga en los últimos N días).
     "panel_zona_horaria": "America/Buenos_Aires",
     "dashboard_activo_dias": 7,
+    # Exportar eventos (docs/04 §11.4): tope por archivo (el plan Free de Supabase admite 50 MB).
+    "eventos_export_filas_por_archivo": 500000,
 }
 
 

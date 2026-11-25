@@ -217,6 +217,16 @@ async def exportar_base(salida: Path, prefijo_ean: str | None = None) -> Resulta
     )
 
 
+def _publicar(destino) -> str:
+    """Además del disco del worker, deja el export en el almacén (S3) si hay uno configurado."""
+    from etl.comun.almacen import AlmacenError, publicar_archivo
+
+    try:
+        return publicar_archivo(destino)
+    except AlmacenError as e:
+        return f"AVISO: no se pudo subir al almacén ({e}). El archivo local está intacto."
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("salida", help="nombre del export (sin extensión); va a ETL_EXPORT_DIR")
@@ -227,6 +237,7 @@ def main() -> None:
         raise SystemExit(f"SALIDA: {e}") from None
     r = asyncio.run(exportar_base(destino))
     print(f"Escrito {destino}\n{r.texto()}")
+    print(_publicar(destino))
 
 
 if __name__ == "__main__":

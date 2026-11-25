@@ -30,6 +30,8 @@ class Settings(BaseSettings):
 
     # ETL liviano desde el panel (docs/04 §10-A): subproceso del backend, de a uno por vez.
     etl_web_activo: bool = True
+    # Ciclo que encola las programaciones de ETL (docs/04 §11.4); los tests lo apagan.
+    programaciones_activo: bool = True
     etl_web_mem_mb: int = 1024  # tope de memoria virtual del subproceso (solo Linux)
     etl_web_max_s: int = 1800  # tope de tiempo: pasado esto se corta y queda en fallo
 

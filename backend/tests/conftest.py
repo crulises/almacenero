@@ -1,3 +1,4 @@
+import os
 import time
 import uuid
 
@@ -9,6 +10,9 @@ from app.config import get_settings
 from app.main import app
 from app.services.ratelimit import limitador
 from tests.db import sql, valor_config
+
+# El ciclo de programaciones se prueba llamando `vuelta` a mano; que no corra solo en los tests.
+os.environ.setdefault("PROGRAMACIONES_ACTIVO", "false")
 
 
 def make_token(sub: str | None = None) -> str:

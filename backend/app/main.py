@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.db import create_pool
 from app.logging import setup_logging
 from app.services.etl import EjecutorWeb
+from app.services.programaciones import CicloProgramaciones
 
 log = logging.getLogger("almacenero")
 
@@ -25,10 +26,16 @@ async def lifespan(app: FastAPI):
     if cfg.etl_web_activo:
         etl = EjecutorWeb(cfg.database_url, cfg.etl_web_mem_mb, cfg.etl_web_max_s)
         etl.iniciar()
+    ciclo = None
+    if cfg.etl_web_activo and cfg.programaciones_activo:
+        ciclo = CicloProgramaciones(app.state.pool)
+        ciclo.iniciar()
     log.info("backend iniciado")
     try:
         yield
     finally:
+        if ciclo:
+            await ciclo.detener()
         if etl:
             await etl.detener()
         await app.state.http.aclose()

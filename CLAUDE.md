@@ -32,7 +32,7 @@ Además:
 > **Versionado:** «v0.0.1» y «v0.0.2» son nombres históricos de **planes**; la 0.0.1 ya no está vigente
 > y el próximo release es **0.1.x** (la validación colaborativa, 0.2.x o posterior). Ver Doc 2.
 > **Zona horaria:** todo en UTC (`timestamptz`) y la hora local solo al mostrar (Doc 2, «Tiempo y zona
-> horaria»). Corte 19 (dashboard de admin con eventos y mapa): planificado en `docs/04` §11; 19b (eventos desde la app) y 19a (dashboard: tarjetas, series, rankings, estrellas, zona horaria) ya están hechas; 19c (mapa, exportar/vaciar eventos, programación) no.
+> horaria»). Corte 19 (dashboard de admin con eventos; el mapa de zonas se postergó): planificado en `docs/04` §11; 19b (eventos desde la app) y 19a (dashboard: tarjetas, series, rankings, estrellas, zona horaria) ya están hechas; 19c (exportar/vaciar eventos, programación) también.
 
 ## Alcance de v0.0.1 (NO te pases de esto)
 
@@ -119,6 +119,8 @@ descripción (al agregar un target, ponele su `## descripción` en la misma lín
   en `ETL_EXPORT_DIR`.
 - `make locales-exportar [TODOS=1]` / `make locales-importar ARCHIVO=... [APLICAR=1]` — llevan los
   locales verificados de una instalación a otra (Doc 9 §8).
+- `make almacen-probar` / `make s3-alt-up` / `make s3-alt-down` — prueba el almacén de exportaciones (S3 o
+  disco; Doc 4 §11.4) / levanta o baja SeaweedFS, un S3 opcional para probar portabilidad.
 - `make etl-worker` — worker local: toma de la cola (DATABASE_URL) los ETL pesados que se lanzan desde el
   panel web (sección ETL; Doc 4 §10-A).
 - `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel

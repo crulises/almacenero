@@ -138,6 +138,7 @@ async def _osm(p: dict, ctx) -> dict:
 
 
 async def _curado_exportar(p: dict, ctx) -> dict:
+    from etl.comun.almacen import publicar_o_avisar
     from etl.comun.rutas import ruta_de_salida
     from etl.curado.exportar import exportar
 
@@ -147,6 +148,7 @@ async def _curado_exportar(p: dict, ctx) -> dict:
     destino = ruta_de_salida(p["salida"])
     r = await asyncio.to_thread(exportar, destino, off, sepa, paises, p.get("sepa_min_filas", 1))
     ctx.log(f"Escrito {destino}\n{r.texto()}")
+    ctx.log(await publicar_o_avisar(destino))
     ctx.filas = r.filas
     return {
         "filas": r.filas,
@@ -157,23 +159,27 @@ async def _curado_exportar(p: dict, ctx) -> dict:
 
 
 async def _catalogo_exportar(p: dict, ctx) -> dict:
+    from etl.comun.almacen import publicar_o_avisar
     from etl.comun.rutas import ruta_de_salida
     from etl.curado.exportar_base import exportar_base
 
     destino = ruta_de_salida(p["salida"])
     r = await exportar_base(destino)
     ctx.log(f"Escrito {destino}\n{r.texto()}")
+    ctx.log(await publicar_o_avisar(destino))
     ctx.filas = r.filas
     return {"filas": r.filas, "sha256": r.sha256, "por_origen": dict(r.por_origen)}
 
 
 async def _locales_exportar(p: dict, ctx) -> dict:
+    from etl.comun.almacen import publicar_o_avisar
     from etl.comun.rutas import ruta_de_salida
     from etl.locales_intercambio import exportar
 
     destino = ruta_de_salida(p["salida"])
     r = await exportar(destino, solo_verificados=p.get("solo_verificados", True))
     ctx.log(f"Escrito {destino}\n{r.texto()}")
+    ctx.log(await publicar_o_avisar(destino))
     ctx.filas = r.filas
     return {"filas": r.filas, "verificados": r.verificados, "sha256": r.sha256}
 
@@ -195,6 +201,12 @@ async def _locales_importar(p: dict, ctx) -> dict:
         "invalidas": dict(r.invalidas),
         "sha256": r.sha256,
     }
+
+
+async def _eventos_exportar(p: dict, ctx) -> dict:
+    from etl.eventos_exportar import exportar
+
+    return await exportar(p, ctx)
 
 
 _APLICAR = Param(
@@ -463,6 +475,36 @@ DEFINICIONES: dict[str, Definicion] = {
             ),
             _locales_importar,
             consume_archivo_con="aplicar",
+        ),
+        Definicion(
+            "eventos_exportar",
+            "Exportar eventos al almacén",
+            "Saca los eventos de la app (escaneos, aperturas…) a uno o más .zip (eventos.csv + "
+            "LEEME.txt) en el almacén de exportaciones (S3 o disco, ver docs/04 §11.4). Con «borrar» "
+            "los vacía de la base, pero solo después de volver a leer cada archivo y comprobar "
+            "tamaño y sha256; si algo falla, no se borra nada. Lleva ids de usuario: es para análisis "
+            "interno.",
+            "web",
+            (
+                Param(
+                    "tipo",
+                    "texto",
+                    ayuda="Solo ese tipo de evento (p. ej. producto.escaneado). Vacío: todos.",
+                ),
+                Param(
+                    "hasta",
+                    "fecha",
+                    ayuda="Solo los eventos hasta el fin de ese día (UTC). Vacío: hasta ahora.",
+                ),
+                Param(
+                    "borrar",
+                    "booleano",
+                    default=False,
+                    ayuda="Borra de la base los eventos ya exportados y verificados. Sin marcar, "
+                    "solo exporta.",
+                ),
+            ),
+            _eventos_exportar,
         ),
     ]
 }

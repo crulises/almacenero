@@ -424,6 +424,16 @@ async def importar(
     return r
 
 
+def _publicar(destino) -> str:
+    """Además del disco del worker, deja el export en el almacén (S3) si hay uno configurado."""
+    from etl.comun.almacen import AlmacenError, publicar_archivo
+
+    try:
+        return publicar_archivo(destino)
+    except AlmacenError as e:
+        return f"AVISO: no se pudo subir al almacén ({e}). El archivo local está intacto."
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -441,6 +451,7 @@ def main() -> None:
             raise SystemExit(f"SALIDA: {ex}") from None
         res = asyncio.run(exportar(destino, not args.todos))
         print(f"Escrito {destino}\n{res.texto()}")
+        print(_publicar(destino))
         return
     if not args.archivo.exists():
         raise SystemExit(f"No existe {args.archivo}. Ver `make locales-exportar`.")

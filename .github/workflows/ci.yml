@@ -20,5 +20,6 @@ jobs:
         with:
           version: 3.1.0  # misma versión que en desarrollo local
       - run: make up
+      - run: make s3-alt-up  # S3 alternativo: los tests del almacén lo usan además del Storage local
       - run: make lint
       - run: make test

@@ -46,7 +46,8 @@ insert into config (clave, valor, rubro) values
     ('max_lotes_eventos_por_hora', '120', null),
     -- Dashboard de admin (docs/04 §11)
     ('panel_zona_horaria',        '"America/Buenos_Aires"', null),
-    ('dashboard_activo_dias',     '7', null)
+    ('dashboard_activo_dias',     '7', null),
+    ('eventos_export_filas_por_archivo', '500000', null)
 on conflict do nothing;
 
 -- Invitación de desarrollo (en producción se crea otra: `make invitacion`).

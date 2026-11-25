@@ -195,7 +195,10 @@ async def resumen(conn: asyncpg.Pool | asyncpg.Connection, p: Periodo) -> dict:
         p.desde,
         p.hasta,
     )
+    eventos = int(await conn.fetchval("select count(*) from eventos"))
+    tope = int(await cfg.leer(conn, "eventos_max_filas"))
     return {
+        "eventos": {"total": eventos, "max_filas": tope, "superado": eventos > tope},
         "precios": dict(precios),
         "validaciones": dict(validaciones),
         "usuarios_activos": {"dias": dias, **dict(activos)},

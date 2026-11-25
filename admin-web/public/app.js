@@ -50,6 +50,10 @@ function panel() {
     pines: { cantidad: 1, nota: "", n: 24, unidad: "h", sinVencimiento: false, nuevos: [], enviando: false },
     // ETL (docs/04 §10-A): definiciones (el formulario se arma con ellas), historial y detalle.
     etlDefs: [],
+    // Programaciones, almacén y exportaciones de eventos (docs/04 §11.4)
+    prog: { lista: [], form: { etl: "eventos_exportar", cron: "0 6 * * *", parametros: '{"borrar": true}', al_superar_umbral: false, activa: false } },
+    almacen: { probando: false, resultado: null },
+    exportaciones: [],
     etlClave: "",
     etlForm: {},
     etlArchivos: {},  // parámetro -> {id, nombre, tamano} ya subido
@@ -707,10 +711,70 @@ function panel() {
     },
 
 
+    // ------------------------------------------- programaciones y almacén
+    // Los cron son en UTC; acá se muestra la hora en la zona del panel (docs/04 §11.3 y §11.4).
+    fechaLocal(iso) {
+      if (!iso) return "—";
+      return new Intl.DateTimeFormat("es-AR", { timeZone: this.dash.zona || "America/Buenos_Aires", dateStyle: "short", timeStyle: "short", hourCycle: "h23" }).format(new Date(iso));
+    },
+    async cargarProg() { try { this.prog.lista = await this.api("/admin/etl/programaciones"); } catch {} },
+    async cargarExportaciones() { try { this.exportaciones = await this.api("/admin/eventos/exportaciones"); } catch {} },
+    async crearProg() {
+      const f = this.prog.form;
+      let parametros;
+      try { parametros = f.parametros.trim() ? JSON.parse(f.parametros) : {}; } catch { return this.avisar("Los parámetros tienen que ser un JSON válido, p. ej. {\"borrar\": true}", true); }
+      await this.intentar(async () => {
+        await this.api("/admin/etl/programaciones", { method: "POST", body: { etl: f.etl, cron: f.cron, parametros, activa: f.activa, al_superar_umbral: f.al_superar_umbral } });
+        this.avisar("Programación creada" + (f.activa ? "" : " (inactiva: activala cuando el almacén pase la prueba)"));
+        await this.cargarProg();
+      });
+    },
+    async alternarProg(p) {
+      await this.intentar(async () => {
+        await this.api(`/admin/etl/programaciones/${p.id}`, { method: "PATCH", body: { activa: !p.activa } });
+        await this.cargarProg();
+      });
+    },
+    async borrarProg(p) {
+      if (!confirm(`¿Borrar la programación de «${p.titulo || p.etl}» (${p.cron})?`)) return;
+      await this.intentar(async () => { await this.api(`/admin/etl/programaciones/${p.id}`, { method: "DELETE" }); await this.cargarProg(); });
+    },
+    async probarAlmacen() {
+      this.almacen.probando = true; this.almacen.resultado = null;
+      try {
+        const r = await this.api("/admin/almacen/probar", { method: "POST" });
+        this.almacen.resultado = { ok: true, texto: `OK · almacén ${r.almacen}: se guardó, se releyó y coincide (${r.bytes} bytes)` };
+      } catch (e) { this.almacen.resultado = { ok: false, texto: e.message }; }
+      this.almacen.probando = false;
+    },
+    async descargarExportacion(e) {
+      await this.intentar(async () => {
+        const r = await fetch(`${API}/v1/admin/eventos/exportaciones/${e.id}/descargar`, { headers: { Authorization: "Bearer " + this.sesion.access_token } });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail?.mensaje || `Error ${r.status}`);
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(await r.blob());
+        a.download = e.clave.split("/").pop();
+        a.click(); URL.revokeObjectURL(a.href);
+      });
+    },
+    // Banner del dashboard: pasaron el tope de eventos → exportar y vaciar con un clic.
+    async exportarEventosAhora() {
+      const ev = this.dash.resumen?.eventos;
+      if (!confirm(`Hay ${ev?.total} eventos (el tope es ${ev?.max_filas}).\n\nSe exportan a un .zip en el almacén y, solo si se guardó y se releyó bien, se borran de la base. ¿Seguir?`)) return;
+      await this.intentar(async () => {
+        await this.api("/admin/etl/eventos_exportar/ejecutar", { method: "POST", body: { parametros: { borrar: true } } });
+        this.avisar("Exportación encolada: seguila en ETL");
+        this.cambiarVista("etl");
+      });
+    },
+
     // -------------------------------------------------------------- ETL
     async iniciarEtl() {
       if (!this.etlDefs.length) await this.intentar(async () => { this.etlDefs = await this.api("/admin/etl"); });
       await this.cargar("etl");
+      this.cargarProg(); this.cargarExportaciones();
+      // El <select> de la programación se arma con x-for: el valor se fija cuando ya existen las opciones.
+      await this.$nextTick(); this.prog.form.etl = "eventos_exportar";
       // Mientras haya algo en cola o corriendo, el historial (y el log abierto) se refresca solo.
       this._etlTimer = setInterval(() => this.refrescarEtl(), 3000);
     },
@@ -782,6 +846,19 @@ function panel() {
       });
     },
     etlClase(estado) { return { ok: "ok", fallo: "baja", cancelada: "aviso", cancelando: "aviso", corriendo: "mal", en_cola: "" }[estado] || ""; },
+    etlEspera(e) {
+      const min = Math.floor((Date.now() - new Date(e.creado_en)) / 60000);
+      const hace = min < 1 ? "hace menos de 1 min" : `hace ${min} min`;
+      return e.ejecutor === "local" ? `esperando al worker local ${hace}` : `esperando al backend ${hace}`;
+    },
+    etlSinSalida(e) {
+      if (e.estado === "en_cola" && e.ejecutor === "local")
+        return "En cola: este ETL lo toma el worker local y todavía nadie lo tomó.\nCorré `make etl-worker` en tu máquina (con DATABASE_URL a esta base) y empieza solo.";
+      if (e.estado === "en_cola")
+        return "En cola: lo toma el backend en unos segundos. Si no arranca, revisá los logs del contenedor del backend (ETL_WEB_ACTIVO).";
+      if (e.estado === "cancelada" && !e.iniciado_en) return "Se canceló antes de empezar: nadie la había tomado.";
+      return "(sin salida todavía)";
+    },
     etlTitulo(e) { return e.titulo || e.etl; },
     etlDuracion(e) {
       if (!e.iniciado_en) return "";

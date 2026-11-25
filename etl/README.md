@@ -48,7 +48,8 @@ Cargar siempre es idempotente: repetir una corrida no duplica ni pisa lo resuelt
 ```bash
 # 1. Armarlo en tu máquina desde las fuentes crudas (reproducible: mismo hash con las mismas fuentes)
 #    CURADO_SALIDA es solo un NOMBRE (sin extensión): deja un .zip (CSV + LEEME.txt con las reglas
-#    aplicadas) en ETL_EXPORT_DIR (por defecto etl/data/exports/)
+#    aplicadas) en ETL_EXPORT_DIR (por defecto etl/data/exports/, relativo a donde corre el worker);
+#    si hay EXPORT_S3_* en el entorno, además lo sube (verificado) al almacén, carpeta intercambio/
 make catalogo-csv-exportar OFF_ARCHIVO=etl/data/off-muestra.csv.gz \
      SEPA_ARCHIVOS="etl/data/sepa/sepa_miercoles.zip" CURADO_SALIDA=catalogo-curado
 # 2. Ver qué haría (simulacro, no escribe) y después importarlo (con DATABASE_URL local o remota)

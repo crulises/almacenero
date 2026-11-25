@@ -65,7 +65,14 @@ class InvitacionesResumen(BaseModel):
     aceptadas_total: int
 
 
+class EventosEstado(BaseModel):
+    total: int
+    max_filas: int
+    superado: bool  # el dashboard avisa y ofrece exportar (docs/04 §11.4)
+
+
 class ResumenOut(BaseModel):
+    eventos: EventosEstado
     desde: datetime
     hasta: datetime
     zona: str

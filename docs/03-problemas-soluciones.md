@@ -1017,3 +1017,72 @@ Decisiones en `docs/04` §9.
   `docker inspect almacenero-backend-1 --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'`
   tiene que dar la carpeta del worktree. Para ver si el backend tiene una ruta:
   `curl -s localhost:8000/openapi.json | grep eventos`.
+
+## Dashboard: almacén de exportaciones y programaciones (corte 19c)
+
+### `make almacen-probar` falla o «no pude leer el S3 local»
+
+- **Síntoma:** `FALLÓ: ...` al probar el almacén, o el export de eventos termina en `fallo` y los eventos
+  siguen en la base.
+- **Causa posible:** (1) faltan las variables `EXPORT_S3_*` en `.env` (sin ellas se usa el disco, que no
+  sirve si el backend corre en Fly); `make up` las completa solo con el S3 del Storage local
+  (`supabase status`: `STORAGE_S3_URL` y las claves S3), pero si `.env` ya tenía `EXPORT_S3_ENDPOINT` no las
+  toca. (2) Desde el contenedor del backend, `127.0.0.1` es el propio contenedor: por eso el compose usa
+  `EXPORT_S3_ENDPOINT_DOCKER` (`host.docker.internal`). (3) Las claves S3 del Supabase local **cambian si se
+  recrea el stack** (`supabase stop --no-backup`): hay que volver a copiarlas.
+- **Solución:** `make almacen-probar` muestra el detalle. Para regenerar las variables, borrá las líneas
+  `EXPORT_S3_*` de `.env` y corré `make up`. El almacén es lo único que decide si se borra: **si no pasa la
+  prueba, `eventos_exportar` no borra nada** (diseño en `docs/04` §11.4).
+
+### El S3 alternativo no levanta o sus tests se «saltean»
+
+- **Síntoma:** `pytest -rs` muestra `alternativo: no disponible`.
+- **Causa:** el S3 alternativo (SeaweedFS) es **opcional** (perfil `s3-alt` del compose): no arranca con `make up`. Los tests lo usan
+  si responde en `127.0.0.1:8333`.
+- **Solución:** `make s3-alt-up` (la primera vez baja la imagen y el S3 tarda ~30 s en responder en :8333). Para usarlo como almacén de verdad, poné en
+  `.env` `EXPORT_S3_ENDPOINT=http://127.0.0.1:8333`, `EXPORT_S3_BUCKET=exportaciones`,
+  `EXPORT_S3_KEY=almacenero`, `EXPORT_S3_SECRET=almacenero-dev-secreto` y corré `make almacen-probar`. La
+  La API en :8333 solo responde XML; los archivos se ven en http://localhost:8888/buckets/ (cualquier clave sirve). MinIO no se usa porque ya no publica imágenes públicas
+  (Docker Hub y quay.io dan «access denied»). `make s3-alt-down` lo baja (los datos quedan en el volumen).
+
+### Un ETL queda «en cola» y «Ver log» dice «(sin salida todavía)»
+
+- **Síntoma:** encolás un ETL desde el panel (p. ej. exportar catálogo o locales), pasan los minutos y sigue
+  en `en_cola`; el log está vacío.
+- **Causa:** los ETL pesados (`catalogo_exportar`, `locales_exportar`, importaciones…) tienen ejecutor
+  **`local`**: no corren en el backend sino en el worker de tu máquina, y nadie los toma si
+  `make etl-worker` no está corriendo. La columna «Dónde» dice `worker local`; el panel ahora además muestra
+  hace cuánto esperan y el log explica qué falta. Los livianos (`eventos_exportar`) tienen ejecutor `web` y
+  los toma el backend solo.
+- **Solución:** correr `make etl-worker` (con `DATABASE_URL` a la base que usa el panel). Una ejecución
+  cancelada antes de empezar queda con el log vacío: es normal.
+
+### Exporté el catálogo y el .zip no aparece en el S3
+
+- **Causa:** los exports de intercambio (`catalogo_exportar`, `locales_exportar`) los corre el worker local y
+  escribían solo en `ETL_EXPORT_DIR`, una ruta **relativa al directorio desde donde corriste `make etl-worker`**
+  (si lo corriste en un worktree, el archivo está en ese worktree). No tocaban el S3.
+- **Solución:** ahora, si el worker tiene `EXPORT_S3_*` (las lee del `.env`), además sube el .zip al almacén,
+  carpeta `intercambio/`, lo relee y compara tamaño y sha256; el log dice dónde quedó. La copia local se
+  mantiene. Si el S3 falla el log avisa y el archivo local queda intacto.
+
+### El panel no deja poner admin a un usuario anónimo
+
+- **Causa:** regla de negocio: un admin tiene que estar registrado con email (un anónimo no puede entrar al
+  panel y pierde la sesión al reinstalar). El backend responde 422; el panel ahora deshabilita la opción.
+
+### SeaweedFS en `localhost:8333` solo muestra XML
+
+- **Causa:** `:8333` es la API S3 (para el backend), no tiene pantalla.
+- **Solución:** el navegador de archivos es el filer: `http://localhost:8888/buckets/` (y `:9333` es el estado
+  del cluster). Para el Storage local de Supabase (el almacén por defecto) usá Studio:
+  `http://127.0.0.1:54323` → Storage → bucket `exportaciones`.
+
+### Un `<select>` armado con `x-for` muestra la primera opción en vez del valor del modelo
+
+- **Síntoma:** en el panel (Alpine), un `<select x-model>` cuyas `<option>` salen de un `x-for` arranca en
+  la primera opción aunque el estado diga otra (pasó con la granularidad del dashboard y con el ETL de la
+  programación).
+- **Causa:** el valor del modelo se asigna antes de que existan las opciones.
+- **Solución:** para listas fijas, escribir las `<option>` a mano; para listas que llegan de la API, asignar
+  el valor después de `await this.$nextTick()`.
