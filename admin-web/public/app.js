@@ -2,8 +2,6 @@
 // Alpine.js (CDN) + fetch; sin build. Todo el estado vive en `panel()`.
 
 const API = window.API_URL;
-// El mapa (Leaflet) vive fuera de Alpine: un objeto del mapa dentro del estado reactivo se rompe.
-let MAPA = null, CAPA = null;
 const CLAVE = "almacenero_admin_sesion";
 
 const SECCIONES = {
@@ -166,7 +164,7 @@ function panel() {
       this.vista = v;
       clearInterval(this._etlTimer);
       if (v === "etl") { this.iniciarEtl(); return; }
-      if (v === "dashboard") { this.cargarDashboard(); if (MAPA) setTimeout(() => MAPA.invalidateSize(), 50); return; }
+      if (v === "dashboard") { this.cargarDashboard(); return; }
       if (v === "config") { this.cargarConfig(); this.cargarReglas(); }
       else if (v === "ayuda") this.cargarAyuda();
       else if (!(v === "catalogo" && this.subcatalogo === "alta")) this.cargar(v === "catalogo" ? this.subcatalogo : v);
@@ -203,7 +201,7 @@ function panel() {
     dash: {
       periodo: "7d", granularidad: "dia", metrica: "precios", rankTipo: "precios", via: "",
       desde: "", hasta: "",  // solo para «rango» (fechas AAAA-MM-DD en la zona del panel)
-      zona: "", resumen: null, serie: null, ranking: [], estrellas: [], zonas: null, mapaError: false, cargando: false,
+      zona: "", resumen: null, serie: null, ranking: [], estrellas: [], cargando: false,
     },
     // Diferencia (min) entre la hora de pared de `zona` y UTC en el instante `t`.
     _offsetMin(zona, t) {
@@ -256,30 +254,8 @@ function panel() {
           this.api(`/admin/dashboard/estrellas?${new URLSearchParams({ ...Object.fromEntries(qs), ...(D.via ? { via: D.via } : {}) })}`),
         ]);
         Object.assign(D, { resumen, serie, ranking, estrellas });
-        this.cargarMapa(q);
       });
       D.cargando = false;
-    },
-    // Mapa de zonas (docs/04 §11.5): celdas en verde según la cantidad de precios cargados.
-    async cargarMapa(q) {
-      const D = this.dash;
-      try { D.zonas = await this.api(`/admin/dashboard/zonas?${new URLSearchParams({ desde: q.get("desde"), hasta: q.get("hasta") })}`); } catch { return; }
-      await this.$nextTick();
-      const el = document.getElementById("mapa-zonas");
-      if (!el || typeof L === "undefined") { D.mapaError = typeof L === "undefined"; return; }
-      D.mapaError = false;
-      if (!MAPA) {
-        MAPA = L.map(el).setView([-34.6, -58.4], 11);
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(MAPA);
-      }
-      if (CAPA) CAPA.remove();
-      const verdes = ["#e5f5e0", "#a1d99b", "#74c476", "#31a354", "#006d2c"];
-      CAPA = L.geoJSON(D.zonas, {
-        style: (f) => ({ color: "#006d2c", weight: 1, fillColor: verdes[f.properties.nivel - 1], fillOpacity: 0.65 }),
-        onEachFeature: (f, l) => l.bindPopup(`${f.properties.precios} precios en ${f.properties.locales} local(es)`),
-      }).addTo(MAPA);
-      if (D.zonas.features?.length) MAPA.fitBounds(CAPA.getBounds(), { maxZoom: 15 });
-      MAPA.invalidateSize();
     },
     // «01/03 14:00» en la zona del panel (el backend manda UTC; acá se muestra, no se calcula).
     etiquetaBarra(iso) {
@@ -870,6 +846,19 @@ function panel() {
       });
     },
     etlClase(estado) { return { ok: "ok", fallo: "baja", cancelada: "aviso", cancelando: "aviso", corriendo: "mal", en_cola: "" }[estado] || ""; },
+    etlEspera(e) {
+      const min = Math.floor((Date.now() - new Date(e.creado_en)) / 60000);
+      const hace = min < 1 ? "hace menos de 1 min" : `hace ${min} min`;
+      return e.ejecutor === "local" ? `esperando al worker local ${hace}` : `esperando al backend ${hace}`;
+    },
+    etlSinSalida(e) {
+      if (e.estado === "en_cola" && e.ejecutor === "local")
+        return "En cola: este ETL lo toma el worker local y todavía nadie lo tomó.\nCorré `make etl-worker` en tu máquina (con DATABASE_URL a esta base) y empieza solo.";
+      if (e.estado === "en_cola")
+        return "En cola: lo toma el backend en unos segundos. Si no arranca, revisá los logs del contenedor del backend (ETL_WEB_ACTIVO).";
+      if (e.estado === "cancelada" && !e.iniciado_en) return "Se canceló antes de empezar: nadie la había tomado.";
+      return "(sin salida todavía)";
+    },
     etlTitulo(e) { return e.titulo || e.etl; },
     etlDuracion(e) {
       if (!e.iniciado_en) return "";

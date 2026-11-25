@@ -32,7 +32,7 @@ Además:
 > **Versionado:** «v0.0.1» y «v0.0.2» son nombres históricos de **planes**; la 0.0.1 ya no está vigente
 > y el próximo release es **0.1.x** (la validación colaborativa, 0.2.x o posterior). Ver Doc 2.
 > **Zona horaria:** todo en UTC (`timestamptz`) y la hora local solo al mostrar (Doc 2, «Tiempo y zona
-> horaria»). Corte 19 (dashboard de admin con eventos y mapa): planificado en `docs/04` §11; 19b (eventos desde la app) y 19a (dashboard: tarjetas, series, rankings, estrellas, zona horaria) ya están hechas; 19c (mapa, exportar/vaciar eventos, programación) también.
+> horaria»). Corte 19 (dashboard de admin con eventos; el mapa de zonas se postergó): planificado en `docs/04` §11; 19b (eventos desde la app) y 19a (dashboard: tarjetas, series, rankings, estrellas, zona horaria) ya están hechas; 19c (exportar/vaciar eventos, programación) también.
 
 ## Alcance de v0.0.1 (NO te pases de esto)
 

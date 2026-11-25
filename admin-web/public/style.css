@@ -90,5 +90,4 @@ b.error { color: var(--mal); }
 .barra .valor { font-size: 11px; }
 .barra .eti { font-size: 10px; color: var(--suave); white-space: nowrap; }
 .dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
-.mapa { height: 340px; border-radius: 6px; border: 1px solid var(--borde); }
 .aviso-caja { border-color: var(--aviso); }

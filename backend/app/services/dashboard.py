@@ -6,7 +6,6 @@ guardan y se devuelven en UTC; la zona (`config.panel_zona_horaria`) solo decide
 cada hora/día/semana/mes. Los buckets vuelven como el instante UTC en que empiezan.
 """
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -266,66 +265,3 @@ async def estrellas(
         limite,
     )
     return [dict(r) for r in rows]
-
-
-async def zonas(conn: asyncpg.Pool | asyncpg.Connection, p: Periodo) -> dict:
-    """Mapa de actividad (docs/04 §11.5): GeoJSON con una celda por zona con al menos
-    `dashboard_celda_min_precios` precios cargados en el período (una celda con uno o dos precios
-    señalaría a un comercio suelto). La grilla es de `dashboard_celda_m` metros: se arma con
-    `ST_SnapToGrid` en grados, con el ancho corregido por la latitud media de los locales con
-    precios (a -35° un grado de longitud mide ~20 % menos que uno de latitud), así las celdas son
-    casi cuadradas. `nivel` (1 a 5) reparte las celdas en quintiles de cantidad de precios, para
-    sombrearlas en verde."""
-    celda_m = float(await cfg.leer(conn, "dashboard_celda_m"))
-    minimo = int(await cfg.leer(conn, "dashboard_celda_min_precios"))
-    fila = await conn.fetchrow(
-        """
-        with base as (
-            select l.id as local_id, l.ubicacion::geometry as g
-              from precios pr join locales l on l.id = pr.local_id
-             where pr.created_at >= $1 and pr.created_at < $2
-        ),
-        medida as (
-            select coalesce(avg(st_y(g)), 0) as lat from base
-        ),
-        grilla as (
-            select celda_m / 111320.0 as dy,
-                   celda_m / (111320.0 * greatest(cos(radians(lat)), 0.01)) as dx
-              from (select $3::float8 as celda_m) c, medida
-        ),
-        celdas as (
-            select st_snaptogrid(b.g, 0, 0, gr.dx, gr.dy) as centro, gr.dx, gr.dy,
-                   count(*) as precios, count(distinct b.local_id) as locales
-              from base b, grilla gr
-             group by 1, gr.dx, gr.dy
-            having count(*) >= $4
-        ),
-        con_nivel as (
-            select *, ntile(5) over (order by precios, st_x(centro), st_y(centro)) as nivel
-              from celdas
-        )
-        select coalesce(jsonb_build_object(
-                   'type', 'FeatureCollection',
-                   'features', coalesce(jsonb_agg(jsonb_build_object(
-                       'type', 'Feature',
-                       'geometry', st_asgeojson(st_makeenvelope(
-                           st_x(centro) - dx / 2, st_y(centro) - dy / 2,
-                           st_x(centro) + dx / 2, st_y(centro) + dy / 2, 4326))::jsonb,
-                       'properties', jsonb_build_object(
-                           'precios', precios, 'locales', locales, 'nivel', nivel)
-                   ) order by precios desc), '[]'::jsonb)
-               ), '{}'::jsonb)::text as geojson,
-               coalesce(max(precios), 0) as maximo
-          from con_nivel
-        """,
-        p.desde,
-        p.hasta,
-        celda_m,
-        minimo,
-    )
-    return {
-        **json.loads(fila["geojson"]),
-        "celda_m": celda_m,
-        "min_precios": minimo,
-        "maximo": fila["maximo"],
-    }

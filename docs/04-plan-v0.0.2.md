@@ -1229,7 +1229,7 @@ dueño eligió este orden: 19b primero, probarlo en local/offline, y después 19
 | **Invitaciones** | Enviadas, aceptadas, pendientes (y vencidas, que no son pendientes) | `invitaciones` | ya hay |
 | **Productos estrella** | Los EAN más escaneados por **usuarios distintos** (no por escaneos repetidos de uno solo) | `eventos` (`producto.escaneado`) | vacío hasta que la app emita eventos |
 | **Rankings de usuarios** | Quién más carga productos nuevos, precios y sugerencias (alias, nunca email) | `productos_canonicos` (origen manual) / `precios` / `sugerencias_catalogo` | ya hay |
-| **Zonas con más actividad** | Mapa con celdas sombreadas en verde según la cantidad de precios cargados | `precios` + `locales.ubicacion` | ya hay |
+| ~~Zonas con más actividad~~ | Mapa con celdas en verde según los precios cargados | `precios` + `locales.ubicacion` | **Postergado** (2026-11-25): futuro corte, con más datos y más usuarios; los tiles consumen recursos |
 
 - **«Usuario activo»** (decidido el 2026-11-24) = el que **hizo una carga en los últimos 7 días**, y
   «carga» es cualquiera de: **un precio**, **un producto nuevo** o **una sugerencia de cambio**. Los dos
@@ -1244,8 +1244,8 @@ dueño eligió este orden: 19b primero, probarlo en local/offline, y después 19
   para no comparar un aceite con un fideo. Queda anotado, no se diseña ahora.
 - **Orden de las partes:** **19a** tarjetas y series que ya tienen datos (precios, invitaciones,
   usuarios activos por precios, rankings) + zona horaria; **19b** `eventos`, endpoint, cambio
-  mínimo en la app y productos estrella; **19c** mapa y exportación
-  (manual y programada). Solo 19b toca `app/`.
+  mínimo en la app y productos estrella; **19c** exportación
+  (manual y programada; el mapa de zonas se sacó el 2026-11-25, ver 19c). Solo 19b toca `app/`.
 
 ### 11.2 Eventos: una tabla genérica, no una por concepto
 
@@ -1367,16 +1367,12 @@ Objetivo: que la tabla no crezca sin límite **y** que no dependa de una persona
 ### 11.5 API, permisos y pantalla
 
 - `GET /v1/admin/dashboard/resumen?desde=&hasta=` (tarjetas), `GET /v1/admin/dashboard/series?metrica=precios|validaciones|activos&granularidad=hora|dia|semana|mes&desde=&hasta=&zona=`,
-  `GET .../rankings?tipo=productos|precios|sugerencias`, `GET .../estrellas`, `GET .../zonas`
-  (GeoJSON de celdas con conteo). Sin tablas precalculadas: con el volumen actual alcanzan consultas
+  `GET .../rankings?tipo=productos|precios|sugerencias`, `GET .../estrellas`. Sin tablas precalculadas: con el volumen actual alcanzan consultas
   directas con los índices que ya hay; si un día pesan, se agregan vistas materializadas sin cambiar la API.
 - **Permiso nuevo** `dashboard.ver` (admin; el moderador no). Los datos de usuarios muestran **alias**.
-- **Mapa:** Leaflet (CDN fijado, como el resto del panel estático) sobre tiles de OpenStreetMap; las
-  celdas salen de una grilla en PostGIS (`ST_SnapToGrid`, tamaño en `config.dashboard_celda_m`,
-  ~1 km por defecto) y se sombrean en verde por cuantiles. Solo se dibujan celdas con al menos
-  `dashboard_celda_min_precios` precios (evita señalar un comercio suelto). Los tiles de OSM tienen
-  política de uso: sirven para un panel interno; si el panel se vuelve público o muy usado, se cambia
-  de proveedor.
+- **Mapa de zonas: postergado** (2026-11-25, pedido del dueño). Se había hecho en 19c (Leaflet + grilla
+  PostGIS) y se quitó: aporta poco con tan pocos datos y los tiles gastan recursos. Vuelve como corte
+  propio cuando haya más datos y usuarios, junto con la decisión del proveedor de teselas (ver «Abiertas»).
 - **Landing:** el panel abre en el dashboard (hoy abre en Locales); el resto del menú queda igual.
   Selector de período (hoy, 7 días, 30 días, mes, rango) y de granularidad.
 
@@ -1393,7 +1389,7 @@ públicos y particionado de `eventos` (se deja preparado, no se hace).
    `POST /v1/eventos`, la app emite `producto.escaneado` y `app.abierta` (en lote, tolerando estar
    sin red: si falla, descarta, **nunca** bloquea escanear) y productos estrella.
 3. **19c:** `eventos_exportar`, `eventos_exportaciones`, `etl_programaciones` y el ciclo, bucket de
-   exportaciones, banner por umbral, mapa.
+   exportaciones, banner por umbral.
 
 Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs al día y PR propio
 (yo no mergeo).
@@ -1480,13 +1476,9 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
 
 **Hecho en 19c** (2026-11-24):
 
-- **Mapa de zonas:** `GET /v1/admin/dashboard/zonas` devuelve un GeoJSON (`FeatureCollection` de
-  polígonos) con una celda por zona con al menos `config.dashboard_celda_min_precios` (5) precios en el
-  período; cada celda lleva `precios`, `locales` y `nivel` (1 a 5, por quintiles). La grilla se arma con
-  `ST_SnapToGrid` en grados, de `config.dashboard_celda_m` (1000) metros, con el ancho corregido por la
-  latitud media de los locales con precios (a -35° la celda sería ~20 % más angosta que alta si no).
-  El panel la dibuja con Leaflet 1.9.4 (cdnjs, versión fija) sobre tiles de OpenStreetMap, en verde por
-  nivel. Sin internet no hay mapa (los datos igual llegan).
+- **Mapa de zonas: quitado** (2026-11-25). Se había hecho (GeoJSON + Leaflet) y se sacó a pedido del dueño: con
+  pocos datos no aporta y los tiles gastan recursos. Se eliminaron `GET /v1/admin/dashboard/zonas`, Leaflet
+  y las config `dashboard_celda_m` y `dashboard_celda_min_precios`. Queda como futuro corte.
 - **Almacén** (`etl/comun/almacen.py`): interfaz mínima (`asegurar`, `guardar`, `leer`, `listar`,
   `borrar`) con **S3** (`boto3`, path-style, sirve para Supabase Storage, SeaweedFS, MinIO, R2…) y **disco**. Se elige
   por entorno: `EXPORT_S3_ENDPOINT/_BUCKET/_KEY/_SECRET/_REGION`; sin endpoint, `ETL_EXPORT_DIR`.
@@ -1495,7 +1487,8 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
   502 `almacen_fallo` con explicación si falla). `make up` completa las `EXPORT_S3_*` con el Storage S3
   local de Supabase (se comprobó que `boto3` funciona contra él, incluso creando el bucket).
 - **S3 alternativo** opcional en el compose (perfil `s3-alt`, `make s3-alt-up` / `s3-alt-down`; API en
-  `:8333`, sin consola, cualquier clave sirve). **No es MinIO:** MinIO dejó de publicar imágenes públicas
+  `:8333` es solo la API S3 y responde XML; para **ver** los archivos está el navegador del filer en
+  `http://localhost:8888/buckets/`, y el estado del cluster en `:9333`; cualquier clave sirve). **No es MinIO:** MinIO dejó de publicar imágenes públicas
   (Docker Hub y quay.io dan «access denied», comprobado el 2026-11-24), así que se usa **SeaweedFS**
   (`chrislusf/seaweedfs`, versión fija). No arranca con `make up`. Los tests corren el mismo conjunto contra
   **disco, Storage local y el S3 alternativo** (los S3 se saltean con aviso si no responden); CI levanta el
@@ -1517,8 +1510,8 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
   sistema queda con `creado_por` nulo y en la auditoría como `programacion.ejecutar`.
 - **Panel:** sección ETL con «Almacén de exportaciones» (probar + lista de exportaciones con descarga) y
   «Programaciones» (la hora se muestra en la zona del panel, se guarda UTC); el dashboard muestra un banner
-  con «Exportar ahora» cuando se pasa el tope de eventos (el `resumen` trae `eventos`) y el mapa de zonas.
-- Config nueva: `dashboard_celda_m`, `dashboard_celda_min_precios`, `eventos_export_filas_por_archivo`.
+  con «Exportar ahora» cuando se pasa el tope de eventos (el `resumen` trae `eventos`).
+- Config nueva: `eventos_export_filas_por_archivo`.
 - Los tests apagan el ciclo (`PROGRAMACIONES_ACTIVO=false` en `conftest.py`) y llaman a `vuelta` a mano.
 - Qué no se probó: el panel contra los contenedores de `make up` (se probó contra un backend local de la
   rama, incluido un export real por el ejecutor web al Storage S3 local); Supabase Storage de **producción**
@@ -1568,7 +1561,7 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
 
 **Abiertas**
 
-- **Proveedor de teselas del mapa (NO SE OLVIDE):** OSM público solo sirve para el grupo
+- **Proveedor de teselas del mapa (NO SE OLVIDE; aplica al mapa de la app y al futuro mapa de zonas del dashboard):** OSM público solo sirve para el grupo
   cerrado (política de uso de OSM: uso liviano, atribución, sin abuso). Decidir **antes de
   abrir la app a más gente**: proveedor con plan gratis (MapTiler, Stadia), Google Maps
   (paga pasado cierto uso) o **autohospedar** con Protomaps/PMTiles (un archivo servido

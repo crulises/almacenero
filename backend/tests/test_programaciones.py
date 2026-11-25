@@ -1,5 +1,5 @@
-"""Programaciones de ETL, almacén y exportaciones por la API de admin, y el mapa de zonas
-(docs/04 §11.4 y §11.5). Postgres real."""
+"""Programaciones de ETL, almacén y exportaciones por la API de admin,
+(docs/04 §11.4). Postgres real."""
 
 import asyncio
 import json
@@ -81,7 +81,6 @@ def test_solo_admin_programa(client, auth):
     assert client.get("/v1/admin/etl/programaciones", headers=auth).status_code == 403
     assert client.post("/v1/admin/almacen/probar", headers=auth).status_code == 403
     assert client.get("/v1/admin/eventos/exportaciones", headers=auth).status_code == 403
-    assert client.get("/v1/admin/dashboard/zonas", headers=auth).status_code == 403
 
 
 # ---------------------------------------------------------------- el CRUD
@@ -252,7 +251,7 @@ def test_exportaciones_se_listan_y_se_descargan(client, admin, monkeypatch, tmp_
     ).status_code == 404  # fmt: skip
 
 
-# --------------------------------------------------------- resumen y mapa
+# ----------------------------------------------------------------- resumen
 def test_el_resumen_avisa_cuando_se_pasa_el_tope_de_eventos(client, admin, config_temporal):
     sql("insert into eventos (tipo, datos) values ($1, '{}'::jsonb)", TIPO)
     config_temporal("eventos_max_filas", "1000000000")
@@ -261,85 +260,3 @@ def test_el_resumen_avisa_cuando_se_pasa_el_tope_de_eventos(client, admin, confi
     config_temporal("eventos_max_filas", "0")
     ev = client.get("/v1/admin/dashboard/resumen", headers=admin).json()["eventos"]
     assert ev["superado"] is True and ev["max_filas"] == 0
-
-
-def _zona_con_precios(lat: float, lng: float, n: int, locales: int = 1) -> None:
-    uid = str(uuid.uuid4())
-    sql(
-        "insert into usuarios (id, auth_id, alias) values ($1::uuid, $2::uuid, $3)",
-        uid, str(uuid.uuid4()), f"prog-{uid[:6]}",
-    )  # fmt: skip
-    for k in range(locales):
-        lid = str(uuid.uuid4())
-        sql(
-            "insert into locales (id, nombre, ubicacion) values ($1::uuid, $2, "
-            "st_setsrid(st_makepoint($3, $4), 4326)::geography)",
-            lid, f"prog-{lid[:6]}", lng + k * 0.00001, lat,
-        )  # fmt: skip
-        for _ in range(n):
-            sql(
-                "insert into precios (producto_canonico_id, local_id, precio, user_id, fecha, "
-                "created_at) values ((select id from productos_canonicos limit 1), $1::uuid, 10, "
-                "$2::uuid, '2024-04-10T12:00:00Z'::timestamptz, "
-                "'2024-04-10T12:00:00Z'::timestamptz)",
-                lid, uid,
-            )  # fmt: skip
-
-
-def _zonas(client, admin):
-    r = client.get(
-        "/v1/admin/dashboard/zonas",
-        headers=admin,
-        params={"desde": "2024-04-01T00:00:00Z", "hasta": "2024-05-01T00:00:00Z"},
-    )
-    assert r.status_code == 200, r.text
-    return r.json()
-
-
-def test_zonas_devuelve_geojson_de_celdas_con_el_minimo(client, admin, config_temporal):
-    config_temporal("dashboard_celda_min_precios", "5")
-    _zona_con_precios(-34.60, -58.40, 4, locales=2)  # 8 precios en 2 locales de la misma celda
-    _zona_con_precios(-31.40, -64.19, 3)  # 3 precios: por debajo del mínimo
-    z = _zonas(client, admin)
-    assert z["type"] == "FeatureCollection" and z["min_precios"] == 5
-    assert len(z["features"]) == 1  # la celda de 3 precios no se dibuja (privacidad)
-    f = z["features"][0]
-    assert f["properties"]["precios"] == 8 and f["properties"]["locales"] == 2
-    assert 1 <= f["properties"]["nivel"] <= 5
-    anillo = f["geometry"]["coordinates"][0]
-    assert f["geometry"]["type"] == "Polygon" and anillo[0] == anillo[-1]
-    xs = [c[0] for c in anillo]
-    assert min(xs) < -58.40 < max(xs)  # la celda contiene el punto
-
-
-def test_zonas_respeta_el_minimo_y_el_tamano_de_celda(client, admin, config_temporal):
-    _zona_con_precios(-34.60, -58.40, 3)
-    config_temporal("dashboard_celda_min_precios", "4")
-    assert _zonas(client, admin)["features"] == []
-    config_temporal("dashboard_celda_min_precios", "3")
-    config_temporal("dashboard_celda_m", "1000")
-    a = _zonas(client, admin)["features"][0]["geometry"]["coordinates"][0]
-    config_temporal("dashboard_celda_m", "250")
-    b = _zonas(client, admin)["features"][0]["geometry"]["coordinates"][0]
-    ancho = lambda c: max(x for x, _ in c) - min(x for x, _ in c)  # noqa: E731
-    assert ancho(a) == pytest.approx(ancho(b) * 4, rel=0.01)  # 1000 m = 4 celdas de 250 m
-
-
-def test_zonas_celdas_casi_cuadradas(client, admin, config_temporal):
-    """A -35° un grado de longitud mide ~20 % menos que uno de latitud: el ancho se corrige."""
-    config_temporal("dashboard_celda_min_precios", "1")
-    config_temporal("dashboard_celda_m", "1000")
-    _zona_con_precios(-34.60, -58.40, 1)
-    c = _zonas(client, admin)["features"][0]["geometry"]["coordinates"][0]
-    ancho_m = (max(x for x, _ in c) - min(x for x, _ in c)) * 111320 * 0.8221  # cos(34.6°)
-    alto_m = (max(y for _, y in c) - min(y for _, y in c)) * 111320
-    assert ancho_m == pytest.approx(1000, rel=0.03) and alto_m == pytest.approx(1000, rel=0.03)
-
-
-def test_zonas_sin_precios_en_el_periodo(client, admin):
-    r = client.get(
-        "/v1/admin/dashboard/zonas",
-        headers=admin,
-        params={"desde": "2001-01-01T00:00:00Z", "hasta": "2001-01-02T00:00:00Z"},
-    )
-    assert r.status_code == 200 and r.json()["features"] == []

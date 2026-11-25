@@ -33,14 +33,16 @@ services:
 
   # S3 alternativo, OPCIONAL (perfil `s3-alt`: `make s3-alt-up`): SeaweedFS, un almacenamiento
   # S3-compatible libre. Sirve para probar que el almacén de exportaciones no está atado a Supabase
-  # (docs/04 §11.4). No arranca con `make up`. API S3 en http://localhost:8333. (Se eligió SeaweedFS
+  # (docs/04 §11.4). No arranca con `make up`. API S3 en :8333 (solo XML); para VER los archivos, el navegador del filer en http://localhost:8888. (Se eligió SeaweedFS
   # porque MinIO dejó de publicar imágenes públicas; es solo para desarrollo y pruebas.)
   s3-alt:
     profiles: ["s3-alt"]
     image: chrislusf/seaweedfs:3.85
     command: server -s3 -dir=/data -ip.bind=0.0.0.0
     ports:
-      - "8333:8333"
+      - "8333:8333"   # API S3 (solo responde XML, no tiene pantalla)
+      - "8888:8888"   # filer: navegador web de buckets y archivos
+      - "9333:9333"   # master: estado del cluster
     volumes:
       - s3-alt-datos:/data
 

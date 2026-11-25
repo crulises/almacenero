@@ -1018,7 +1018,7 @@ Decisiones en `docs/04` §9.
   tiene que dar la carpeta del worktree. Para ver si el backend tiene una ruta:
   `curl -s localhost:8000/openapi.json | grep eventos`.
 
-## Dashboard: almacén de exportaciones, mapa y programaciones (corte 19c)
+## Dashboard: almacén de exportaciones y programaciones (corte 19c)
 
 ### `make almacen-probar` falla o «no pude leer el S3 local»
 
@@ -1042,17 +1042,27 @@ Decisiones en `docs/04` §9.
 - **Solución:** `make s3-alt-up` (la primera vez baja la imagen y el S3 tarda ~30 s en responder en :8333). Para usarlo como almacén de verdad, poné en
   `.env` `EXPORT_S3_ENDPOINT=http://127.0.0.1:8333`, `EXPORT_S3_BUCKET=exportaciones`,
   `EXPORT_S3_KEY=almacenero`, `EXPORT_S3_SECRET=almacenero-dev-secreto` y corré `make almacen-probar`. La
-  No tiene consola web (cualquier clave sirve). MinIO no se usa porque ya no publica imágenes públicas
+  La API en :8333 solo responde XML; los archivos se ven en http://localhost:8888/buckets/ (cualquier clave sirve). MinIO no se usa porque ya no publica imágenes públicas
   (Docker Hub y quay.io dan «access denied»). `make s3-alt-down` lo baja (los datos quedan en el volumen).
 
-### El mapa del dashboard sale gris o dice «No se pudo cargar el mapa»
+### Un ETL queda «en cola» y «Ver log» dice «(sin salida todavía)»
 
-- **Síntoma:** el cuadro del mapa vacío.
-- **Causa:** Leaflet y los tiles de OpenStreetMap vienen de internet (CDN); sin conexión no hay mapa. Los
-  datos de las celdas sí llegan (`GET /v1/admin/dashboard/zonas`).
-- **Solución:** conexión a internet. Si el mapa abre pero no hay celdas: ninguna zona llegó a
-  `dashboard_celda_min_precios` precios en el período (se oculta a propósito para no señalar un comercio
-  suelto); bajá ese valor en Configuración para probar.
+- **Síntoma:** encolás un ETL desde el panel (p. ej. exportar catálogo o locales), pasan los minutos y sigue
+  en `en_cola`; el log está vacío.
+- **Causa:** los ETL pesados (`catalogo_exportar`, `locales_exportar`, importaciones…) tienen ejecutor
+  **`local`**: no corren en el backend sino en el worker de tu máquina, y nadie los toma si
+  `make etl-worker` no está corriendo. La columna «Dónde» dice `worker local`; el panel ahora además muestra
+  hace cuánto esperan y el log explica qué falta. Los livianos (`eventos_exportar`) tienen ejecutor `web` y
+  los toma el backend solo.
+- **Solución:** correr `make etl-worker` (con `DATABASE_URL` a la base que usa el panel). Una ejecución
+  cancelada antes de empezar queda con el log vacío: es normal.
+
+### SeaweedFS en `localhost:8333` solo muestra XML
+
+- **Causa:** `:8333` es la API S3 (para el backend), no tiene pantalla.
+- **Solución:** el navegador de archivos es el filer: `http://localhost:8888/buckets/` (y `:9333` es el estado
+  del cluster). Para el Storage local de Supabase (el almacén por defecto) usá Studio:
+  `http://127.0.0.1:54323` → Storage → bucket `exportaciones`.
 
 ### Un `<select>` armado con `x-for` muestra la primera opción en vez del valor del modelo
 

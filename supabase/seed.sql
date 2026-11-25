@@ -47,8 +47,6 @@ insert into config (clave, valor, rubro) values
     -- Dashboard de admin (docs/04 §11)
     ('panel_zona_horaria',        '"America/Buenos_Aires"', null),
     ('dashboard_activo_dias',     '7', null),
-    ('dashboard_celda_m',         '1000', null),
-    ('dashboard_celda_min_precios', '5', null),
     ('eventos_export_filas_por_archivo', '500000', null)
 on conflict do nothing;
 

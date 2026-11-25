@@ -256,7 +256,7 @@ almacen-probar: $(PY) ## Ida y vuelta con el almacén configurado (EXPORT_S3_* o
 
 s3-alt-up: ## Levanta un S3 alternativo opcional (SeaweedFS) en :8333 para probar que el almacén no depende de Supabase
 	docker compose --profile s3-alt up -d s3-alt
-	@echo "S3 alternativo: http://localhost:8333 (cualquier clave sirve; sin consola)."
+	@echo "S3 alternativo: API en http://localhost:8333 (solo XML, para el backend); ver archivos: http://localhost:8888/buckets/ (cualquier clave sirve)."
 	@echo "Para usarlo: poné en .env EXPORT_S3_ENDPOINT=http://127.0.0.1:8333, EXPORT_S3_BUCKET=exportaciones,"
 	@echo "EXPORT_S3_KEY=almacenero y EXPORT_S3_SECRET=almacenero-dev-secreto; después: make almacen-probar"
 

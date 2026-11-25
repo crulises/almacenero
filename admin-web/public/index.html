@@ -7,9 +7,6 @@
   <link rel="stylesheet" href="style.css">
   <script src="config.js"></script>
   <script src="app.js"></script>
-  <!-- Mapa del dashboard: Leaflet con versión fija; tiles de OpenStreetMap (docs/04 §11.5). -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
 </head>
 <body x-data="panel()" x-init="init()" x-cloak>
@@ -118,14 +115,6 @@
                 </template>
               </div>
               <p class="suave" x-show="dash.serie && !dash.serie.puntos.length">Sin datos en el período.</p>
-            </div>
-
-            <div class="caja">
-              <h3>Zonas con más actividad <span class="suave" x-show="dash.zonas" x-text="'celdas de ' + (dash.zonas?.celda_m || '') + ' m con al menos ' + (dash.zonas?.min_precios || '') + ' precios'"></span></h3>
-              <div id="mapa-zonas" class="mapa"></div>
-              <p class="suave" x-show="dash.mapaError">No se pudo cargar el mapa (Leaflet viene de un CDN: hace falta internet).</p>
-              <p class="suave" x-show="dash.zonas && !dash.zonas.features.length">Ninguna zona llegó al mínimo de precios en el período.</p>
-              <p class="suave">Más oscuro = más precios cargados. Los mapas son de © OpenStreetMap (uso liviano, para el panel interno).</p>
             </div>
 
             <div class="dos">
@@ -268,7 +257,8 @@
                 <td class="suave" x-text="fecha(e.creado_en)"></td>
                 <td x-text="etlTitulo(e)"></td>
                 <td class="suave" x-text="e.ejecutor === 'local' ? 'worker local' : 'backend'"></td>
-                <td><span class="badge" :class="etlClase(e.estado)" x-text="e.estado"></span></td>
+                <td><span class="badge" :class="etlClase(e.estado)" x-text="e.estado"></span>
+                  <div class="suave" x-show="e.estado === 'en_cola'" x-text="etlEspera(e)"></div></td>
                 <td x-text="e.filas ?? ''"></td>
                 <td class="suave" x-text="etlDuracion(e)"></td>
                 <td class="suave ancho" x-text="resumenParametros(e)"></td>
@@ -295,7 +285,7 @@
           <template x-if="etlDetalle && etlDetalle.reporte">
             <details open><summary>Reporte</summary><pre x-text="JSON.stringify(etlDetalle.reporte, null, 2)"></pre></details>
           </template>
-          <pre class="mono" style="max-width:100%;max-height:420px;overflow:auto" x-text="etlDetalle ? (etlDetalle.log || '(sin salida todavía)') : ''"></pre>
+          <pre class="mono" style="max-width:100%;max-height:420px;overflow:auto" x-text="etlDetalle ? (etlDetalle.log || etlSinSalida(etlDetalle)) : ''"></pre>
         </div>
       </section>
 

@@ -178,15 +178,3 @@ async def estrellas(
 ) -> list[Estrella]:
     p = await _periodo(pool, desde, hasta, 30)
     return [Estrella(**r) for r in await dashboard.estrellas(pool, p, limite, via)]
-
-
-@router.get("/zonas")
-async def zonas(
-    desde: datetime | None = None,
-    hasta: datetime | None = None,
-    _: Usuario = Depends(exigir("dashboard.ver")),
-    pool: asyncpg.Pool = Depends(get_pool),
-) -> dict:
-    """GeoJSON de celdas con la cantidad de precios cargados (mapa de zonas con más actividad)."""
-    p = await _periodo(pool, desde, hasta, 30)
-    return await dashboard.zonas(pool, p)
