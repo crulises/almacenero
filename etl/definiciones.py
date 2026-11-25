@@ -138,6 +138,7 @@ async def _osm(p: dict, ctx) -> dict:
 
 
 async def _curado_exportar(p: dict, ctx) -> dict:
+    from etl.comun.almacen import publicar_o_avisar
     from etl.comun.rutas import ruta_de_salida
     from etl.curado.exportar import exportar
 
@@ -147,6 +148,7 @@ async def _curado_exportar(p: dict, ctx) -> dict:
     destino = ruta_de_salida(p["salida"])
     r = await asyncio.to_thread(exportar, destino, off, sepa, paises, p.get("sepa_min_filas", 1))
     ctx.log(f"Escrito {destino}\n{r.texto()}")
+    ctx.log(await publicar_o_avisar(destino))
     ctx.filas = r.filas
     return {
         "filas": r.filas,
@@ -157,23 +159,27 @@ async def _curado_exportar(p: dict, ctx) -> dict:
 
 
 async def _catalogo_exportar(p: dict, ctx) -> dict:
+    from etl.comun.almacen import publicar_o_avisar
     from etl.comun.rutas import ruta_de_salida
     from etl.curado.exportar_base import exportar_base
 
     destino = ruta_de_salida(p["salida"])
     r = await exportar_base(destino)
     ctx.log(f"Escrito {destino}\n{r.texto()}")
+    ctx.log(await publicar_o_avisar(destino))
     ctx.filas = r.filas
     return {"filas": r.filas, "sha256": r.sha256, "por_origen": dict(r.por_origen)}
 
 
 async def _locales_exportar(p: dict, ctx) -> dict:
+    from etl.comun.almacen import publicar_o_avisar
     from etl.comun.rutas import ruta_de_salida
     from etl.locales_intercambio import exportar
 
     destino = ruta_de_salida(p["salida"])
     r = await exportar(destino, solo_verificados=p.get("solo_verificados", True))
     ctx.log(f"Escrito {destino}\n{r.texto()}")
+    ctx.log(await publicar_o_avisar(destino))
     ctx.filas = r.filas
     return {"filas": r.filas, "verificados": r.verificados, "sha256": r.sha256}
 

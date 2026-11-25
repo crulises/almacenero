@@ -222,6 +222,17 @@ def publicar_archivo(
     return f"Subido y verificado en el almacén ({almacen.nombre}): {clave}  (copia local: {ruta})"
 
 
+async def publicar_o_avisar(ruta: Path) -> str:
+    """`publicar_archivo` para quien solo quiere una línea de log: si el almacén falla no tira el
+    export (el archivo local ya está escrito), avisa."""
+    import asyncio
+
+    try:
+        return await asyncio.to_thread(publicar_archivo, ruta)
+    except AlmacenError as e:
+        return f"AVISO: no se pudo subir al almacén ({e}). El archivo local está intacto."
+
+
 def probar(almacen: Almacen) -> dict:
     """Ida y vuelta con un archivo de prueba (`make almacen-probar` y el botón del panel): se corre
     al configurar un almacén nuevo y antes de activar una programación. Deja el almacén como
