@@ -246,6 +246,8 @@ release fue el **0.1.x** (cerrado el 2026-11-25; plan en `docs/04-plan-v0.1.md`)
 (alcance de entonces), no a versiones de release. El resto de releases (0.2.x en adelante) está en `docs/10-roadmap.md`, con un plan por release
 (`docs/04-plan-v0.2.md` …).
 
+La serie 0.1 está en `app/pubspec.yaml` (`version: 0.1.0+1`); `make apk` arma 0.1.0, 0.1.1… (Doc 4, «Versión del APK»).
+
 ## Testing
 
 - Backend: pytest. Integración contra el Postgres local real (el del CLI), no mocks.
