@@ -23,6 +23,8 @@ Además:
   cuando ajusta lo que cargó una persona; espejo de `backend/app/services/estandares.py`).
 - `docs/09-formato-intercambio-catalogo.md` — formato `catalogo_curado_v1/v2` para intercambiar
   catálogos (autocontenido: se reutiliza en otro proyecto). Tocá `etl/curado/` solo de acuerdo a él.
+- `docs/10-roadmap.md` — releases planeados (0.1.x, 0.2.x…) y principios del producto (la app
+  es guía, no tracker financiero; el orden de precios no se vende).
 - `docs/03-problemas-soluciones.md` — cómo armar el entorno desde cero y los
   problemas ya vividos (con su solución). **Leelo antes de debuggear un problema
   de entorno, de build o de auth**, y agregale lo nuevo que aparezca (formato
