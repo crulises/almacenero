@@ -1057,6 +1057,20 @@ Decisiones en `docs/04` §9.
 - **Solución:** correr `make etl-worker` (con `DATABASE_URL` a la base que usa el panel). Una ejecución
   cancelada antes de empezar queda con el log vacío: es normal.
 
+### Exporté el catálogo y el .zip no aparece en el S3
+
+- **Causa:** los exports de intercambio (`catalogo_exportar`, `locales_exportar`) los corre el worker local y
+  escribían solo en `ETL_EXPORT_DIR`, una ruta **relativa al directorio desde donde corriste `make etl-worker`**
+  (si lo corriste en un worktree, el archivo está en ese worktree). No tocaban el S3.
+- **Solución:** ahora, si el worker tiene `EXPORT_S3_*` (las lee del `.env`), además sube el .zip al almacén,
+  carpeta `intercambio/`, lo relee y compara tamaño y sha256; el log dice dónde quedó. La copia local se
+  mantiene. Si el S3 falla el log avisa y el archivo local queda intacto.
+
+### El panel no deja poner admin a un usuario anónimo
+
+- **Causa:** regla de negocio: un admin tiene que estar registrado con email (un anónimo no puede entrar al
+  panel y pierde la sesión al reinstalar). El backend responde 422; el panel ahora deshabilita la opción.
+
 ### SeaweedFS en `localhost:8333` solo muestra XML
 
 - **Causa:** `:8333` es la API S3 (para el backend), no tiene pantalla.

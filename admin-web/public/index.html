@@ -979,11 +979,11 @@
           <section class="caja">
             <h3>Rol</h3>
             <div class="form">
-              <label>Nuevo rol <select x-model="ficha.x.rol"><option value="usuario">usuario</option><option value="moderador">moderador (sugiere cambios al catálogo)</option><option value="admin">admin</option></select></label>
+              <label>Nuevo rol <select x-model="ficha.x.rol"><option value="usuario">usuario</option><option value="moderador">moderador (sugiere cambios al catálogo)</option><option value="admin" :disabled="ficha.d.es_anonimo" x-text="ficha.d.es_anonimo ? 'admin (no disponible: es anónimo)' : 'admin'"></option></select></label>
               <label>Motivo <input type="text" x-model="ficha.x.motivoRol"></label>
             </div>
             <div class="filas"><button :disabled="ficha.x.rol === ficha.d.rol" @click="cambiarRolFicha()">Cambiar rol</button>
-              <span class="suave">No podés cambiar el tuyo. Un admin tiene que estar registrado (email).</span></div>
+              <span class="suave">No podés cambiar el tuyo. Un admin tiene que estar registrado (email): un usuario anónimo solo puede ser moderador.</span></div>
           </section>
           <section class="caja">
             <h3>Ajustar karma</h3>

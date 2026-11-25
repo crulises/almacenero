@@ -205,6 +205,23 @@ def verificar(almacen: Almacen, clave: str, datos: bytes) -> None:
         raise AlmacenError(f"{clave}: el contenido al releer no coincide (sha256 distinto)")
 
 
+def publicar_archivo(
+    ruta: Path, prefijo: str = "intercambio", almacen: Almacen | None = None
+) -> str:
+    """Sube un archivo ya escrito en disco (el .zip de un export) al almacén configurado, lo
+    verifica releyéndolo y devuelve una línea para el log. Con almacén en disco no hace nada:
+    el archivo ya está donde corresponde. El original local se deja (es una copia de respaldo).
+    Si el almacén falla lanza `AlmacenError`: el archivo local sigue intacto."""
+    almacen = almacen or desde_entorno()
+    ruta = Path(ruta).resolve()
+    if almacen.nombre == "disco":
+        return f"Guardado en disco: {ruta}"
+    almacen.asegurar()
+    clave = f"{prefijo}/{ruta.name}"
+    verificar(almacen, clave, ruta.read_bytes())
+    return f"Subido y verificado en el almacén ({almacen.nombre}): {clave}  (copia local: {ruta})"
+
+
 def probar(almacen: Almacen) -> dict:
     """Ida y vuelta con un archivo de prueba (`make almacen-probar` y el botón del panel): se corre
     al configurar un almacén nuevo y antes de activar una programación. Deja el almacén como
