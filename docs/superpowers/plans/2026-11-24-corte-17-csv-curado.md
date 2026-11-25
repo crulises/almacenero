@@ -11,7 +11,7 @@ transacción que se revierte, así que el reporte nunca diverge de la importaci�
 
 **Stack:** Python 3.12, asyncpg, pytest contra Postgres local real (Supabase CLI), SQL plano.
 
-**Spec:** `docs/04-plan-v0.0.2.md` §10-B (+ refinamientos en esta carpeta, ver §Decisiones del Doc 4 al cerrar el corte).
+**Spec:** `docs/04-plan-v0.1.md` §10-B (+ refinamientos en esta carpeta, ver §Decisiones del Doc 4 al cerrar el corte).
 
 ## Restricciones globales
 

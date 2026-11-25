@@ -3,7 +3,7 @@
 **Estado: normalizador implementado en el corte 13 (`etl/comun/normalizar.py`, sin tocar la base); la integración en la carga es el corte 14.** Las mediciones son del
 2026-11-21 sobre la base local (134 505 productos: SEPA de un día + OFF de Argentina y
 vecinos; ver Doc 5 §2b). No es fuente de verdad del producto (Doc 1) ni de la
-arquitectura (Doc 2). El plan de cortes está en `docs/04-plan-v0.0.2.md` §10.
+arquitectura (Doc 2). El plan de cortes está en `docs/04-plan-v0.1.md` §10.
 
 > Nombre real de la tabla de datos crudos: `producto_fuentes` (no «productos_fuente»).
 
