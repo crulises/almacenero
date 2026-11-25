@@ -13,6 +13,10 @@ DEFAULTS: dict[str, Any] = {
     "geofence_metros": 150,
     "geofence_precision_max_m": 100,  # GPS peor que esto: se pide reintentar
     "radio_precios_m": 5000,  # precios vigentes: solo locales a esta distancia
+    # Recientes de la app (corte 20): si no hay precio dentro de `radio_precios_m`, se amplía a
+    # este radio y el precio se muestra como referencia (con su distancia), no como de la zona.
+    "radio_referencia_km": 300,
+    "recientes_max": 10,  # cuántas consultas guarda «Recientes» en el celular
     "ventana_frescura_dias": 30,
     "umbral_verde_dias": 7,
     "umbral_amarillo_dias": 21,
@@ -27,6 +31,7 @@ DEFAULTS: dict[str, Any] = {
     "max_precios_por_hora": 60,
     "max_precios_por_dia": 300,
     # Moderación (docs/04 §9): el karma se compara con `<=`. Son negativos a propósito.
+    "karma_primer_precio": 5,  # bonus por cargar el primer precio de un producto (una vez)
     "karma_umbral_aviso": -5,  # desde acá la app avisa; sigue usando todo
     "karma_umbral_restriccion": -15,  # desde acá no puede cargar; sí consultar
     # Mensajes de error editados desde el panel: {codigo_de_regla: texto} (services/reglas.py).

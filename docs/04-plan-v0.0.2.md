@@ -1658,3 +1658,24 @@ compilación, URL del servidor, estado de `/v1/health` (con la demora, o el moti
 del celular por interfaz. Es la lista que se va puliendo según haga falta saber qué
 esperar de un APK; candidatos: modo de acceso del servidor, versión del backend, última
 sincronización.
+
+## 12. Corte 20: flujo de carga y «Recientes» (cierra el release 0.1.x)
+
+Diseño: `docs/superpowers/specs/2026-11-25-flujo-carga-recientes-design.md`. Rama `feat/flujo-carga-recientes`.
+Qué quedó y dónde: Doc 2, «Flujo de carga y “Recientes” (corte 20)».
+
+**Hecho:** volver a la ficha tras guardar un precio (sin pantalla de éxito), «Escanear otro»,
+«Recientes» guardados en el celular con precio de referencia a hasta `radio_referencia_km`, «Sé el
+primero en cargarlo» y bonus de karma `karma_primer_precio` (una vez por producto).
+
+**Config nueva** (`services/config.py` y `supabase/seed.sql`): `radio_referencia_km` (300),
+`karma_primer_precio` (5) y `recientes_max` (10: cuántos Recientes guarda y muestra la app).
+
+**Decisiones del que construyó (el diseño las dejaba libres):**
+- `referencia=true` en `precios/vigentes` además de subir el tope de `radio_m`: así la app no
+  hardcodea el radio ni lo lee de la config.
+- Recientes usa `shared_preferences` (dependencia nueva de la app); no es un dato sensible.
+- Se muestra el local más cercano, no el más barato: es una guía de dónde y a cuánto, no un ranking.
+
+**Probado:** backend (`tests/test_vigentes.py`, `tests/test_primer_precio.py`) contra Postgres real;
+app (`test/recientes_test.dart`, `test/widget_test.dart`: navegación, Recientes, referencia, sin red).

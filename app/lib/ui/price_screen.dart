@@ -9,7 +9,8 @@ import '../domain/precio.dart';
 import 'create_local_dialog.dart';
 import 'moderacion.dart';
 
-/// Carga el precio de un producto en el local. Al terminar muestra el karma resultante.
+/// Carga el precio de un producto en el local. Al guardar vuelve a la ficha del producto
+/// (`pop` con el [PrecioCargado]); la ficha avisa y se recarga. No hay pantalla de éxito.
 class PriceScreen extends StatefulWidget {
   const PriceScreen({super.key, required this.producto, required this.deps});
 
@@ -29,7 +30,6 @@ class _PriceScreenState extends State<PriceScreen> {
   String? _errorCampo;
   String? _errorEnvio;
   bool _enviando = false;
-  PrecioCargado? _resultado;
 
   /// Ubicación del usuario y locales a su alrededor (el más cercano, elegido).
   Future<void> _cargarContexto() async {
@@ -128,10 +128,7 @@ class _PriceScreenState extends State<PriceScreen> {
         ubicacion: ubicacion,
       );
       if (!mounted) return;
-      setState(() {
-        _resultado = resultado;
-        _enviando = false;
-      });
+      Navigator.of(context).pop(resultado);
     } on Object catch (e) {
       if (!mounted) return;
       setState(() {
@@ -161,20 +158,18 @@ class _PriceScreenState extends State<PriceScreen> {
       appBar: AppBar(title: const Text('Cargar precio')),
       body: Padding(
         padding: const EdgeInsets.all(24),
-        child: _resultado != null
-            ? _exito(context, _resultado!)
-            : FutureBuilder<void>(
-                future: _contexto,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) return _errorContexto(snapshot.error!);
-                  final local = _elegido;
-                  if (local == null) return _sinLocales();
-                  return _formulario(context, local);
-                },
-              ),
+        child: FutureBuilder<void>(
+          future: _contexto,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) return _errorContexto(snapshot.error!);
+            final local = _elegido;
+            if (local == null) return _sinLocales();
+            return _formulario(context, local);
+          },
+        ),
       ),
     );
   }
@@ -285,32 +280,6 @@ class _PriceScreenState extends State<PriceScreen> {
             onPressed: _crearLocal,
             icon: const Icon(Icons.add_location_alt),
             label: const Text('Crear local aquí'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _exito(BuildContext context, PrecioCargado resultado) {
-    final texto = Theme.of(context).textTheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.check_circle,
-            size: 72,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          const SizedBox(height: 16),
-          Text('¡Precio cargado!', style: texto.headlineSmall),
-          const SizedBox(height: 8),
-          Text('Tu karma ahora es ${resultado.karma}'),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(context).popUntil((ruta) => ruta.isFirst),
-            child: const Text('Listo'),
           ),
         ],
       ),

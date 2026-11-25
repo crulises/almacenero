@@ -206,6 +206,39 @@ email o a vincular un OAuth (el perfil sigue siendo el mismo `usuarios.id`). Dis
   (como `eventos`): el rastro sobrevive a un perfil borrado. Se ve en la ficha del usuario del panel
   (`alias_historial`).
 
+## Flujo de carga y «Recientes» (corte 20)
+
+Cierra el release 0.1.x. Diseño en `docs/superpowers/specs/2026-11-25-flujo-carga-recientes-design.md`;
+principios en `docs/10-roadmap.md` (la app es una guía, no un tracker financiero).
+
+- **Volver a la ficha tras cargar un precio:** `PriceScreen` ya no tiene pantalla de éxito; al guardar
+  hace `pop` con el `PrecioCargado` y la ficha (`ProductScreen`) avisa («Precio cargado · karma N») y
+  recarga lista, mapa e historial. El alta de producto (`SugerirScreen`) ya volvía a la ficha.
+- **«Escanear otro»** (botón de la barra de la ficha): abre el escáner y, si lee un código, **reemplaza**
+  la ficha (`pushReplacement`): un solo «atrás» lleva al inicio por más productos que se escaneen. El
+  inicio se entera de cualquier vuelta con un `RouteObserver` (`routeObserver` en `ui/recientes.dart`),
+  no con el `await` del `push`.
+- **«Recientes»** (`app/lib/data/recientes.dart`, `ui/recientes.dart`): hasta **`config.recientes_max`** (10 por defecto; la app lo lee de `/v1/config` y lo recuerda en el celular) consultas, en una lista con scroll propio y una tarjeta por producto, bajo el
+  campo de EAN, sin repetir EAN (reconsultar lo sube al tope). Se guardan **solo en el celular**
+  (`shared_preferences`, clave `recientes_v1`): EAN, instante y una **foto** (nombre, detalle y el
+  `PrecioVigente` visto: precio, local, distancia, fecha). Nunca falla ni demora: leer/escribir
+  atrapan todo y las escrituras van en fila; sin red se ve la foto, con red `RecientesService.refrescar`
+  la actualiza aparte (timeout 10 s, cada 5 min como mucho por entrada, sin mover su lugar).
+  Tocar uno abre la ficha sin anotar el evento `producto.escaneado` (no fue un escaneo).
+- **Qué precio se muestra:** el del local **más cercano** (no el más barato) dentro de
+  `config.radio_precios_m`. Si no hay, se pide `precios/vigentes?referencia=true` (radio
+  `config.radio_referencia_km`, **300** por defecto) y se muestra **marcado «Referencia» y con su
+  distancia** («a 120 km»), nunca como precio de la zona. Sin ubicación no hay distancia: también va como
+  referencia («sin ubicación»). Sin ningún precio: «Sin precios cargados · sé el primero en cargarlo».
+- **Backend `GET /v1/productos/{ean}/precios/vigentes`:** el tope de `radio_m` ya no es un `100_000`
+  fijo: es `max(radio_precios_m, radio_referencia_km × 1000)`; pasarse da 422. `referencia=true` pide
+  justo ese radio (la app no necesita conocer el número) y exige `lat`/`lng`.
+- **«Sé el primero en cargarlo»:** si el historial del producto está vacío (ningún local), el botón de
+  la ficha lo dice y va debajo del nombre. `POST /v1/precios` suma `config.karma_primer_precio` (**5**) al
+  primer precio de un producto, **una sola vez** (lock por producto dentro de la transacción) y
+  devuelve `primer_precio: true`; la app avisa «¡Fuiste el primero en cargarlo!». Repetir un precio
+  propio no suma ni bonus.
+
 ## Versionado de releases
 
 El esquema de versiones cambió: la 0.0.1 fue una compilación vieja y **ya no está vigente**; el próximo

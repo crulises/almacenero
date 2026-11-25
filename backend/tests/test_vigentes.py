@@ -174,3 +174,43 @@ def test_sin_ubicacion_trae_todos_y_sin_distancia(client, admin):
 def test_lat_sin_lng_es_invalido(client, admin):
     r = client.get(f"/v1/productos/{EAN}/precios/vigentes", params={"lat": -34}, headers=admin)
     assert r.status_code == 422
+
+
+# --- Corte 20: radio de referencia (Recientes) -------------------------------------------------
+
+
+def test_el_tope_del_radio_sale_de_config_no_de_un_numero_fijo(client, admin):
+    lat, lng = random.uniform(-60, -50), random.uniform(-40, -30)
+    lejos = _local_en(client, admin, lat + 1.0, lng)  # ~111 km: pasaba el viejo tope de 100 km
+    _precio(client, admin, lejos, "50")
+    url = f"/v1/productos/{EAN}/precios/vigentes"
+
+    r = client.get(url, params={"lat": lat, "lng": lng, "radio_m": 200_000}, headers=admin)
+    assert r.status_code == 200
+    assert lejos in [v["local_id"] for v in r.json()]  # 200 km <= radio_referencia_km (300)
+
+    r = client.get(url, params={"lat": lat, "lng": lng, "radio_m": 301_000}, headers=admin)
+    assert r.status_code == 422  # pasa el radio de referencia configurado
+
+
+def test_referencia_usa_el_radio_de_referencia_de_config(client, admin):
+    lat, lng = random.uniform(-60, -50), random.uniform(-40, -30)
+    lejos = _local_en(client, admin, lat + 1.0, lng)
+    _precio(client, admin, lejos, "50")
+    url = f"/v1/productos/{EAN}/precios/vigentes"
+
+    normal = client.get(url, params={"lat": lat, "lng": lng}, headers=admin).json()
+    ampliado = client.get(
+        url, params={"lat": lat, "lng": lng, "referencia": "true"}, headers=admin
+    ).json()
+
+    assert lejos not in [v["local_id"] for v in normal]
+    v = next(v for v in ampliado if v["local_id"] == lejos)
+    assert 100_000 < v["distancia_m"] < 125_000
+
+
+def test_referencia_sin_ubicacion_es_invalida(client, admin):
+    r = client.get(
+        f"/v1/productos/{EAN}/precios/vigentes", params={"referencia": "true"}, headers=admin
+    )
+    assert r.status_code == 422

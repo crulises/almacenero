@@ -4,14 +4,25 @@ import 'location_service.dart';
 
 /// Resultado de cargar un precio: su id y el karma ya actualizado del usuario.
 class PrecioCargado {
-  const PrecioCargado({required this.precioId, required this.karma});
+  const PrecioCargado({
+    required this.precioId,
+    required this.karma,
+    this.primerPrecio = false,
+    this.karmaSumado = 0,
+  });
 
   final String precioId;
   final int karma;
 
+  /// Fue el primer precio de ese producto en cualquier local (lleva bonus de karma).
+  final bool primerPrecio;
+  final int karmaSumado;
+
   factory PrecioCargado.fromJson(Map<String, dynamic> json) => PrecioCargado(
     precioId: json['precio_id'] as String,
     karma: json['karma'] as int,
+    primerPrecio: json['primer_precio'] as bool? ?? false,
+    karmaSumado: json['karma_sumado'] as int? ?? 0,
   );
 }
 
@@ -90,6 +101,21 @@ class PrecioVigente {
     vencido: json['vencido'] as bool? ?? false,
     distanciaM: (json['distancia_m'] as num?)?.toDouble(),
   );
+
+  /// Para guardarlo en el celular (Recientes): mismas claves que manda el backend.
+  Map<String, Object?> toJson() => {
+    'local_id': localId,
+    'local_nombre': localNombre,
+    'local_verificado': localVerificado,
+    'lat': lat,
+    'lng': lng,
+    'precio': precio,
+    'fecha': fecha.toUtc().toIso8601String(),
+    'edad_dias': edadDias,
+    'frescura': frescura,
+    'vencido': vencido,
+    'distancia_m': distanciaM,
+  };
 }
 
 /// Por qué falló la carga de un precio.
@@ -176,14 +202,17 @@ class PriceRepository {
 
   /// El último precio de cada local, del más barato al más caro. Con [ubicacion]
   /// el backend trae solo los locales dentro del radio configurado (`config`) y la
-  /// distancia a cada uno; sin ella, todos.
+  /// distancia a cada uno; sin ella, todos. Con [referencia] el radio es el ampliado de
+  /// `config.radio_referencia_km` (lo de ahí NO es un precio de la zona: marcarlo así).
   Future<List<PrecioVigente>> vigentes(
     String ean, {
     Ubicacion? ubicacion,
+    bool referencia = false,
   }) async {
     final consulta = ubicacion == null
         ? ''
-        : '?lat=${ubicacion.lat}&lng=${ubicacion.lng}';
+        : '?lat=${ubicacion.lat}&lng=${ubicacion.lng}'
+              '${referencia ? '&referencia=true' : ''}';
     return [
       for (final p in await _api.getList(
         '/productos/$ean/precios/vigentes$consulta',
