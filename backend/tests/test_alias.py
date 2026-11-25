@@ -150,6 +150,23 @@ def test_mismo_alias_no_cambia_nada_ni_gasta_cupo(client, moderador):
     assert len(ficha) == 2  # el alta y UN cambio
 
 
+def test_el_panel_valida_las_listas_de_alias(client, config_temporal):
+    h, _ = _nuevo(client, "admin")
+    config_temporal("alias_editable_por_rol", '["moderador", "admin"]')  # restaura al final
+    r = client.put("/v1/admin/config/alias_editable_por_rol", headers=h, json={"valor": ["jefe"]})
+    assert r.status_code == 422
+    r = client.put("/v1/admin/config/alias_editable_por_rol", headers=h, json={"valor": 3})
+    assert r.status_code == 422
+    r = client.put("/v1/admin/config/alias_bloqueados", headers=h, json={"valor": [1]})
+    assert r.status_code == 422
+    r = client.put(
+        "/v1/admin/config/alias_editable_por_rol",
+        headers=h,
+        json={"valor": ["usuario", "moderador", "admin"]},
+    )
+    assert r.status_code == 200
+
+
 # ------------------------------------------------------------------- tope
 
 

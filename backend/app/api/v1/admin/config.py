@@ -16,6 +16,8 @@ router = APIRouter(tags=["admin"])
 # Se editan desde su propia pantalla (`/admin/reglas`), no como un valor suelto.
 OCULTAS = {"mensajes_reglas"}
 
+ROLES = {"usuario", "moderador", "admin"}
+
 # Umbrales de moderación (docs/04 §9) → el otro de la pareja.
 UMBRALES_KARMA = {
     "karma_umbral_aviso": "karma_umbral_restriccion",
@@ -106,6 +108,12 @@ async def cambiar_config(
                 ) from None
         elif clave == "dashboard_activo_dias" and body.valor < 1:
             raise HTTPException(422, "tiene que ser al menos 1 día")
+        elif clave == "alias_editable_por_rol" and (
+            not all(isinstance(r, str) and r in ROLES for r in body.valor)
+        ):
+            raise HTTPException(422, "tiene que ser una lista de roles: usuario, moderador, admin")
+        elif clave == "alias_bloqueados" and not all(isinstance(x, str) for x in body.valor):
+            raise HTTPException(422, "tiene que ser una lista de textos")
         if clave in UMBRALES_KARMA:
             # Son negativos a propósito (karma <= umbral). La escalera tiene que bajar:
             # primero el aviso, después la restricción.
