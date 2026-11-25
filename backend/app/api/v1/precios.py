@@ -29,6 +29,7 @@ class PrecioCreado(BaseModel):
     precio_id: UUID
     karma: int  # karma del usuario ya actualizado
     karma_sumado: int  # 0 si repetía un precio ya cargado por el mismo usuario
+    primer_precio: bool = False  # fue el primer precio del producto en cualquier local (bonus)
 
 
 async def _exigir_cerca(
@@ -138,6 +139,13 @@ async def cargar_precio(
             int(await config.leer(conn, "ventana_frescura_dias")),
         )
 
+        # Bonus por ser el primero en cargar el producto: una sola vez. El lock por producto
+        # evita que dos cargas simultáneas cobren las dos el bonus.
+        await conn.execute("select pg_advisory_xact_lock(hashtextextended($1, 0))", body.ean)
+        primero = not await conn.fetchval(
+            "select exists (select 1 from precios where producto_canonico_id = $1)", producto_id
+        )
+
         precio_id = await conn.fetchval(
             """
             insert into precios (producto_canonico_id, local_id, precio, user_id)
@@ -149,5 +157,9 @@ async def cargar_precio(
             user.id,
         )
         sumado = 0 if repetido else karma_por_carga()
+        if primero:
+            sumado += int(await config.leer(conn, "karma_primer_precio"))
         karma = await sumar_karma(conn, user.id, sumado)
-    return PrecioCreado(precio_id=precio_id, karma=karma, karma_sumado=sumado)
+    return PrecioCreado(
+        precio_id=precio_id, karma=karma, karma_sumado=sumado, primer_precio=primero
+    )
