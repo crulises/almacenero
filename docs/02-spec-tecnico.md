@@ -152,10 +152,10 @@ Lo que el sistema exporta por su cuenta (eventos, corte 19c) se guarda en un alm
 porque el disco del backend desplegado es efímero. **Decidido el 2026-11-24:** producción usa un bucket de
 Supabase Storage (1 GB en el plan Free); mudarse a otro S3 = cambiar `EXPORT_S3_ENDPOINT`, `_BUCKET`,
 `_KEY` y `_SECRET`. En desarrollo y tests se usa el Storage local de Supabase (el que levanta `make up`;
-API S3 en `http://127.0.0.1:54321/storage/v1/s3`, claves en `supabase status`); MinIO queda como perfil
+API S3 en `http://127.0.0.1:54321/storage/v1/s3`, claves en `supabase status`); un S3 alternativo (SeaweedFS; MinIO ya no publica imágenes públicas) queda como perfil
 opcional del compose (`--profile s3-alt`) y en CI, para probar que no hay acople a Supabase. Cliente:
 `boto3` en un hilo. El disco (`ETL_EXPORT_DIR`) solo lo usa el worker local. Diseño en `docs/04` §11.4. **Implementado (corte 19c):** `etl/comun/almacen.py` (interfaz y las dos
-implementaciones), `make almacen-probar`, `make minio-up` (perfil `s3-alt` del compose) y el ETL
+implementaciones), `make almacen-probar`, `make s3-alt-up` (perfil `s3-alt` del compose) y el ETL
 `eventos_exportar` con borrado seguro (sube, relee, compara sha256 y recién ahí borra, por ids). Las
 programaciones (`etl_programaciones`, cron en UTC, ciclo con `pg_try_advisory_xact_lock`) encolan en la
 misma cola de ETL.

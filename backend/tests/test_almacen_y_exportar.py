@@ -1,8 +1,8 @@
 """Almacén de exportaciones y ETL `eventos_exportar` (docs/04 §11.4).
 
 El mismo conjunto de pruebas corre contra **tres almacenes**: disco, el Storage S3 local de Supabase
-(el de `make up`) y MinIO (`make minio-up`, perfil opcional). Los dos S3 se saltean con un aviso si
-no están disponibles, para que el resto no dependa de ellos. Postgres es el real."""
+(el de `make up`) y un S3 alternativo, SeaweedFS (`make s3-alt-up`, perfil opcional). Los dos S3
+se saltean con un aviso si no están disponibles, para que el resto no dependa de ellos. Postgres es el real."""
 
 import asyncio
 import io
@@ -30,7 +30,7 @@ BUCKET = "exportaciones-test"
 def _supabase_s3() -> dict | None:
     """Las claves del S3 local: de EXPORT_S3_* si están, o de `supabase status`."""
     env = {k: os.environ.get(f"EXPORT_S3_{k}") for k in ("ENDPOINT", "KEY", "SECRET", "REGION")}
-    if env["ENDPOINT"] and env["KEY"] and env["SECRET"] and "9000" not in env["ENDPOINT"]:
+    if env["ENDPOINT"] and env["KEY"] and env["SECRET"] and "8333" not in env["ENDPOINT"]:
         return {**env, "REGION": env["REGION"] or "local"}
     if not shutil.which("supabase"):
         return None
@@ -50,27 +50,27 @@ def _supabase_s3() -> dict | None:
         return None
 
 
-def _minio() -> dict | None:
+def _alternativo() -> dict | None:
     try:
-        socket.create_connection(("127.0.0.1", 9000), timeout=1).close()
+        socket.create_connection(("127.0.0.1", 8333), timeout=1).close()
     except OSError:
         return None
     return {
-        "ENDPOINT": "http://127.0.0.1:9000",
+        "ENDPOINT": "http://127.0.0.1:8333",
         "KEY": "almacenero",
         "SECRET": "almacenero-dev-secreto",
         "REGION": "us-east-1",
     }
 
 
-@pytest.fixture(params=["disco", "supabase", "minio"])
+@pytest.fixture(params=["disco", "supabase", "alternativo"])
 def almacen(request, tmp_path):
     if request.param == "disco":
         yield alm.AlmacenDisco(tmp_path / "exports")
         return
-    cfg = _supabase_s3() if request.param == "supabase" else _minio()
+    cfg = _supabase_s3() if request.param == "supabase" else _alternativo()
     if cfg is None:
-        pytest.skip(f"{request.param}: no disponible (make up / make minio-up)")
+        pytest.skip(f"{request.param}: no disponible (make up / make s3-alt-up)")
     a = alm.AlmacenS3(cfg["ENDPOINT"], BUCKET, cfg["KEY"], cfg["SECRET"], cfg["REGION"])
     a.asegurar()
     yield a

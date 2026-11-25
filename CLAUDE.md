@@ -119,8 +119,8 @@ descripción (al agregar un target, ponele su `## descripción` en la misma lín
   en `ETL_EXPORT_DIR`.
 - `make locales-exportar [TODOS=1]` / `make locales-importar ARCHIVO=... [APLICAR=1]` — llevan los
   locales verificados de una instalación a otra (Doc 9 §8).
-- `make almacen-probar` / `make minio-up` / `make minio-down` — prueba el almacén de exportaciones (S3 o
-  disco; Doc 4 §11.4) / levanta o baja MinIO, un S3 opcional para probar portabilidad.
+- `make almacen-probar` / `make s3-alt-up` / `make s3-alt-down` — prueba el almacén de exportaciones (S3 o
+  disco; Doc 4 §11.4) / levanta o baja SeaweedFS, un S3 opcional para probar portabilidad.
 - `make etl-worker` — worker local: toma de la cola (DATABASE_URL) los ETL pesados que se lanzan desde el
   panel web (sección ETL; Doc 4 §10-A).
 - `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel

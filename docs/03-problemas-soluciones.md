@@ -1034,15 +1034,16 @@ Decisiones en `docs/04` §9.
   `EXPORT_S3_*` de `.env` y corré `make up`. El almacén es lo único que decide si se borra: **si no pasa la
   prueba, `eventos_exportar` no borra nada** (diseño en `docs/04` §11.4).
 
-### MinIO no levanta o los tests de MinIO se «saltean»
+### El S3 alternativo no levanta o sus tests se «saltean»
 
-- **Síntoma:** `pytest -rs` muestra `minio: no disponible`.
-- **Causa:** MinIO es **opcional** (perfil `s3-alt` del compose): no arranca con `make up`. Los tests lo usan
-  si responde en `127.0.0.1:9000`.
-- **Solución:** `make minio-up` (la primera vez baja la imagen). Para usarlo como almacén de verdad, poné en
-  `.env` `EXPORT_S3_ENDPOINT=http://127.0.0.1:9000`, `EXPORT_S3_BUCKET=exportaciones`,
+- **Síntoma:** `pytest -rs` muestra `alternativo: no disponible`.
+- **Causa:** el S3 alternativo (SeaweedFS) es **opcional** (perfil `s3-alt` del compose): no arranca con `make up`. Los tests lo usan
+  si responde en `127.0.0.1:8333`.
+- **Solución:** `make s3-alt-up` (la primera vez baja la imagen y el S3 tarda ~30 s en responder en :8333). Para usarlo como almacén de verdad, poné en
+  `.env` `EXPORT_S3_ENDPOINT=http://127.0.0.1:8333`, `EXPORT_S3_BUCKET=exportaciones`,
   `EXPORT_S3_KEY=almacenero`, `EXPORT_S3_SECRET=almacenero-dev-secreto` y corré `make almacen-probar`. La
-  consola web está en http://localhost:9001. `make minio-down` lo baja (los datos quedan en el volumen).
+  No tiene consola web (cualquier clave sirve). MinIO no se usa porque ya no publica imágenes públicas
+  (Docker Hub y quay.io dan «access denied»). `make s3-alt-down` lo baja (los datos quedan en el volumen).
 
 ### El mapa del dashboard sale gris o dice «No se pudo cargar el mapa»
 

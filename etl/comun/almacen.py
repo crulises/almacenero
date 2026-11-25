@@ -1,7 +1,7 @@
 """Almacén de exportaciones (docs/04 §11.4): dónde queda un archivo que el sistema exporta solo.
 
 Una interfaz mínima —guardar, leer, listar, borrar— con dos implementaciones: **S3** (cualquier
-almacenamiento S3-compatible: el Storage de Supabase, MinIO, R2...) y **disco** (el worker local y
+almacenamiento S3-compatible: el Storage de Supabase, SeaweedFS, MinIO, R2...) y **disco** (el worker local y
 los tests). Mudarse de un S3 a otro es cambiar variables de entorno, no código:
 
     EXPORT_S3_ENDPOINT   URL de la API S3 (p. ej. http://127.0.0.1:54321/storage/v1/s3)
@@ -114,12 +114,12 @@ class AlmacenS3:
             aws_access_key_id=key,
             aws_secret_access_key=secret,
             region_name=region,
-            # path-style: funciona igual con Supabase, MinIO y la mayoría de los S3-compatibles
+            # path-style: funciona igual con Supabase, SeaweedFS y la mayoría de los S3-compatibles
             config=Config(s3={"addressing_style": "path"}, retries={"max_attempts": 3}),
         )
 
     def asegurar(self) -> None:
-        """Crea el bucket si no existe (en local y en MinIO). Si el servicio no deja crearlo,
+        """Crea el bucket si no existe (en local y en el S3 alternativo). Si el servicio no deja crearlo,
         el bucket se crea a mano y esto solo verifica que se pueda leer."""
         from botocore.exceptions import ClientError
 

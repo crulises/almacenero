@@ -14,7 +14,7 @@ services:
     environment:
       # Desde el contenedor, el Postgres del CLI está en el host.
       DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:54322/postgres
-      # Almacén de exportaciones: el Storage de Supabase (o MinIO) también está en el host.
+      # Almacén de exportaciones: el Storage de Supabase (o el S3 alternativo) también está en el host.
       EXPORT_S3_ENDPOINT: ${EXPORT_S3_ENDPOINT_DOCKER:-${EXPORT_S3_ENDPOINT:-}}
       AUTH_URL: http://host.docker.internal:54321/auth/v1
       JWKS_URL: http://host.docker.internal:54321/auth/v1/.well-known/jwks.json
@@ -31,21 +31,18 @@ services:
     ports:
       - "8080:80"
 
-  # MinIO: un S3 alternativo, OPCIONAL (perfil `s3-alt`: `make minio-up`). Sirve para probar que el
-  # almacén de exportaciones no está atado a Supabase (docs/04 §11.4). No arranca con `make up`.
-  # Consola en http://localhost:9001; API S3 en http://localhost:9000.
-  minio:
+  # S3 alternativo, OPCIONAL (perfil `s3-alt`: `make s3-alt-up`): SeaweedFS, un almacenamiento
+  # S3-compatible libre. Sirve para probar que el almacén de exportaciones no está atado a Supabase
+  # (docs/04 §11.4). No arranca con `make up`. API S3 en http://localhost:8333. (Se eligió SeaweedFS
+  # porque MinIO dejó de publicar imágenes públicas; es solo para desarrollo y pruebas.)
+  s3-alt:
     profiles: ["s3-alt"]
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: almacenero
-      MINIO_ROOT_PASSWORD: almacenero-dev-secreto
+    image: chrislusf/seaweedfs:3.85
+    command: server -s3 -dir=/data -ip.bind=0.0.0.0
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "8333:8333"
     volumes:
-      - minio-datos:/data
+      - s3-alt-datos:/data
 
 volumes:
-  minio-datos:
+  s3-alt-datos:

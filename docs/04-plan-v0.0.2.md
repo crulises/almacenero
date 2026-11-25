@@ -1351,7 +1351,7 @@ Objetivo: que la tabla no crezca sin límite **y** que no dependa de una persona
     almacén: sube el archivo, lo **vuelve a leer**, compara tamaño y sha256 y **recién ahí** borra las
     filas. Se agrega `make almacen-probar` (y un botón en el panel) que hace esa ida y vuelta con un
     archivo de prueba: se corre al configurar un almacén nuevo y antes de activar la programación. Si
-    falla, los eventos no se tocan. Tests: con un servidor S3 local (MinIO en el `docker compose` de
+    falla, los eventos no se tocan. Tests: con un servidor S3 local (un S3 alternativo en el `docker compose` de
     desarrollo) y con la implementación de disco, el mismo conjunto de pruebas.
 - **Programación:** no hay un planificador en el proyecto. Se agrega una tabla genérica
   `etl_programaciones` (ETL, parámetros, expresión cron **interpretada en UTC**, activa, última y
@@ -1446,8 +1446,9 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
   - **Almacén de exportaciones (19c):** S3-compatible. Producción: bucket de Supabase Storage (1 GB en
     el plan Free); mudarse = cambiar `EXPORT_S3_*`. Desarrollo y tests: el **Storage local de Supabase**
     (ya corre con `make up`, API S3 en `:54321/storage/v1/s3`, claves en `supabase status`). **MinIO**
-    queda como perfil opcional del compose (`--profile s3-alt`) y servicio de CI, para probar que no
-    dependemos de Supabase. El disco (`ETL_EXPORT_DIR`) queda para el worker local y los tests.
+    se propuso como perfil opcional del compose (`--profile s3-alt`) y servicio de CI, para probar que no
+    dependemos de Supabase; al implementarlo (19c) resultó que ya no publica imágenes públicas y se usó
+    **SeaweedFS** en su lugar (ver «Hecho en 19c»). El disco (`ETL_EXPORT_DIR`) queda para el worker local y los tests.
   - **Cliente S3:** `boto3` en un hilo (`asyncio.to_thread`, como el ETL), no `aioboto3`: más simple y
     estable para un volumen chico.
   - **Programaciones (cron) en la sección ETL**; los números sueltos (`eventos_max_filas`,
@@ -1487,15 +1488,18 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
   El panel la dibuja con Leaflet 1.9.4 (cdnjs, versión fija) sobre tiles de OpenStreetMap, en verde por
   nivel. Sin internet no hay mapa (los datos igual llegan).
 - **Almacén** (`etl/comun/almacen.py`): interfaz mínima (`asegurar`, `guardar`, `leer`, `listar`,
-  `borrar`) con **S3** (`boto3`, path-style, sirve para Supabase Storage, MinIO, R2…) y **disco**. Se elige
+  `borrar`) con **S3** (`boto3`, path-style, sirve para Supabase Storage, SeaweedFS, MinIO, R2…) y **disco**. Se elige
   por entorno: `EXPORT_S3_ENDPOINT/_BUCKET/_KEY/_SECRET/_REGION`; sin endpoint, `ETL_EXPORT_DIR`.
   `verificar` sube, **relee** y compara tamaño y sha256; `probar` hace esa ida y vuelta con un archivo de
   prueba y lo borra: `make almacen-probar` y el botón «Probar almacén» (`POST /v1/admin/almacen/probar`,
   502 `almacen_fallo` con explicación si falla). `make up` completa las `EXPORT_S3_*` con el Storage S3
   local de Supabase (se comprobó que `boto3` funciona contra él, incluso creando el bucket).
-- **MinIO** opcional en el compose (perfil `s3-alt`, `make minio-up` / `minio-down`; consola en `:9001`,
-  usuario `almacenero`). No arranca con `make up`. Los tests corren el mismo conjunto contra **disco,
-  Storage local y MinIO** (los S3 se saltean con aviso si no responden); CI levanta MinIO antes de los tests.
+- **S3 alternativo** opcional en el compose (perfil `s3-alt`, `make s3-alt-up` / `s3-alt-down`; API en
+  `:8333`, sin consola, cualquier clave sirve). **No es MinIO:** MinIO dejó de publicar imágenes públicas
+  (Docker Hub y quay.io dan «access denied», comprobado el 2026-11-24), así que se usa **SeaweedFS**
+  (`chrislusf/seaweedfs`, versión fija). No arranca con `make up`. Los tests corren el mismo conjunto contra
+  **disco, Storage local y el S3 alternativo** (los S3 se saltean con aviso si no responden); CI levanta el
+  alternativo antes de los tests.
 - **ETL `eventos_exportar`** (ejecutor `web`; parámetros `tipo`, `hasta` —fin de ese día UTC— y `borrar`):
   lee los eventos, **fija sus ids**, arma `.zip` (`eventos.csv` + `LEEME.txt`, deterministas) partidos cada
   `config.eventos_export_filas_por_archivo` (500 000), sube y **relee** cada parte y, con **todas**
@@ -1558,7 +1562,7 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
 
 13. **Dashboard (corte 19): invitaciones con serie** (tabla `invitaciones_usos`), **productos estrella
     con ambas vías y filtro**, **almacén de exportaciones S3-compatible** (Supabase Storage en
-    producción y en desarrollo local; MinIO opcional para probar portabilidad), **`boto3` en un hilo**,
+    producción y en desarrollo local; S3 alternativo opcional —SeaweedFS— para probar portabilidad), **`boto3` en un hilo**,
     **programaciones en la sección ETL** y números sueltos en Configuración. Detalle en §11
     («Hecho en 19a»).
 

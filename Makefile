@@ -1,4 +1,4 @@
-.PHONY: almacen-probar minio-up minio-down help backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar locales-exportar locales-importar etl-worker
+.PHONY: almacen-probar s3-alt-up s3-alt-down help backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar locales-exportar locales-importar etl-worker
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -254,14 +254,14 @@ almacen-probar: $(PY) ## Ida y vuelta con el almacén configurado (EXPORT_S3_* o
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m etl.almacen_probar
 
-minio-up: ## Levanta MinIO (S3 alternativo, opcional) en :9000/:9001 para probar que el almacén no depende de Supabase
-	docker compose --profile s3-alt up -d minio
-	@echo "MinIO: API http://localhost:9000, consola http://localhost:9001 (usuario almacenero / almacenero-dev-secreto)."
-	@echo "Para usarlo: poné en .env EXPORT_S3_ENDPOINT=http://127.0.0.1:9000, EXPORT_S3_BUCKET=exportaciones,"
+s3-alt-up: ## Levanta un S3 alternativo opcional (SeaweedFS) en :8333 para probar que el almacén no depende de Supabase
+	docker compose --profile s3-alt up -d s3-alt
+	@echo "S3 alternativo: http://localhost:8333 (cualquier clave sirve; sin consola)."
+	@echo "Para usarlo: poné en .env EXPORT_S3_ENDPOINT=http://127.0.0.1:8333, EXPORT_S3_BUCKET=exportaciones,"
 	@echo "EXPORT_S3_KEY=almacenero y EXPORT_S3_SECRET=almacenero-dev-secreto; después: make almacen-probar"
 
-minio-down: ## Baja MinIO (los datos quedan en el volumen minio-datos)
-	docker compose --profile s3-alt stop minio
+s3-alt-down: ## Baja el S3 alternativo (los datos quedan en el volumen s3-alt-datos)
+	docker compose --profile s3-alt stop s3-alt
 
 # --- app en un celular -----------------------------------------------------
 # API_TIMEOUT_S=40 make apk -> espera 40 s por intento (default de la app: 20 s).
