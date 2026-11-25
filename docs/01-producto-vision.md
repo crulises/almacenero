@@ -129,14 +129,17 @@ kilo/litro y comparar productos de distinto tamaño.
 
 ## Fuera de alcance (futuro)
 
+Cuándo llega cada cosa: `docs/10-roadmap.md` (un plan por release, `docs/04-plan-v0.2.md` en adelante).
+OAuth (Google y Apple ID) y los productos pesables/genéricos también están en esa lista.
+
 - Validación colaborativa completa y gamificación con recompensas.
 - Modo offline y sync.
 - Opiniones / calidad de producto (subjetivo).
 - Apertura del alta de locales y del registro de usuarios.
 - Panel web de admin (ver y corregir todo, validar locales del ETL, listar usuarios
-  anónimos y registrados): requisitos en `docs/04-plan-v0.0.2.md` (§8).
+  anónimos y registrados): requisitos en `docs/04-plan-v0.1.md` (§8).
 - iOS.
 - Orden por reputación del local y lista de **locales patrocinados** (un local
   paga para que su producto aparezca primero, siempre marcado «Patrocinado» y
   separado del ranking; nunca altera el mapa ni el «Más barato»). Propuesta
-  técnica y UI de admin en `docs/04-plan-v0.0.2.md` (§5).
+  técnica y UI de admin en `docs/04-plan-v0.1.md` (§5).

@@ -26,40 +26,26 @@ se detallan en su plan (`docs/04`) y en los diseños de `docs/superpowers/specs/
 
 ## Releases
 
-| Release | Qué trae | Estado |
-|---|---|---|
-| **0.1.x** | Todo lo de v0.0.2 ya mergeado (roles, geofence, ETL, precios vigentes y mapa, anti-spam, panel de admin, moderación, catálogo normalizado, CSV curado, ETL desde el panel, dashboard 19a/19b/19c) **más el corte 20**: volver a la ficha tras cargar, «Escanear otro», Recientes y «Sé el primero» | corte 20 implementado (PR abierto), a probar en el celular; con eso **se cierra** el 0.1.x; se prueba solo, en local |
-| **0.2.x** | «Precios por refrescar» (cola priorizada por consultas, karma ponderado por frescura), validación colaborativa, línea «ahorrás X% yendo a Y» en la ficha | planificado |
-| **0.3.x** | Perfil (karma, historial propio, gamificación) y **lista de compras** en un tab propio | planificado |
-| **0.4.x** | Seguir productos y notificaciones (pocas, con tope) | planificado |
-| **Sin versión asignada** | Deploy a Fly y Cloudflare (corte 10, PR #19, pausado), proveedor de tiles propio, apertura de registros y alta de locales, patrocinio, iOS, offline y sync | hitos aparte |
+Cada release tiene su plan, con la misma estructura que `docs/04-plan-v0.1.md`.
 
-El **deploy no está atado a una versión de la app**: el dueño prefiere probar mucho en local antes de
-abrirlo. El `applicationId` `dev.crulises.almacenero`, Fly y Cloudflare siguen decididos.
+| Release | Plan | Qué trae | Estado |
+|---|---|---|---|
+| **0.1.x** | `docs/04-plan-v0.1.md` | Roles y alta de local, geofence, ETL, precios vigentes y mapa, anti-spam, panel de admin, moderación, catálogo normalizado, CSV curado, ETL desde el panel, dashboard (19a/19b/19c) y el **corte 20** (volver a la ficha, «Escanear otro», Recientes, «Sé el primero») | **cerrado** (2026-11-25) |
+| **0.2.x** | `docs/04-plan-v0.2.md` | Cuentas ligables (email y Google), precios por refrescar, validación colaborativa, línea de ahorro en la ficha | próximo; se define al arrancar |
+| **0.3.x** | `docs/04-plan-v0.3.md` | Perfil, lista de compras, gamificación con recompensas, precio relativo al promedio | planificado |
+| **0.4.x** | `docs/04-plan-v0.4.md` | Seguir productos y notificaciones (pocas, con tope) | planificado |
+| **0.5.x** | `docs/04-plan-v0.5.md` | Modo offline y sync, productos pesables y genéricos | planificado |
+| **0.6.x** | `docs/04-plan-v0.6.md` | Apertura al público: deploy (Fly + Cloudflare), tiles propios, registro y alta de locales abiertos, patrocinio y orden por reputación, iOS con Apple ID, política de privacidad | planificado |
+| **Sin fecha** | — | Opiniones y calidad de producto | sin diseño |
 
-## Detalle por release
+El **deploy no está atado a una versión de la app** y puede adelantarse si el dueño quiere probar en
+serio sin abrir los registros. El `applicationId` `dev.crulises.almacenero`, Fly y Cloudflare siguen
+decididos. Lo que hace segura la apertura (identidad recuperable, validación, anti-spam, tiles propios)
+va **antes** de ella.
 
-### 0.1.x — cierre con el corte 20
-Ver `docs/superpowers/specs/2026-11-25-flujo-carga-recientes-design.md`. Nada más entra en el 0.1.x
-salvo que el dueño lo pida mientras prueba.
-
-### 0.2.x — confianza y frescura
-- **Precios por refrescar:** lista de productos del local donde estás con precio de más de N días,
-  priorizada por lo que más se consulta (`eventos` del corte 19b). Refrescar da más karma que
-  recargar algo fresco.
-- **Validación colaborativa y cola** (hoy fuera de alcance en el Doc 1).
-- **Línea de ahorro en la ficha:** «ahorrás 12% yendo a X», solo con mínimos de datos, frescura y
-  descontando la distancia (3 km para ahorrar unos pesos no es negocio). No acumula nada.
-
-### 0.3.x — perfil y listas
-- Perfil con karma, historial propio y lo que haga falta de gamificación.
-- Lista de compras en un tab propio y qué local conviene para toda la lista, con los mismos mínimos
-  de datos y frescura. Puede mostrar el ahorro **de la lista contra comprar todo en un solo local**
-  (se calcula solo con precios); no hay ahorro acumulado.
-
-### 0.4.x — seguir productos
-- Seguir un producto y avisar cuando baja. Pide notificaciones (push), por eso va después y con tope
-  para no hacer spam.
+## Detalle
+El detalle de cada release (alcance, decisiones abiertas) vive en su plan `04-plan-v0.X.md`. Esta página
+solo fija el orden y los principios.
 
 ## Ideas anotadas, sin lugar todavía
 - «Precio relativo al promedio» por zona (Doc 4, §11.6).
