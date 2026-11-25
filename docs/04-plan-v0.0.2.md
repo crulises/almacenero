@@ -1210,7 +1210,7 @@ todos modos), así que 17 y 18 pueden ir después del primer reparto sin bloquea
 ## 11. Dashboard de admin como landing (corte 19, planificado)
 
 Estado: diseñado el 2026-11-24 (pedido del dueño). Va en tres partes, cada una en su rama y PR:
-**19b hecho** (rama `feat/eventos-app`, ver «Hecho en 19b» al final de §11.7); **19a hecho** (rama `feat/dashboard-19a`, ver «Hecho en 19a»); 19c pendiente. El
+**19b hecho** (rama `feat/eventos-app`, ver «Hecho en 19b» al final de §11.7); **19a hecho** (rama `feat/dashboard-19a`, ver «Hecho en 19a»); **19c hecho** (rama `feat/dashboard-19c`, ver «Hecho en 19c»). El
 dueño eligió este orden: 19b primero, probarlo en local/offline, y después 19a y 19c.
 
 > **Versionado:** el esquema de versiones de release cambió. Lo que este plan llama «v0.0.1» y
@@ -1476,6 +1476,50 @@ Cada parte: tests contra Postgres real, `make lint` y `make test` en verde, docs
 - `make help` lista cada target con su descripción (lee los `## ...` del Makefile).
 - Qué no se probó: el panel en un navegador real contra el contenedor (se probó contra un backend
   local de la rama en otro puerto); el mapa y la exportación son del 19c.
+
+**Hecho en 19c** (2026-11-24):
+
+- **Mapa de zonas:** `GET /v1/admin/dashboard/zonas` devuelve un GeoJSON (`FeatureCollection` de
+  polígonos) con una celda por zona con al menos `config.dashboard_celda_min_precios` (5) precios en el
+  período; cada celda lleva `precios`, `locales` y `nivel` (1 a 5, por quintiles). La grilla se arma con
+  `ST_SnapToGrid` en grados, de `config.dashboard_celda_m` (1000) metros, con el ancho corregido por la
+  latitud media de los locales con precios (a -35° la celda sería ~20 % más angosta que alta si no).
+  El panel la dibuja con Leaflet 1.9.4 (cdnjs, versión fija) sobre tiles de OpenStreetMap, en verde por
+  nivel. Sin internet no hay mapa (los datos igual llegan).
+- **Almacén** (`etl/comun/almacen.py`): interfaz mínima (`asegurar`, `guardar`, `leer`, `listar`,
+  `borrar`) con **S3** (`boto3`, path-style, sirve para Supabase Storage, MinIO, R2…) y **disco**. Se elige
+  por entorno: `EXPORT_S3_ENDPOINT/_BUCKET/_KEY/_SECRET/_REGION`; sin endpoint, `ETL_EXPORT_DIR`.
+  `verificar` sube, **relee** y compara tamaño y sha256; `probar` hace esa ida y vuelta con un archivo de
+  prueba y lo borra: `make almacen-probar` y el botón «Probar almacén» (`POST /v1/admin/almacen/probar`,
+  502 `almacen_fallo` con explicación si falla). `make up` completa las `EXPORT_S3_*` con el Storage S3
+  local de Supabase (se comprobó que `boto3` funciona contra él, incluso creando el bucket).
+- **MinIO** opcional en el compose (perfil `s3-alt`, `make minio-up` / `minio-down`; consola en `:9001`,
+  usuario `almacenero`). No arranca con `make up`. Los tests corren el mismo conjunto contra **disco,
+  Storage local y MinIO** (los S3 se saltean con aviso si no responden); CI levanta MinIO antes de los tests.
+- **ETL `eventos_exportar`** (ejecutor `web`; parámetros `tipo`, `hasta` —fin de ese día UTC— y `borrar`):
+  lee los eventos, **fija sus ids**, arma `.zip` (`eventos.csv` + `LEEME.txt`, deterministas) partidos cada
+  `config.eventos_export_filas_por_archivo` (500 000), sube y **relee** cada parte y, con **todas**
+  verificadas, anota `eventos_exportaciones` y borra **solo esos ids** en una transacción. Se borra por
+  ids y no por «`id <= N`» porque un evento confirmado tarde con un id menor se perdería (hay un test).
+  Si algo falla antes, no se borra nada. `GET /v1/admin/eventos/exportaciones` lista y
+  `.../{id}/descargar` baja el archivo desde el almacén (queda auditado).
+- **Programaciones:** tabla `etl_programaciones` (cron en **UTC**, `services/cron.py`: 5 campos, `*`,
+  listas, rangos, pasos; sin nombres ni atajos), CRUD en `/v1/admin/etl/programaciones` (capacidad nueva
+  `etl.programar`; los ETL que piden un archivo no se pueden programar) y un ciclo del backend cada 30 s
+  (`services/programaciones.py`) que encola en la misma cola `etl_ejecuciones` con
+  `pg_try_advisory_xact_lock` (con varias réplicas corre una sola). No apila: si la anterior sigue en cola o
+  corriendo, se salta. **Umbral:** con «al superar el tope», una programación activa de `eventos_exportar`
+  encola cuando `eventos` pasa de `eventos_max_filas` (como mucho una vez por hora). Lo que encola el
+  sistema queda con `creado_por` nulo y en la auditoría como `programacion.ejecutar`.
+- **Panel:** sección ETL con «Almacén de exportaciones» (probar + lista de exportaciones con descarga) y
+  «Programaciones» (la hora se muestra en la zona del panel, se guarda UTC); el dashboard muestra un banner
+  con «Exportar ahora» cuando se pasa el tope de eventos (el `resumen` trae `eventos`) y el mapa de zonas.
+- Config nueva: `dashboard_celda_m`, `dashboard_celda_min_precios`, `eventos_export_filas_por_archivo`.
+- Los tests apagan el ciclo (`PROGRAMACIONES_ACTIVO=false` en `conftest.py`) y llaman a `vuelta` a mano.
+- Qué no se probó: el panel contra los contenedores de `make up` (se probó contra un backend local de la
+  rama, incluido un export real por el ejecutor web al Storage S3 local); Supabase Storage de **producción**
+  y su tope de 50 MB por archivo (la partición lo respeta por filas, no por bytes: a ~200 bytes por evento,
+  500 000 filas son ~100 MB de CSV y ~10–25 MB comprimidos; si hiciera falta, bajar el valor).
 
 ## Decisiones
 

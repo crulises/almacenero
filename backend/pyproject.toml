@@ -10,6 +10,8 @@ dependencies = [
     "pydantic-settings>=2.3",
     "PyJWT[crypto]>=2.8",
     "httpx>=0.27",
+    # Almacén de exportaciones S3-compatible (etl/comun/almacen.py), usado desde un hilo.
+    "boto3>=1.35",
 ]
 
 [project.optional-dependencies]

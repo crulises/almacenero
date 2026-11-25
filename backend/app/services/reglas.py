@@ -165,6 +165,38 @@ REGLAS: dict[str, Regla] = {
             "hora).",
         ),
         Regla(
+            "cron_invalido",
+            "Expresión cron válida",
+            "La programación no es una expresión cron válida de 5 campos (minuto hora día mes "
+            "día-de-la-semana), en hora UTC.",
+            "Ejemplo: «0 6 * * *» es todos los días a las 06:00 UTC (03:00 en Buenos Aires). "
+            "Se aceptan *, listas (1,15), rangos (1-5) y pasos (*/15).",
+        ),
+        Regla(
+            "almacen_fallo",
+            "Almacén de exportaciones",
+            "El almacén de exportaciones no respondió bien: no se pudo guardar, releer o comparar "
+            "el archivo de prueba.",
+            "Revisá las variables EXPORT_S3_* (o ETL_EXPORT_DIR) y que el servicio esté arriba; "
+            "corré «make almacen-probar» para ver el detalle. Mientras falle, los eventos no se "
+            "tocan.",
+            502,
+        ),
+        Regla(
+            "exportacion_inexistente",
+            "Exportación inexistente",
+            "Esa exportación no existe o su archivo ya no está en el almacén.",
+            "Recargá la lista; si el archivo se borró del almacén a mano, queda solo el registro.",
+            404,
+        ),
+        Regla(
+            "programacion_inexistente",
+            "Programación inexistente",
+            "Esa programación no existe.",
+            "Recargá la lista de programaciones.",
+            404,
+        ),
+        Regla(
             "error_interno",
             "Error interno",
             "Algo falló del lado del servidor y no pudimos completar la acción.",

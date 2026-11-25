@@ -1017,3 +1017,47 @@ Decisiones en `docs/04` §9.
   `docker inspect almacenero-backend-1 --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'`
   tiene que dar la carpeta del worktree. Para ver si el backend tiene una ruta:
   `curl -s localhost:8000/openapi.json | grep eventos`.
+
+## Dashboard: almacén de exportaciones, mapa y programaciones (corte 19c)
+
+### `make almacen-probar` falla o «no pude leer el S3 local»
+
+- **Síntoma:** `FALLÓ: ...` al probar el almacén, o el export de eventos termina en `fallo` y los eventos
+  siguen en la base.
+- **Causa posible:** (1) faltan las variables `EXPORT_S3_*` en `.env` (sin ellas se usa el disco, que no
+  sirve si el backend corre en Fly); `make up` las completa solo con el S3 del Storage local
+  (`supabase status`: `STORAGE_S3_URL` y las claves S3), pero si `.env` ya tenía `EXPORT_S3_ENDPOINT` no las
+  toca. (2) Desde el contenedor del backend, `127.0.0.1` es el propio contenedor: por eso el compose usa
+  `EXPORT_S3_ENDPOINT_DOCKER` (`host.docker.internal`). (3) Las claves S3 del Supabase local **cambian si se
+  recrea el stack** (`supabase stop --no-backup`): hay que volver a copiarlas.
+- **Solución:** `make almacen-probar` muestra el detalle. Para regenerar las variables, borrá las líneas
+  `EXPORT_S3_*` de `.env` y corré `make up`. El almacén es lo único que decide si se borra: **si no pasa la
+  prueba, `eventos_exportar` no borra nada** (diseño en `docs/04` §11.4).
+
+### MinIO no levanta o los tests de MinIO se «saltean»
+
+- **Síntoma:** `pytest -rs` muestra `minio: no disponible`.
+- **Causa:** MinIO es **opcional** (perfil `s3-alt` del compose): no arranca con `make up`. Los tests lo usan
+  si responde en `127.0.0.1:9000`.
+- **Solución:** `make minio-up` (la primera vez baja la imagen). Para usarlo como almacén de verdad, poné en
+  `.env` `EXPORT_S3_ENDPOINT=http://127.0.0.1:9000`, `EXPORT_S3_BUCKET=exportaciones`,
+  `EXPORT_S3_KEY=almacenero`, `EXPORT_S3_SECRET=almacenero-dev-secreto` y corré `make almacen-probar`. La
+  consola web está en http://localhost:9001. `make minio-down` lo baja (los datos quedan en el volumen).
+
+### El mapa del dashboard sale gris o dice «No se pudo cargar el mapa»
+
+- **Síntoma:** el cuadro del mapa vacío.
+- **Causa:** Leaflet y los tiles de OpenStreetMap vienen de internet (CDN); sin conexión no hay mapa. Los
+  datos de las celdas sí llegan (`GET /v1/admin/dashboard/zonas`).
+- **Solución:** conexión a internet. Si el mapa abre pero no hay celdas: ninguna zona llegó a
+  `dashboard_celda_min_precios` precios en el período (se oculta a propósito para no señalar un comercio
+  suelto); bajá ese valor en Configuración para probar.
+
+### Un `<select>` armado con `x-for` muestra la primera opción en vez del valor del modelo
+
+- **Síntoma:** en el panel (Alpine), un `<select x-model>` cuyas `<option>` salen de un `x-for` arranca en
+  la primera opción aunque el estado diga otra (pasó con la granularidad del dashboard y con el ETL de la
+  programación).
+- **Causa:** el valor del modelo se asigna antes de que existan las opciones.
+- **Solución:** para listas fijas, escribir las `<option>` a mano; para listas que llegan de la API, asignar
+  el valor después de `await this.$nextTick()`.

@@ -30,7 +30,7 @@ def a_json(valor: Any) -> str | None:
 
 async def registrar(
     conn: asyncpg.Connection,
-    admin_id: UUID,
+    admin_id: UUID | None,  # None: lo hizo el sistema (p. ej. una programación)
     accion: str,
     entidad: str,
     entidad_id: Any,

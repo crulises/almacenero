@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="style.css">
   <script src="config.js"></script>
   <script src="app.js"></script>
+  <!-- Mapa del dashboard: Leaflet con versión fija; tiles de OpenStreetMap (docs/04 §11.5). -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
 </head>
 <body x-data="panel()" x-init="init()" x-cloak>
@@ -66,6 +69,15 @@
           <span class="suave">Zona: <span class="mono" x-text="dash.zona"></span> (se cambia en Configuración: <span class="mono">panel_zona_horaria</span>)</span>
         </div>
 
+        <template x-if="dash.resumen && dash.resumen.eventos.superado">
+          <div class="caja aviso-caja">
+            <b>Hay <span x-text="dash.resumen.eventos.total"></span> eventos guardados</b> y el tope es
+            <span x-text="dash.resumen.eventos.max_filas"></span> (<span class="mono">eventos_max_filas</span>).
+            <button class="primario" @click="exportarEventosAhora()">Exportar ahora</button>
+            <span class="suave">Exporta a un .zip y vacía la tabla solo si el archivo se guardó bien. Se puede programar en ETL.</span>
+          </div>
+        </template>
+
         <template x-if="dash.resumen">
           <div>
             <div class="tarjetas">
@@ -106,6 +118,14 @@
                 </template>
               </div>
               <p class="suave" x-show="dash.serie && !dash.serie.puntos.length">Sin datos en el período.</p>
+            </div>
+
+            <div class="caja">
+              <h3>Zonas con más actividad <span class="suave" x-show="dash.zonas" x-text="'celdas de ' + (dash.zonas?.celda_m || '') + ' m con al menos ' + (dash.zonas?.min_precios || '') + ' precios'"></span></h3>
+              <div id="mapa-zonas" class="mapa"></div>
+              <p class="suave" x-show="dash.mapaError">No se pudo cargar el mapa (Leaflet viene de un CDN: hace falta internet).</p>
+              <p class="suave" x-show="dash.zonas && !dash.zonas.features.length">Ninguna zona llegó al mínimo de precios en el período.</p>
+              <p class="suave">Más oscuro = más precios cargados. Los mapas son de © OpenStreetMap (uso liviano, para el panel interno).</p>
             </div>
 
             <div class="dos">
@@ -184,6 +204,51 @@
               <button class="primario" :disabled="etlEnviando" @click="ejecutarEtl()">Ejecutar</button>
             </div>
           </template>
+        </div>
+
+        <div class="caja">
+          <h3>Almacén de exportaciones
+            <button @click="probarAlmacen()" :disabled="almacen.probando">Probar almacén</button>
+          </h3>
+          <p class="suave">Dónde queda lo que el sistema exporta solo (eventos): un bucket S3 (<span class="mono">EXPORT_S3_*</span>) o, sin eso, la carpeta de exports. Probalo al configurarlo y antes de activar una programación: sube un archivo, lo relee, compara y lo borra.</p>
+          <p x-show="almacen.resultado" :class="almacen.resultado?.ok ? '' : 'error'" x-text="almacen.resultado?.texto"></p>
+          <details><summary>Exportaciones de eventos (<span x-text="exportaciones.length"></span>)</summary>
+            <div class="tabla"><table>
+              <thead><tr><th>Cuándo</th><th>Archivo</th><th>Eventos</th><th>Ids</th><th>Tamaño</th><th>Borradas</th><th>Almacén</th><th></th></tr></thead>
+              <tbody><template x-for="e in exportaciones" :key="e.id">
+                <tr><td x-text="fechaLocal(e.creado_en)"></td><td class="mono" x-text="e.clave.split('/').pop()"></td><td x-text="e.filas"></td>
+                  <td class="mono" x-text="e.id_desde + '–' + e.id_hasta"></td><td x-text="Math.ceil(e.tamano / 1024) + ' KB'"></td>
+                  <td x-text="e.borradas"></td><td x-text="e.almacen"></td><td><button @click="descargarExportacion(e)">Descargar</button></td></tr>
+              </template></tbody>
+            </table></div>
+          </details>
+        </div>
+
+        <div class="caja">
+          <h3>Programaciones</h3>
+          <p class="suave">Cron en <b>UTC</b> (acá se muestra la hora de Buenos Aires). Ej.: <span class="mono">0 6 * * *</span> = todos los días 03:00 en Buenos Aires. Se encolan en la misma cola de arriba.</p>
+          <div class="tabla" x-show="prog.lista.length"><table>
+            <thead><tr><th>ETL</th><th>Cron (UTC)</th><th>Parámetros</th><th>Activa</th><th>Próxima</th><th>Última</th><th></th></tr></thead>
+            <tbody><template x-for="p in prog.lista" :key="p.id">
+              <tr><td x-text="p.titulo || p.etl"></td><td class="mono" x-text="p.cron + (p.al_superar_umbral ? ' + umbral' : '')"></td>
+                <td class="mono" x-text="JSON.stringify(p.parametros)"></td>
+                <td><span class="badge" :class="p.activa ? 'ok' : ''" x-text="p.activa ? 'activa' : 'pausada'"></span></td>
+                <td x-text="p.activa ? fechaLocal(p.proxima_corrida) : '—'"></td>
+                <td x-text="p.ultima_corrida ? fechaLocal(p.ultima_corrida) + ' · ' + (p.ultima_estado || '') : '—'"></td>
+                <td><button @click="alternarProg(p)" x-text="p.activa ? 'Pausar' : 'Activar'"></button> <button class="peligro" @click="borrarProg(p)">Borrar</button></td></tr>
+            </template></tbody>
+          </table></div>
+          <div class="form">
+            <label>ETL
+              <select x-model="prog.form.etl">
+                <template x-for="d in etlDefs.filter(d => !d.parametros.some(p => p.tipo === 'archivo'))" :key="d.clave"><option :value="d.clave" x-text="d.titulo"></option></template>
+              </select></label>
+            <label>Cron (UTC)<input x-model="prog.form.cron" class="mono"></label>
+            <label>Parámetros (JSON)<input x-model="prog.form.parametros" class="mono"></label>
+            <label><span><input type="checkbox" x-model="prog.form.al_superar_umbral"> además, al pasar el tope de eventos</span><span class="suave">solo eventos_exportar</span></label>
+            <label><span><input type="checkbox" x-model="prog.form.activa"> activa desde ya</span></label>
+          </div>
+          <button class="primario" @click="crearProg()">Crear programación</button>
         </div>
 
         <h3>Historial</h3>

@@ -197,6 +197,12 @@ async def _locales_importar(p: dict, ctx) -> dict:
     }
 
 
+async def _eventos_exportar(p: dict, ctx) -> dict:
+    from etl.eventos_exportar import exportar
+
+    return await exportar(p, ctx)
+
+
 _APLICAR = Param(
     "aplicar",
     "booleano",
@@ -463,6 +469,36 @@ DEFINICIONES: dict[str, Definicion] = {
             ),
             _locales_importar,
             consume_archivo_con="aplicar",
+        ),
+        Definicion(
+            "eventos_exportar",
+            "Exportar eventos al almacén",
+            "Saca los eventos de la app (escaneos, aperturas…) a uno o más .zip (eventos.csv + "
+            "LEEME.txt) en el almacén de exportaciones (S3 o disco, ver docs/04 §11.4). Con «borrar» "
+            "los vacía de la base, pero solo después de volver a leer cada archivo y comprobar "
+            "tamaño y sha256; si algo falla, no se borra nada. Lleva ids de usuario: es para análisis "
+            "interno.",
+            "web",
+            (
+                Param(
+                    "tipo",
+                    "texto",
+                    ayuda="Solo ese tipo de evento (p. ej. producto.escaneado). Vacío: todos.",
+                ),
+                Param(
+                    "hasta",
+                    "fecha",
+                    ayuda="Solo los eventos hasta el fin de ese día (UTC). Vacío: hasta ahora.",
+                ),
+                Param(
+                    "borrar",
+                    "booleano",
+                    default=False,
+                    ayuda="Borra de la base los eventos ya exportados y verificados. Sin marcar, "
+                    "solo exporta.",
+                ),
+            ),
+            _eventos_exportar,
         ),
     ]
 }

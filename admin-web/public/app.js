@@ -2,6 +2,8 @@
 // Alpine.js (CDN) + fetch; sin build. Todo el estado vive en `panel()`.
 
 const API = window.API_URL;
+// El mapa (Leaflet) vive fuera de Alpine: un objeto del mapa dentro del estado reactivo se rompe.
+let MAPA = null, CAPA = null;
 const CLAVE = "almacenero_admin_sesion";
 
 const SECCIONES = {
@@ -50,6 +52,10 @@ function panel() {
     pines: { cantidad: 1, nota: "", n: 24, unidad: "h", sinVencimiento: false, nuevos: [], enviando: false },
     // ETL (docs/04 §10-A): definiciones (el formulario se arma con ellas), historial y detalle.
     etlDefs: [],
+    // Programaciones, almacén y exportaciones de eventos (docs/04 §11.4)
+    prog: { lista: [], form: { etl: "eventos_exportar", cron: "0 6 * * *", parametros: '{"borrar": true}', al_superar_umbral: false, activa: false } },
+    almacen: { probando: false, resultado: null },
+    exportaciones: [],
     etlClave: "",
     etlForm: {},
     etlArchivos: {},  // parámetro -> {id, nombre, tamano} ya subido
@@ -160,7 +166,7 @@ function panel() {
       this.vista = v;
       clearInterval(this._etlTimer);
       if (v === "etl") { this.iniciarEtl(); return; }
-      if (v === "dashboard") { this.cargarDashboard(); return; }
+      if (v === "dashboard") { this.cargarDashboard(); if (MAPA) setTimeout(() => MAPA.invalidateSize(), 50); return; }
       if (v === "config") { this.cargarConfig(); this.cargarReglas(); }
       else if (v === "ayuda") this.cargarAyuda();
       else if (!(v === "catalogo" && this.subcatalogo === "alta")) this.cargar(v === "catalogo" ? this.subcatalogo : v);
@@ -197,7 +203,7 @@ function panel() {
     dash: {
       periodo: "7d", granularidad: "dia", metrica: "precios", rankTipo: "precios", via: "",
       desde: "", hasta: "",  // solo para «rango» (fechas AAAA-MM-DD en la zona del panel)
-      zona: "", resumen: null, serie: null, ranking: [], estrellas: [], cargando: false,
+      zona: "", resumen: null, serie: null, ranking: [], estrellas: [], zonas: null, mapaError: false, cargando: false,
     },
     // Diferencia (min) entre la hora de pared de `zona` y UTC en el instante `t`.
     _offsetMin(zona, t) {
@@ -250,8 +256,30 @@ function panel() {
           this.api(`/admin/dashboard/estrellas?${new URLSearchParams({ ...Object.fromEntries(qs), ...(D.via ? { via: D.via } : {}) })}`),
         ]);
         Object.assign(D, { resumen, serie, ranking, estrellas });
+        this.cargarMapa(q);
       });
       D.cargando = false;
+    },
+    // Mapa de zonas (docs/04 §11.5): celdas en verde según la cantidad de precios cargados.
+    async cargarMapa(q) {
+      const D = this.dash;
+      try { D.zonas = await this.api(`/admin/dashboard/zonas?${new URLSearchParams({ desde: q.get("desde"), hasta: q.get("hasta") })}`); } catch { return; }
+      await this.$nextTick();
+      const el = document.getElementById("mapa-zonas");
+      if (!el || typeof L === "undefined") { D.mapaError = typeof L === "undefined"; return; }
+      D.mapaError = false;
+      if (!MAPA) {
+        MAPA = L.map(el).setView([-34.6, -58.4], 11);
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(MAPA);
+      }
+      if (CAPA) CAPA.remove();
+      const verdes = ["#e5f5e0", "#a1d99b", "#74c476", "#31a354", "#006d2c"];
+      CAPA = L.geoJSON(D.zonas, {
+        style: (f) => ({ color: "#006d2c", weight: 1, fillColor: verdes[f.properties.nivel - 1], fillOpacity: 0.65 }),
+        onEachFeature: (f, l) => l.bindPopup(`${f.properties.precios} precios en ${f.properties.locales} local(es)`),
+      }).addTo(MAPA);
+      if (D.zonas.features?.length) MAPA.fitBounds(CAPA.getBounds(), { maxZoom: 15 });
+      MAPA.invalidateSize();
     },
     // «01/03 14:00» en la zona del panel (el backend manda UTC; acá se muestra, no se calcula).
     etiquetaBarra(iso) {
@@ -707,10 +735,70 @@ function panel() {
     },
 
 
+    // ------------------------------------------- programaciones y almacén
+    // Los cron son en UTC; acá se muestra la hora en la zona del panel (docs/04 §11.3 y §11.4).
+    fechaLocal(iso) {
+      if (!iso) return "—";
+      return new Intl.DateTimeFormat("es-AR", { timeZone: this.dash.zona || "America/Buenos_Aires", dateStyle: "short", timeStyle: "short", hourCycle: "h23" }).format(new Date(iso));
+    },
+    async cargarProg() { try { this.prog.lista = await this.api("/admin/etl/programaciones"); } catch {} },
+    async cargarExportaciones() { try { this.exportaciones = await this.api("/admin/eventos/exportaciones"); } catch {} },
+    async crearProg() {
+      const f = this.prog.form;
+      let parametros;
+      try { parametros = f.parametros.trim() ? JSON.parse(f.parametros) : {}; } catch { return this.avisar("Los parámetros tienen que ser un JSON válido, p. ej. {\"borrar\": true}", true); }
+      await this.intentar(async () => {
+        await this.api("/admin/etl/programaciones", { method: "POST", body: { etl: f.etl, cron: f.cron, parametros, activa: f.activa, al_superar_umbral: f.al_superar_umbral } });
+        this.avisar("Programación creada" + (f.activa ? "" : " (inactiva: activala cuando el almacén pase la prueba)"));
+        await this.cargarProg();
+      });
+    },
+    async alternarProg(p) {
+      await this.intentar(async () => {
+        await this.api(`/admin/etl/programaciones/${p.id}`, { method: "PATCH", body: { activa: !p.activa } });
+        await this.cargarProg();
+      });
+    },
+    async borrarProg(p) {
+      if (!confirm(`¿Borrar la programación de «${p.titulo || p.etl}» (${p.cron})?`)) return;
+      await this.intentar(async () => { await this.api(`/admin/etl/programaciones/${p.id}`, { method: "DELETE" }); await this.cargarProg(); });
+    },
+    async probarAlmacen() {
+      this.almacen.probando = true; this.almacen.resultado = null;
+      try {
+        const r = await this.api("/admin/almacen/probar", { method: "POST" });
+        this.almacen.resultado = { ok: true, texto: `OK · almacén ${r.almacen}: se guardó, se releyó y coincide (${r.bytes} bytes)` };
+      } catch (e) { this.almacen.resultado = { ok: false, texto: e.message }; }
+      this.almacen.probando = false;
+    },
+    async descargarExportacion(e) {
+      await this.intentar(async () => {
+        const r = await fetch(`${API}/v1/admin/eventos/exportaciones/${e.id}/descargar`, { headers: { Authorization: "Bearer " + this.sesion.access_token } });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail?.mensaje || `Error ${r.status}`);
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(await r.blob());
+        a.download = e.clave.split("/").pop();
+        a.click(); URL.revokeObjectURL(a.href);
+      });
+    },
+    // Banner del dashboard: pasaron el tope de eventos → exportar y vaciar con un clic.
+    async exportarEventosAhora() {
+      const ev = this.dash.resumen?.eventos;
+      if (!confirm(`Hay ${ev?.total} eventos (el tope es ${ev?.max_filas}).\n\nSe exportan a un .zip en el almacén y, solo si se guardó y se releyó bien, se borran de la base. ¿Seguir?`)) return;
+      await this.intentar(async () => {
+        await this.api("/admin/etl/eventos_exportar/ejecutar", { method: "POST", body: { parametros: { borrar: true } } });
+        this.avisar("Exportación encolada: seguila en ETL");
+        this.cambiarVista("etl");
+      });
+    },
+
     // -------------------------------------------------------------- ETL
     async iniciarEtl() {
       if (!this.etlDefs.length) await this.intentar(async () => { this.etlDefs = await this.api("/admin/etl"); });
       await this.cargar("etl");
+      this.cargarProg(); this.cargarExportaciones();
+      // El <select> de la programación se arma con x-for: el valor se fija cuando ya existen las opciones.
+      await this.$nextTick(); this.prog.form.etl = "eventos_exportar";
       // Mientras haya algo en cola o corriendo, el historial (y el log abierto) se refresca solo.
       this._etlTimer = setInterval(() => this.refrescarEtl(), 3000);
     },

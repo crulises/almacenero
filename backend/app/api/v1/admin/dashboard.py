@@ -65,7 +65,14 @@ class InvitacionesResumen(BaseModel):
     aceptadas_total: int
 
 
+class EventosEstado(BaseModel):
+    total: int
+    max_filas: int
+    superado: bool  # el dashboard avisa y ofrece exportar (docs/04 §11.4)
+
+
 class ResumenOut(BaseModel):
+    eventos: EventosEstado
     desde: datetime
     hasta: datetime
     zona: str
@@ -171,3 +178,15 @@ async def estrellas(
 ) -> list[Estrella]:
     p = await _periodo(pool, desde, hasta, 30)
     return [Estrella(**r) for r in await dashboard.estrellas(pool, p, limite, via)]
+
+
+@router.get("/zonas")
+async def zonas(
+    desde: datetime | None = None,
+    hasta: datetime | None = None,
+    _: Usuario = Depends(exigir("dashboard.ver")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict:
+    """GeoJSON de celdas con la cantidad de precios cargados (mapa de zonas con más actividad)."""
+    p = await _periodo(pool, desde, hasta, 30)
+    return await dashboard.zonas(pool, p)

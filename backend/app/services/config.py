@@ -41,6 +41,12 @@ DEFAULTS: dict[str, Any] = {
     # siguen en UTC) y ventana de «usuario activo» (hizo una carga en los últimos N días).
     "panel_zona_horaria": "America/Buenos_Aires",
     "dashboard_activo_dias": 7,
+    # Mapa de zonas (docs/04 §11.5): lado de la celda en metros y mínimo de precios para dibujarla
+    # (una celda con 1-2 precios señalaría a un comercio suelto).
+    "dashboard_celda_m": 1000,
+    "dashboard_celda_min_precios": 5,
+    # Exportar eventos (docs/04 §11.4): tope por archivo (el plan Free de Supabase admite 50 MB).
+    "eventos_export_filas_por_archivo": 500000,
 }
 
 

@@ -1,4 +1,4 @@
-.PHONY: help backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar locales-exportar locales-importar etl-worker
+.PHONY: almacen-probar minio-up minio-down help backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar locales-exportar locales-importar etl-worker
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -23,6 +23,11 @@ up: ## Levanta Supabase (Postgres/Auth/Storage) y el backend
 		test -n "$$key" || { echo "no pude leer ANON_KEY de supabase status"; exit 1; }; \
 		{ grep -v '^AUTH_API_KEY=' .env; echo "AUTH_API_KEY=$$key"; } > .env.tmp && mv .env.tmp .env; \
 		echo "AUTH_API_KEY completada en .env"; \
+	fi
+	@# Completa el almacén de exportaciones (Storage S3 local de Supabase) si .env no lo define.
+	@if ! grep -qE '^EXPORT_S3_ENDPOINT=.+' .env; then \
+		supabase status -o json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print('EXPORT_S3_ENDPOINT='+d['STORAGE_S3_URL']); print('EXPORT_S3_ENDPOINT_DOCKER='+d['STORAGE_S3_URL'].replace('127.0.0.1','host.docker.internal')); print('EXPORT_S3_BUCKET=exportaciones'); print('EXPORT_S3_KEY='+d['S3_PROTOCOL_ACCESS_KEY_ID']); print('EXPORT_S3_SECRET='+d['S3_PROTOCOL_ACCESS_KEY_SECRET']); print('EXPORT_S3_REGION='+d['S3_PROTOCOL_REGION'])" >> .env \
+			&& echo "Almacén de exportaciones (Storage local) completado en .env" || echo "(no pude leer el S3 local: los exports van al disco)"; \
 	fi
 	docker compose up -d --build backend admin-web
 	@echo "Panel de admin: http://localhost:8080  (crear el admin: make admin-crear EMAIL=vos@mail.com)"
@@ -243,6 +248,20 @@ locales-importar: $(PY) ## Valida (simulacro) o importa un export de locales: ma
 etl-worker: $(PY) ## Worker local: toma de la cola de la base (DATABASE_URL, local o remota) los ETL pesados que lanzás desde el panel
 	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
 	$(PY) -m etl.worker
+
+# --- almacén de exportaciones (docs/04 §11.4) ----------------------------------
+almacen-probar: $(PY) ## Ida y vuelta con el almacén configurado (EXPORT_S3_* o disco): sube, relee, compara y borra un archivo de prueba
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.almacen_probar
+
+minio-up: ## Levanta MinIO (S3 alternativo, opcional) en :9000/:9001 para probar que el almacén no depende de Supabase
+	docker compose --profile s3-alt up -d minio
+	@echo "MinIO: API http://localhost:9000, consola http://localhost:9001 (usuario almacenero / almacenero-dev-secreto)."
+	@echo "Para usarlo: poné en .env EXPORT_S3_ENDPOINT=http://127.0.0.1:9000, EXPORT_S3_BUCKET=exportaciones,"
+	@echo "EXPORT_S3_KEY=almacenero y EXPORT_S3_SECRET=almacenero-dev-secreto; después: make almacen-probar"
+
+minio-down: ## Baja MinIO (los datos quedan en el volumen minio-datos)
+	docker compose --profile s3-alt stop minio
 
 # --- app en un celular -----------------------------------------------------
 # API_TIMEOUT_S=40 make apk -> espera 40 s por intento (default de la app: 20 s).
