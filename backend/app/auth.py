@@ -21,6 +21,11 @@ CUENTA_BAJA = {
     "mensaje": "tu cuenta fue dada de baja: ya no podés usar Almacenero",
 }
 
+CUENTA_FUSIONADA = {
+    "codigo": "cuenta_fusionada",
+    "mensaje": "esta cuenta se unió a otra: entrá con Google",
+}
+
 
 @dataclass
 class Usuario:
@@ -108,6 +113,9 @@ async def current_user(
         # Vale en el siguiente request, aunque el token siga vigente. 403 y no 401: un 401
         # haría que la app «empiece de nuevo» con otra cuenta anónima.
         raise HTTPException(status_code=403, detail=CUENTA_BAJA)
+    if datos["estado"] == "fusionada":
+        # Una huérfana que el admin reclamó para una cuenta ligada: ya no se usa (403, no 401).
+        raise HTTPException(status_code=403, detail=CUENTA_FUSIONADA)
     aviso, restriccion = await moderacion.umbrales(pool)
     return Usuario(
         **datos,

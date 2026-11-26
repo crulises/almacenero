@@ -12,8 +12,9 @@ import pytest
 
 from app.config import get_settings
 from app.main import app
+from app.services import dispositivos
 from tests.conftest import make_token
-from tests.db import fila
+from tests.db import fila, poner_estado, sql
 
 
 def sesion_de(sub: str, email: str | None = "") -> dict:
@@ -131,3 +132,170 @@ def test_una_cuenta_ligada_no_vuelve_a_anonima_con_un_token_viejo(client, google
     client.get("/v1/me", headers=h)  # token viejo, sin claims de email
 
     assert fila("select es_anonimo from usuarios where id = $1::uuid", uid)["es_anonimo"] is False
+
+
+# ------------------------------------------------------------------ /auth/google/entrar
+
+
+def entrar(client, **extra):
+    cuerpo = {"id_token": "tok-google"} | {k: v for k, v in extra.items() if k != "device"}
+    h = {"X-Device-Id": extra["device"]} if "device" in extra else {}
+    return client.post("/v1/auth/google/entrar", json=cuerpo, headers=h)
+
+
+def cuenta_ligada(client) -> tuple[str, str]:
+    """Cuenta que ya estaba ligada a Google: (usuarios.id, auth_id)."""
+    _, uid, auth_id = nueva_cuenta(client)
+    sql(
+        "update usuarios set es_anonimo = false, email = $2 where id = $1::uuid",
+        uid,
+        f"{auth_id}@example.com",
+    )
+    return uid, auth_id
+
+
+@pytest.fixture
+def pin():
+    """PIN de un solo uso; devuelve (codigo, usos_actuales)."""
+    codigo = f"t{uuid.uuid4().hex[:7]}"
+    sql("insert into invitaciones (codigo, usos_max, nota) values ($1, 1, 'test-google')", codigo)
+    yield codigo
+    sql("delete from invitaciones where nota = 'test-google'")
+
+
+def usos(codigo: str) -> int:
+    return fila("select usos from invitaciones where codigo = $1", codigo)["usos"]
+
+
+def test_entrar_con_cuenta_conocida_no_pide_pin_y_registra_el_dispositivo(
+    client, google, config_temporal
+):
+    config_temporal("modo_acceso", '"solo_invitacion"')
+    uid, auth_id = cuenta_ligada(client)
+    google["json"] = sesion_de(auth_id)
+    device = f"dev-{uuid.uuid4().hex}"
+
+    r = entrar(client, device=device)
+
+    assert r.status_code == 200 and r.json()["refresh_token"] == "ref"
+    pedido = json.loads(google["visto"][0].content)
+    assert pedido == {"provider": "google", "id_token": "tok-google"}  # sin link_identity
+    assert "authorization" not in google["visto"][0].headers
+    d = fila(
+        "select 1 from dispositivos where auth_id = $1::uuid and hash = $2",
+        auth_id,
+        dispositivos.hashear(device),
+    )
+    assert d is not None
+
+
+def test_entrar_con_cuenta_de_baja_403_y_no_gasta_el_pin(client, google, config_temporal, pin):
+    config_temporal("modo_acceso", '"solo_invitacion"')
+    uid, auth_id = cuenta_ligada(client)
+    poner_estado(uid, "baja")
+    google["json"] = sesion_de(auth_id)
+
+    r = entrar(client, codigo_invitacion=pin)
+
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "cuenta_baja"
+    assert usos(pin) == 0
+
+
+def test_entrar_con_cuenta_fusionada_403(client, google):
+    uid, auth_id = cuenta_ligada(client)
+    destino, _ = cuenta_ligada(client)
+    poner_estado(uid, "fusionada", destino)
+    google["json"] = sesion_de(auth_id)
+
+    r = entrar(client)
+
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "cuenta_fusionada"
+
+
+def test_entrar_con_google_nuevo_en_modo_abierto_crea_la_cuenta(client, google):
+    auth_id = str(uuid.uuid4())
+    google["json"] = sesion_de(auth_id)
+
+    assert entrar(client).status_code == 200
+
+    u = fila("select es_anonimo, email, alias from usuarios where auth_id = $1::uuid", auth_id)
+    assert u["es_anonimo"] is False and u["email"] == f"{auth_id}@example.com"
+    assert u["alias"] == f"anon-{auth_id[:6]}"
+
+
+def test_entrar_con_google_nuevo_sin_pin_en_solo_invitacion_403(client, google, config_temporal):
+    config_temporal("modo_acceso", '"solo_invitacion"')
+    auth_id = str(uuid.uuid4())
+    google["json"] = sesion_de(auth_id)
+
+    r = entrar(client)
+
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "invitacion_requerida"
+    assert fila("select 1 from usuarios where auth_id = $1::uuid", auth_id) is None
+
+
+def test_entrar_con_google_nuevo_y_pin_valido_gasta_el_pin(client, google, config_temporal, pin):
+    config_temporal("modo_acceso", '"solo_invitacion"')
+    auth_id = str(uuid.uuid4())
+    google["json"] = sesion_de(auth_id)
+
+    assert entrar(client, codigo_invitacion=pin).status_code == 200
+
+    assert usos(pin) == 1
+    p = fila("select usada_por_auth from invitaciones where codigo = $1", pin)
+    assert str(p["usada_por_auth"]) == auth_id
+
+
+def test_entrar_con_pin_invalido_no_crea_la_cuenta(client, google, config_temporal):
+    config_temporal("modo_acceso", '"solo_invitacion"')
+    auth_id = str(uuid.uuid4())
+    google["json"] = sesion_de(auth_id)
+
+    r = entrar(client, codigo_invitacion="no-existe")
+
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "invitacion_invalida"
+    assert fila("select 1 from usuarios where auth_id = $1::uuid", auth_id) is None
+
+
+def test_entrar_con_google_nuevo_desde_un_dispositivo_con_baja_403_sin_gastar_pin(
+    client, google, config_temporal, pin
+):
+    device = f"dev-{uuid.uuid4().hex}"
+    viejo, viejo_auth = cuenta_ligada(client)
+    sql(
+        "insert into dispositivos (hash, auth_id) values ($1, $2::uuid)",
+        dispositivos.hashear(device),
+        viejo_auth,
+    )
+    poner_estado(viejo, "baja")
+    config_temporal("modo_acceso", '"solo_invitacion"')
+    google["json"] = sesion_de(str(uuid.uuid4()))
+
+    r = entrar(client, codigo_invitacion=pin, device=device)
+
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "cuenta_baja"
+    assert usos(pin) == 0
+
+
+def test_entrar_con_google_nuevo_con_alta_manual_403(client, google, config_temporal, pin):
+    config_temporal("modo_acceso", '"alta_manual"')
+    google["json"] = sesion_de(str(uuid.uuid4()))
+
+    r = entrar(client, codigo_invitacion=pin)
+
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "alta_cerrada"
+    assert usos(pin) == 0
+
+
+def test_entrar_con_id_token_vencido_401(client, google):
+    google["status"] = 400
+    google["json"] = {"error_code": "validation_failed", "msg": "Bad ID token"}
+    assert entrar(client).status_code == 401
+
+
+def test_las_altas_por_google_cuentan_en_el_rate_limit_de_altas(client, google, config_temporal):
+    config_temporal("auth_altas_por_hora_ip", "1")
+    google["json"] = sesion_de(str(uuid.uuid4()))
+    assert entrar(client).status_code == 200
+    google["json"] = sesion_de(str(uuid.uuid4()))
+    assert entrar(client).status_code == 429

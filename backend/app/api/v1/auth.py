@@ -13,7 +13,14 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
-from app.auth import CUENTA_BAJA, Usuario, bearer, current_user
+from app.auth import (
+    CUENTA_BAJA,
+    CUENTA_FUSIONADA,
+    Usuario,
+    asegurar_usuario,
+    bearer,
+    current_user,
+)
 from app.config import get_settings
 from app.db import get_pool
 from app.services import config, dispositivos, invitaciones
@@ -132,6 +139,34 @@ async def _anotar_dispositivo(
     return sesion
 
 
+async def _admitir_alta(pool: asyncpg.Pool, codigo: str | None) -> invitaciones.Uso | None:
+    """Defensas de un alta nueva (anónima o por Google): `modo_acceso` y código de invitación.
+    Devuelve el uso de invitación gastado (None si el modo es abierto); 403 si no se admite."""
+    modo = await config.leer(pool, "modo_acceso")
+    if modo == "abierto":
+        return None
+    if modo != "solo_invitacion":  # alta_manual, o un valor que no entendemos
+        raise HTTPException(
+            403,
+            detail={
+                "codigo": "alta_cerrada",
+                "mensaje": "las altas están cerradas: pedile al admin que te cree el usuario",
+            },
+        )
+    if not codigo or not codigo.strip():
+        raise HTTPException(
+            403,
+            detail={"codigo": "invitacion_requerida", "mensaje": "falta el código de invitación"},
+        )
+    uso = await invitaciones.consumir(pool, codigo)
+    if uso is None:
+        raise HTTPException(
+            403,
+            detail={"codigo": "invitacion_invalida", "mensaje": "código de invitación inválido"},
+        )
+    return uso
+
+
 @router.post("/anonymous", response_model=Sesion)
 async def sesion_anonima(
     request: Request,
@@ -158,39 +193,15 @@ async def sesion_anonima(
     if dispositivo is not None and await dispositivos.tiene_baja(pool, dispositivo):
         raise HTTPException(403, detail=CUENTA_BAJA)
 
-    modo = await config.leer(pool, "modo_acceso")
-    if modo == "abierto":
-        return await _anotar_dispositivo(
-            pool, await _pedir_sesion(http, "/signup", {}), dispositivo
-        )
-    if modo != "solo_invitacion":  # alta_manual, o un valor que no entendemos
-        raise HTTPException(
-            403,
-            detail={
-                "codigo": "alta_cerrada",
-                "mensaje": "las altas están cerradas: pedile al admin que te cree el usuario",
-            },
-        )
-
-    codigo = body.codigo_invitacion if body else None
-    if not codigo or not codigo.strip():
-        raise HTTPException(
-            403,
-            detail={"codigo": "invitacion_requerida", "mensaje": "falta el código de invitación"},
-        )
-    uso = await invitaciones.consumir(pool, codigo)
-    if uso is None:
-        raise HTTPException(
-            403,
-            detail={"codigo": "invitacion_invalida", "mensaje": "código de invitación inválido"},
-        )
+    uso = await _admitir_alta(pool, body.codigo_invitacion if body else None)
     try:
         sesion = await _pedir_sesion(http, "/signup", {})
     except HTTPException:
-        await invitaciones.devolver(pool, uso)  # no se gastó una invitación en vano
+        if uso is not None:
+            await invitaciones.devolver(pool, uso)  # no se gastó una invitación en vano
         raise
     auth_id = _auth_id_de(sesion.access_token)
-    if auth_id is not None:  # para que el panel muestre quién usó el código
+    if uso is not None and auth_id is not None:  # para que el panel muestre quién usó el código
         await invitaciones.anotar_usuario(pool, uso, auth_id)
     return await _anotar_dispositivo(pool, sesion, dispositivo)
 
@@ -216,10 +227,15 @@ async def renovar_sesion(
     # Cuenta dada de baja (docs/04 §9): el proveedor renovó, pero acá no se entrega la
     # sesión. 403 y no 401: un 401 haría que la app se cree otra cuenta anónima.
     auth_id = _auth_id_de(sesion.access_token)
-    if auth_id is not None and await pool.fetchval(
-        "select estado = 'baja' from usuarios where auth_id = $1", auth_id
-    ):
+    estado = (
+        await pool.fetchval("select estado from usuarios where auth_id = $1", auth_id)
+        if auth_id is not None
+        else None
+    )
+    if estado == "baja":
         raise HTTPException(403, detail=CUENTA_BAJA)
+    if estado == "fusionada":
+        raise HTTPException(403, detail=CUENTA_FUSIONADA)
     # Cuentas que ya existían: el refresh las asocia a su dispositivo.
     return await _anotar_dispositivo(pool, sesion, dispositivos.hashear(x_device_id))
 
@@ -246,3 +262,56 @@ async def ligar_google(
         email,
     )
     return await _anotar_dispositivo(pool, sesion, dispositivos.hashear(x_device_id))
+
+
+@router.post("/google/entrar", response_model=Sesion)
+async def entrar_google(
+    request: Request,
+    body: GoogleIn,
+    x_device_id: str | None = Header(default=None),
+    http: httpx.AsyncClient = Depends(get_http),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Sesion:
+    """Abre sesión con una cuenta ya ligada a Google (reinstalación u otro celular), sin PIN.
+
+    Si ese Google no se conocía, GoTrue crea una cuenta nueva: esa pasa por las mismas defensas
+    que el alta anónima (rate limit de altas, dispositivo con baja, `modo_acceso` y PIN). Una
+    cuenta rechazada nunca recibe sesión nuestra: el cliente solo obtiene tokens por acá."""
+    ip = ip_cliente(request)
+    limitar(
+        f"google_entrar:{ip}",
+        int(await config.leer(pool, "auth_refresh_por_hora_ip")),
+        3600,
+        "demasiados intentos desde esta conexión: probá más tarde",
+    )
+    sesion = await _pedir_sesion_google(http, body, None)
+    auth_id = _auth_id_de(sesion.access_token)
+    if auth_id is None:
+        raise HTTPException(502, "error del proveedor de auth")
+    dispositivo = dispositivos.hashear(x_device_id)
+
+    estado = await pool.fetchval("select estado from usuarios where auth_id = $1", auth_id)
+    if estado == "baja":
+        raise HTTPException(403, detail=CUENTA_BAJA)
+    if estado == "fusionada":
+        raise HTTPException(403, detail=CUENTA_FUSIONADA)
+    if estado is None:  # cuenta nueva: es un alta más
+        limitar(
+            f"anonymous:{ip}",
+            int(await config.leer(pool, "auth_altas_por_hora_ip")),
+            3600,
+            "demasiados intentos desde esta conexión: probá más tarde",
+        )
+        if dispositivo is not None and await dispositivos.tiene_baja(pool, dispositivo):
+            raise HTTPException(403, detail=CUENTA_BAJA)
+        uso = await _admitir_alta(pool, body.codigo_invitacion)
+        email = _claims_de(sesion.access_token).get("email") or None
+        try:
+            await asegurar_usuario(pool, auth_id, email, es_anonimo=False)
+        except Exception:
+            if uso is not None:
+                await invitaciones.devolver(pool, uso)
+            raise
+        if uso is not None:
+            await invitaciones.anotar_usuario(pool, uso, auth_id)
+    return await _anotar_dispositivo(pool, sesion, dispositivo)

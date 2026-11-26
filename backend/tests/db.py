@@ -124,3 +124,25 @@ def fila(query: str, *args):
             await conn.close()
 
     return asyncio.run(run())
+
+
+def poner_estado(user_id: str, estado: str, destino: str | None = None) -> None:
+    """Cambia el estado de la cuenta como lo hace el panel (escritura del estado habilitada)."""
+
+    async def run():
+        conn = await asyncpg.connect(get_settings().database_url)
+        try:
+            async with conn.transaction():
+                await conn.execute("select set_config('app.estado_write', 'on', true)")
+                await conn.execute(
+                    "update usuarios set estado = $2, "
+                    "baja_at = case when $2 = 'baja' then now() end, "
+                    "fusionada_en = $3::uuid where id = $1::uuid",
+                    user_id,
+                    estado,
+                    destino,
+                )
+        finally:
+            await conn.close()
+
+    asyncio.run(run())
