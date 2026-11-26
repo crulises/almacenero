@@ -111,6 +111,8 @@ def test_reclamo_pasa_karma_y_cargas_y_deja_a_la_huerfana_fusionada(client, admi
     )
     assert h["estado"] == "fusionada" and str(h["fusionada_en"]) == destino
     assert h["karma"] == 0 and h["baja_at"] is None
+    ficha = client.get(f"/v1/admin/usuarios/{huerfana}", headers=ha).json()
+    assert ficha["estado"] == "fusionada" and ficha["fusionada_en"] == destino
     assert str(fila("select user_id from precios where id = $1", pid)["user_id"]) == destino
     a = fila(
         "select usuario_id, nota from auditoria_admin where accion = 'usuario.reclamar' "

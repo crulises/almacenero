@@ -34,8 +34,9 @@ class UsuarioAdminOut(BaseModel):
     rol: str
     karma: int
     # Moderación (docs/04 §9): el estado se guarda; el escalón se deduce del karma.
-    estado: str  # activo | baja
+    estado: str  # activo | baja | fusionada
     baja_at: datetime | None
+    fusionada_en: UUID | None = None  # corte 21: a qué cuenta ligada se unió (estado fusionada)
     escalon: str  # normal | aviso | restringido
     cargas: int
     locales_creados: int
@@ -121,7 +122,7 @@ class UsuarioPatch(BaseModel):
 
 _SELECT = """
     select u.id, u.auth_id, u.alias, u.email, u.es_anonimo, u.anonimo_auth_id, u.rol,
-           u.karma, u.created_at, u.estado, u.baja_at,
+           u.karma, u.created_at, u.estado, u.baja_at, u.fusionada_en,
            (select i.codigo from invitaciones i where i.usada_por_auth = u.auth_id
              limit 1) as invitacion_codigo,
            (select i.nota from invitaciones i where i.usada_por_auth = u.auth_id

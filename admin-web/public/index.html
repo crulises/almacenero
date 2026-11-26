@@ -960,7 +960,10 @@
             <h3>Identidad <span class="badge" :class="ficha.d.es_anonimo ? 'mal' : 'ok'" x-text="ficha.d.es_anonimo ? 'anónimo' : 'registrado'"></span>
               <span class="badge" x-text="ficha.d.rol"></span>
               <span class="badge" :class="insignia(ficha.d).clase" x-text="insignia(ficha.d).texto"></span></h3>
-            <p>Email: <b x-text="ficha.d.email || '—'"></b></p>
+            <p>Email: <b x-text="ficha.d.email || '—'"></b>
+              <span class="suave" x-show="!ficha.d.es_anonimo">(solo lo ve el admin)</span></p>
+            <p x-show="ficha.d.estado === 'fusionada'">Esta cuenta se unió a
+              <a href="#" @click.prevent="irFicha('usuario', ficha.d.fusionada_en)">otra cuenta ligada</a>: ya no puede entrar ni cargar.</p>
             <p class="mono">auth: <span x-text="ficha.d.auth_id"></span></p>
             <p class="mono">anónimo asociado:
               <span x-show="ficha.d.anonimo_auth_id" x-text="ficha.d.anonimo_auth_id + (ficha.d.anonimo_auth_id === ficha.d.auth_id ? '  (el mismo id: se ligó en el lugar)' : '')"></span>
@@ -973,7 +976,9 @@
             <p>Otras cuentas en el mismo dispositivo:
               <template x-for="c in ficha.d.mismo_dispositivo" :key="c.id">
                 <span><a href="#" @click.prevent="irFicha('usuario', c.id)" x-text="c.alias"></a>
-                  <span class="badge" :class="c.estado === 'baja' ? 'baja' : 'ok'" x-text="c.estado"></span>&nbsp;</span>
+                  <span class="badge" :class="c.estado === 'baja' ? 'baja' : 'ok'" x-text="c.estado"></span>
+                  <span class="badge" :class="c.es_anonimo ? 'mal' : 'ok'" x-text="c.es_anonimo ? 'anónima' : 'registrada'"></span>
+                  <button x-show="!ficha.d.es_anonimo && ficha.d.estado === 'activo' && c.es_anonimo && c.estado === 'activo'" @click="reclamarHuerfana(c)" title="Pasa el karma y las cargas de esa cuenta a esta">Reclamar</button>&nbsp;</span>
               </template>
               <span x-show="!ficha.d.mismo_dispositivo || !ficha.d.mismo_dispositivo.length" class="suave">ninguna (o el celular no mandó su identificador)</span></p>
             <div class="form"><label>Alias <input type="text" x-model="ficha.b.alias"></label></div>
