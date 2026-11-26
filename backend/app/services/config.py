@@ -34,7 +34,7 @@ DEFAULTS: dict[str, Any] = {
     "karma_primer_precio": 5,  # bonus por cargar el primer precio de un producto (una vez)
     "karma_umbral_aviso": -5,  # desde acá la app avisa; sigue usando todo
     "karma_umbral_restriccion": -15,  # desde acá no puede cargar; sí consultar
-    # Cuentas ligables (docs/04 §13): desde este karma la app sugiere ligar la cuenta anónima a Google.
+    # Cuentas ligables (docs/04-plan-v0.2.md, A): desde este karma la app sugiere ligar a Google.
     "karma_umbral_ligar_cuenta": 3,
     # Mensajes de error editados desde el panel: {codigo_de_regla: texto} (services/reglas.py).
     "mensajes_reglas": {},

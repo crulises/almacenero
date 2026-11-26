@@ -10,9 +10,10 @@ import asyncpg
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
-from app.auth import CUENTA_BAJA
+from app.auth import CUENTA_BAJA, Usuario, bearer, current_user
 from app.config import get_settings
 from app.db import get_pool
 from app.services import config, dispositivos, invitaciones
@@ -36,23 +37,41 @@ class RefreshIn(BaseModel):
     refresh_token: str
 
 
+class GoogleIn(BaseModel):
+    """`id_token` que da Google Sign-In en el celular (cliente Web como `serverClientId`)."""
+
+    id_token: str = Field(max_length=4096)
+    nonce: str | None = Field(default=None, max_length=256)
+    # Solo para `/google/entrar` con una cuenta nueva y `modo_acceso = solo_invitacion`.
+    codigo_invitacion: str | None = Field(default=None, max_length=64)
+
+
+GOOGLE_YA_LIGADO = {
+    "codigo": "google_ya_ligado",
+    "mensaje": "ese Google ya tiene una cuenta: entrá con ella",
+}
+YA_LIGADA = {"codigo": "ya_ligada", "mensaje": "tu cuenta ya está ligada a Google"}
+
+
 async def get_http(request: Request) -> httpx.AsyncClient:
     return request.app.state.http
 
 
-async def _pedir_sesion(http: httpx.AsyncClient, path: str, body: dict) -> Sesion:
+async def _pedir_sesion(
+    http: httpx.AsyncClient, path: str, body: dict, bearer: str | None = None
+) -> Sesion:
     s = get_settings()
     if not s.auth_url or not s.auth_api_key:
         raise HTTPException(503, "auth no configurada (AUTH_URL / AUTH_API_KEY)")
+    headers = {"apikey": s.auth_api_key}
+    if bearer is not None:
+        headers["Authorization"] = f"Bearer {bearer}"
     try:
-        r = await http.post(
-            f"{s.auth_url}{path}",
-            json=body,
-            headers={"apikey": s.auth_api_key},
-            timeout=10,
-        )
+        r = await http.post(f"{s.auth_url}{path}", json=body, headers=headers, timeout=10)
     except httpx.HTTPError as e:
         raise HTTPException(502, "proveedor de auth no disponible") from e
+    if r.status_code == 422 and _error_code(r) == "identity_already_exists":
+        raise HTTPException(409, detail=GOOGLE_YA_LIGADO)
     if r.status_code in (400, 401, 403, 422):
         raise HTTPException(401, "sesión inválida")
     if r.status_code >= 400:
@@ -65,14 +84,42 @@ async def _pedir_sesion(http: httpx.AsyncClient, path: str, body: dict) -> Sesio
     )
 
 
-def _auth_id_de(access_token: str) -> UUID | None:
-    """`sub` del token que nos acaba de dar el proveedor. Sin verificar la firma a
-    propósito: no es una credencial que recibimos, es la respuesta directa de nuestro
-    proveedor y solo se usa para anotar un dato en el panel."""
+def _error_code(r: httpx.Response) -> str | None:
     try:
-        return UUID(jwt.decode(access_token, options={"verify_signature": False})["sub"])
-    except (jwt.PyJWTError, KeyError, ValueError):
+        return r.json().get("error_code")
+    except (ValueError, AttributeError):
         return None
+
+
+def _claims_de(access_token: str) -> dict:
+    """Claims del token que nos acaba de dar el proveedor. Sin verificar la firma a
+    propósito: no es una credencial que recibimos, es la respuesta directa de nuestro
+    proveedor y solo se usa para anotar datos (quién es, su email)."""
+    try:
+        return jwt.decode(access_token, options={"verify_signature": False})
+    except jwt.PyJWTError:
+        return {}
+
+
+def _auth_id_de(access_token: str) -> UUID | None:
+    try:
+        return UUID(_claims_de(access_token)["sub"])
+    except (KeyError, ValueError):
+        return None
+
+
+async def _pedir_sesion_google(
+    http: httpx.AsyncClient, body: GoogleIn, bearer: str | None
+) -> Sesion:
+    """`POST /token?grant_type=id_token` de GoTrue. Con `bearer` liga la identidad de Google a
+    ESA cuenta (`link_identity`, conserva el `auth_id`); sin él, inicia sesión (y GoTrue crea
+    la cuenta si ese Google no se conocía)."""
+    pedido: dict = {"provider": "google", "id_token": body.id_token}
+    if body.nonce is not None:
+        pedido["nonce"] = body.nonce
+    if bearer is not None:
+        pedido["link_identity"] = True
+    return await _pedir_sesion(http, "/token?grant_type=id_token", pedido, bearer)
 
 
 async def _anotar_dispositivo(
@@ -174,4 +221,28 @@ async def renovar_sesion(
     ):
         raise HTTPException(403, detail=CUENTA_BAJA)
     # Cuentas que ya existían: el refresh las asocia a su dispositivo.
+    return await _anotar_dispositivo(pool, sesion, dispositivos.hashear(x_device_id))
+
+
+@router.post("/google/ligar", response_model=Sesion)
+async def ligar_google(
+    body: GoogleIn,
+    user: Usuario = Depends(current_user),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    x_device_id: str | None = Header(default=None),
+    http: httpx.AsyncClient = Depends(get_http),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Sesion:
+    """Liga la cuenta anónima a Google. Es la MISMA cuenta (mismo `usuarios.id`, karma y alias):
+    GoTrue conserva el `auth_id`. Devuelve la sesión nueva, que ya no dice `is_anonymous`: la
+    app tiene que guardarla. Si ese Google ya es de otra cuenta, 409 `google_ya_ligado`."""
+    if not user.es_anonimo:
+        raise HTTPException(409, detail=YA_LIGADA)
+    sesion = await _pedir_sesion_google(http, body, creds.credentials if creds else None)
+    email = _claims_de(sesion.access_token).get("email") or None
+    await pool.execute(
+        "update usuarios set email = coalesce($2, email), es_anonimo = false where id = $1",
+        user.id,
+        email,
+    )
     return await _anotar_dispositivo(pool, sesion, dispositivos.hashear(x_device_id))

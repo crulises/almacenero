@@ -111,3 +111,16 @@ def poner_estado_sin_fecha(user_id: str, estado: str) -> None:
             await conn.close()
 
     asyncio.run(run())
+
+
+def fila(query: str, *args):
+    """Primera fila del resultado (o None), para comprobar el estado de la base."""
+
+    async def run():
+        conn = await asyncpg.connect(get_settings().database_url)
+        try:
+            return await conn.fetchrow(query, *args)
+        finally:
+            await conn.close()
+
+    return asyncio.run(run())
