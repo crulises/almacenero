@@ -1168,6 +1168,26 @@ Decisiones en `docs/04` §9.
 - **Síntoma de que falta uno:** el selector de Google falla en el celular (`GoogleSignInException`) o GoTrue
   rechaza el token (audiencia).
 
+### El selector de Google «se cancela» solo en el celular
+
+- **Síntoma:** aparece el popup de Google, se acepta y la app dice «Google falló: canceled…» (o «Se canceló
+  el ingreso»). Al backend no llega nada.
+- **Causa 1 (la más común):** el APK de `make apk` es **debug** y lo firma `~/.android/debug.keystore`, no tu
+  keystore de release. Google compara paquete + SHA-1 *del APK que corre*: hace falta un cliente Android con el
+  SHA-1 de debug (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass
+  android -keypass android`). En Android, el `canceled` de `google_sign_in` también significa mala configuración.
+- **Causa 2:** la pantalla de consentimiento está en **Testing** (Google Auth Platform › Público) y la cuenta
+  no figura en «Usuarios de prueba». En producción (con solo `email`/`profile`/`openid`) no hace falta.
+- **Cada APK, su cliente:** debug → SHA-1 de debug; `--release` → SHA-1 de la keystore de release; si algún día
+  se publica en Play Store con «Play App Signing», además el SHA-1 que muestra Play Console.
+
+### La consola de Google Cloud no muestra actividad del login
+
+- **Es lo esperado.** El ingreso nativo entrega un `id_token` firmado por Google; GoTrue lo valida con las
+  claves públicas de Google, sin llamar a ninguna API del proyecto, así que Google Auth Platform no cuenta
+  nada. La prueba de que anduvo está en el propio sistema: la identidad aparece en el usuario (Supabase
+  Studio › Authentication) y la cuenta figura como ligada en el panel de admin.
+
 ### `.env` con comentarios en la misma línea
 
 - **Síntoma:** `make up` / `make apk` usan un ID de cliente con basura al final.

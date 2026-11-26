@@ -2,6 +2,7 @@ import 'package:almacenero/app_deps.dart';
 import 'package:almacenero/data/auth_repository.dart';
 import 'package:almacenero/data/user_repository.dart';
 import 'package:almacenero/main.dart';
+import 'package:almacenero/ui/google_logo.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -78,6 +79,9 @@ void main() {
     testWidgets('aparece cuando el backend lo sugiere', (tester) async {
       await abrir(tester);
       expect(find.text('Protegé tu cuenta'), findsOneWidget);
+      expect(find.textContaining('Asociá una cuenta de Google'), findsOneWidget);
+      expect(find.textContaining('ligar'), findsNothing);
+      expect(find.byType(GoogleLogo), findsOneWidget);
     });
 
     testWidgets('no aparece si no se sugiere', (tester) async {
@@ -100,11 +104,11 @@ void main() {
       expect(m.llamadas, ['ocultar']);
     });
 
-    testWidgets('«Ligar con Google» liga, refresca /me y desaparece', (
+    testWidgets('«Asociar cuenta de Google» asocia, refresca /me y desaparece', (
       tester,
     ) async {
       await abrir(tester);
-      await tester.tap(find.text('Ligar con Google'));
+      await tester.tap(find.text('Asociar cuenta de Google'));
       await tester.pumpAndSettle();
       expect(m.llamadas, ['ligar']);
       expect(find.text('Protegé tu cuenta'), findsNothing);
@@ -115,7 +119,7 @@ void main() {
     ) async {
       m.errorAlLigar = const GoogleCancelado();
       await abrir(tester);
-      await tester.tap(find.text('Ligar con Google'));
+      await tester.tap(find.text('Asociar cuenta de Google'));
       await tester.pumpAndSettle();
       expect(find.text('Protegé tu cuenta'), findsOneWidget);
       expect(find.textContaining('canceló'), findsOneWidget);
@@ -126,7 +130,7 @@ void main() {
       (tester) async {
         m.errorAlLigar = const GoogleFallo('falta GOOGLE_WEB_CLIENT_ID');
         await abrir(tester);
-        await tester.tap(find.text('Ligar con Google'));
+        await tester.tap(find.text('Asociar cuenta de Google'));
         await tester.pumpAndSettle();
         expect(
           find.textContaining('falta GOOGLE_WEB_CLIENT_ID'),
@@ -140,7 +144,7 @@ void main() {
     ) async {
       m.errorAlLigar = const GoogleYaLigado();
       await abrir(tester);
-      await tester.tap(find.text('Ligar con Google'));
+      await tester.tap(find.text('Asociar cuenta de Google'));
       await tester.pumpAndSettle();
       expect(find.text('Ese Google ya tiene una cuenta'), findsOneWidget);
       await tester.tap(find.text('Entrar con esa cuenta'));
@@ -151,7 +155,7 @@ void main() {
     testWidgets('un error inesperado se avisa sin romper', (tester) async {
       m.errorAlLigar = Exception('boom');
       await abrir(tester);
-      await tester.tap(find.text('Ligar con Google'));
+      await tester.tap(find.text('Asociar cuenta de Google'));
       await tester.pumpAndSettle();
       expect(find.byType(SnackBar), findsOneWidget);
       expect(find.text('Protegé tu cuenta'), findsOneWidget);
@@ -168,28 +172,30 @@ void main() {
     testWidgets('cuenta anónima: ofrece ligarla', (tester) async {
       m.sugerir = false; // aunque no haya tarjeta, desde Acerca se puede
       await irAAcerca(tester);
-      expect(find.text('Ligar con Google'), findsOneWidget);
-      await tester.tap(find.text('Ligar con Google'));
+      expect(find.text('Asociar cuenta de Google'), findsOneWidget);
+      expect(find.byType(GoogleLogo), findsOneWidget);
+      await tester.tap(find.text('Asociar cuenta de Google'));
       await tester.pumpAndSettle();
       expect(m.llamadas, ['ligar']);
-      expect(find.text('Tu cuenta está ligada a Google'), findsOneWidget);
+      expect(find.text('Tu cuenta está asociada a Google'), findsOneWidget);
     });
 
     testWidgets('cuenta ligada: lo dice y no ofrece nada', (tester) async {
       m.ligada = true;
       await irAAcerca(tester);
-      expect(find.text('Tu cuenta está ligada a Google'), findsOneWidget);
-      expect(find.text('Ligar con Google'), findsNothing);
+      expect(find.text('Tu cuenta está asociada a Google'), findsOneWidget);
+      expect(find.text('Asociar cuenta de Google'), findsNothing);
     });
   });
 
-  group('pantalla de invitación › Entrar con Google', () {
+  group('pantalla de invitación › Iniciar sesión con Google', () {
     setUp(() => m.sinSesion = true);
 
     testWidgets('cuenta ya ligada: entra y carga la app', (tester) async {
       await abrir(tester);
       expect(find.text('Código de invitación'), findsOneWidget);
-      await tester.tap(find.text('Entrar con Google'));
+      expect(find.byType(GoogleLogo), findsOneWidget);
+      await tester.tap(find.text('Iniciar sesión con Google'));
       await tester.pumpAndSettle();
       expect(m.llamadas, ['entrar:-']);
       expect(find.text('anon-abc123'), findsOneWidget);
@@ -200,7 +206,7 @@ void main() {
     ) async {
       m.errorAlEntrar = const InvitacionRequerida();
       await abrir(tester);
-      await tester.tap(find.text('Entrar con Google'));
+      await tester.tap(find.text('Iniciar sesión con Google'));
       await tester.pumpAndSettle();
       expect(find.text('Código de invitación'), findsOneWidget);
       await tester.enterText(find.byType(TextField).first, 'bueno');
@@ -215,7 +221,7 @@ void main() {
     ) async {
       m.errorAlEntrar = const InvitacionRequerida();
       await abrir(tester);
-      await tester.tap(find.text('Entrar con Google'));
+      await tester.tap(find.text('Iniciar sesión con Google'));
       await tester.pumpAndSettle();
       m.errorAlEntrar = const InvitacionRequerida(rechazada: true);
       await tester.enterText(find.byType(TextField).first, 'malo');
@@ -229,7 +235,7 @@ void main() {
     ) async {
       m.errorAlEntrar = const GoogleCancelado();
       await abrir(tester);
-      await tester.tap(find.text('Entrar con Google'));
+      await tester.tap(find.text('Iniciar sesión con Google'));
       await tester.pumpAndSettle();
       expect(find.text('Código de invitación'), findsOneWidget);
       expect(find.textContaining('canceló'), findsOneWidget);

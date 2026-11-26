@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../app_deps.dart';
 import '../data/auth_repository.dart';
+import 'google_logo.dart';
 
 void _avisar(ScaffoldMessengerState mensajes, String texto) =>
     mensajes.showSnackBar(SnackBar(content: Text(texto)));
@@ -28,8 +29,8 @@ Future<bool> ligarCuentaConGoogle(BuildContext context, AppDeps deps) async {
       builder: (ctx) => AlertDialog(
         title: const Text('Ese Google ya tiene una cuenta'),
         content: const Text(
-          'No se puede ligar a esta cuenta porque ese Google ya está ligado a '
-          'otra. Podés entrar con esa cuenta: esta quedará aparte.',
+          'No se puede asociar a esta cuenta porque ese Google ya está asociado '
+          'a otra. Podés entrar con esa cuenta: esta quedará aparte.',
         ),
         actions: [
           TextButton(
@@ -114,8 +115,8 @@ class _TarjetaLigarState extends State<TarjetaLigar> {
             Text('Protegé tu cuenta', style: tema.textTheme.titleMedium),
             const SizedBox(height: 8),
             const Text(
-              'Ya sumaste karma. Ligá tu cuenta a Google y no lo perdés si '
-              'cambiás de celular o reinstalás la app.',
+              'Asociá una cuenta de Google para poder iniciar sesión en esta '
+              'cuenta desde otro celular o después de reinstalar la app.',
             ),
             const SizedBox(height: 12),
             Row(
@@ -126,9 +127,10 @@ class _TarjetaLigarState extends State<TarjetaLigar> {
                   child: const Text('Luego'),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
+                FilledButton.icon(
                   onPressed: _ocupada ? null : _ligar,
-                  child: const Text('Ligar con Google'),
+                  icon: const GoogleLogo(),
+                  label: const Text('Asociar cuenta de Google'),
                 ),
               ],
             ),

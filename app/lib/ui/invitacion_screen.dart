@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../data/app_info.dart';
+import 'google_logo.dart';
 
 /// Primer arranque: la ÚNICA opción es escribir el código (PIN) de invitación.
 /// Mientras no haya sesión no se muestra nada más de la app.
@@ -12,7 +13,7 @@ class InvitacionScreen extends StatefulWidget {
     this.onGoogle,
   });
 
-  /// «Entrar con Google»: para quien ya ligó su cuenta (reinstalación u otro celular).
+  /// «Iniciar sesión con Google»: para quien ya asoció su cuenta (reinstalación u otro celular).
   /// Sin esto el botón no se muestra.
   final Future<void> Function()? onGoogle;
 
@@ -117,9 +118,10 @@ class _InvitacionScreenState extends State<InvitacionScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
-                    OutlinedButton(
+                    OutlinedButton.icon(
                       onPressed: _enviando ? null : _google,
-                      child: const Text('Entrar con Google'),
+                      icon: const GoogleLogo(),
+                      label: const Text('Iniciar sesión con Google'),
                     ),
                   ],
                   const SizedBox(height: 32),

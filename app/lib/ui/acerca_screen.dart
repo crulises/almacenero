@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../app_deps.dart';
 import '../data/app_info.dart';
 import '../data/user_repository.dart';
+import 'google_logo.dart';
 import 'tarjeta_ligar.dart';
 
 /// Un enlace tocable: texto visible y destino.
@@ -103,7 +104,7 @@ class _AcercaScreenState extends State<AcercaScreen> {
     }
   }
 
-  /// «Cuenta»: si ya está ligada a Google lo dice; si no, deja ligarla (sin esperar a que
+  /// «Cuenta»: si ya está asociada a Google lo dice; si no, deja asociarla (sin esperar a que
   /// aparezca la tarjeta del inicio). Si no se pudo saber, no se muestra nada.
   Widget _cuenta(BuildContext context) {
     return FutureBuilder<Me>(
@@ -118,16 +119,17 @@ class _AcercaScreenState extends State<AcercaScreen> {
             Text('Cuenta', style: tema.titleLarge),
             const SizedBox(height: 8),
             if (me.ligada)
-              const Text('Tu cuenta está ligada a Google')
+              const Text('Tu cuenta está asociada a Google')
             else ...[
               const Text(
-                'Ligá tu cuenta a Google para no perder tu karma si cambiás '
-                'de celular o reinstalás la app.',
+                'Asociá una cuenta de Google para poder iniciar sesión en esta '
+                'cuenta desde otro celular o después de reinstalar la app.',
               ),
               const SizedBox(height: 8),
-              OutlinedButton(
+              OutlinedButton.icon(
                 onPressed: _ligar,
-                child: const Text('Ligar con Google'),
+                icon: const GoogleLogo(),
+                label: const Text('Asociar cuenta de Google'),
               ),
             ],
             const SizedBox(height: 32),
