@@ -446,7 +446,7 @@ Un PIN es una invitación con `usos_max = 1`; la descripción va en `nota`.
    «instalar apps desconocidas» y las actualizaciones deben ir firmadas con la
    misma clave). Play Store no hace falta ahora (cuenta de desarrollador de pago
    único y requisitos de prueba cerrada; evaluarlo si el grupo crece).
-7. El `applicationId` actual (`ar.almacenero.almacenero`) es definitivo una vez
+7. El `applicationId` (ya cambiado a `dev.crulises.almacenero` en el corte 21) es definitivo una vez
    publicado: confirmalo antes del primer release.
 
 ### Backend desplegado con HTTPS
