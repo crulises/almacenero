@@ -1177,7 +1177,11 @@ Decisiones en `docs/04` §9.
   SHA-1 de debug (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass
   android -keypass android`). En Android, el `canceled` de `google_sign_in` también significa mala configuración.
 - **Causa 2:** la pantalla de consentimiento está en **Testing** (Google Auth Platform › Público) y la cuenta
-  no figura en «Usuarios de prueba». En producción (con solo `email`/`profile`/`openid`) no hace falta.
+  no figura en «Usuarios de prueba». Aplica a las demás personas: la cuenta dueña del proyecto de Google Cloud
+  entra igual sin figurar (verificado quitándola de la lista). En producción (con solo `email`/`profile`/
+  `openid`) no hace falta.
+- **Cómo se reconoce la causa 1:** `canceled: [16]…` aparece al faltar el cliente Android del SHA-1 con el que
+  se firmó el APK (verificado: borrarlo lo provoca; recrearlo con los mismos datos lo arregla en minutos).
 - **Cada APK, su cliente:** debug → SHA-1 de debug; `--release` → SHA-1 de la keystore de release; si algún día
   se publica en Play Store con «Play App Signing», además el SHA-1 que muestra Play Console.
 
