@@ -12,7 +12,7 @@ from app.api.v1.admin.paginas import Pagina
 from app.auth import Usuario
 from app.db import get_pool
 from app.services import alias as servicio_alias
-from app.services import auditoria, dispositivos, moderacion
+from app.services import auditoria, dispositivos, moderacion, reclamos
 from app.services.permisos import exigir
 
 router = APIRouter(tags=["admin"])
@@ -65,7 +65,8 @@ class LocalCreadoOut(BaseModel):
 class CuentaHermanaOut(BaseModel):
     id: UUID
     alias: str
-    estado: str
+    estado: str  # activo | baja | fusionada
+    es_anonimo: bool  # false: ya está ligada a Google; true: puede ser una huérfana
 
 
 class AliasHistorialOut(BaseModel):
@@ -102,6 +103,16 @@ class KarmaIn(BaseModel):
 
 class BajaIn(BaseModel):
     motivo: str = Field(min_length=3, max_length=300)
+
+
+class ReclamoIn(BaseModel):
+    huerfana_id: UUID
+    motivo: str = Field(min_length=3, max_length=300)
+
+
+class ReclamoOut(BaseModel):
+    # Filas que no pasaron por chocar con una restricción de unicidad: quedan con la huérfana.
+    filas_sin_pasar: int
 
 
 class UsuarioPatch(BaseModel):
@@ -379,3 +390,21 @@ async def reactivar(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> UsuarioAdminOut:
     return await _cambiar_estado(pool, admin, usuario_id, "activo", body.motivo.strip())
+
+
+@router.post("/usuarios/{usuario_id}/reclamar", response_model=ReclamoOut)
+async def reclamar_huerfana(
+    usuario_id: UUID,
+    body: ReclamoIn,
+    admin: Usuario = Depends(exigir("usuario.reclamar")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ReclamoOut:
+    """Reclama una cuenta huérfana (anónima y activa) para esta cuenta ligada a Google: le
+    pasa el karma y las cargas y la deja `fusionada`. Motivo obligatorio; queda auditado."""
+    try:
+        sin_pasar = await reclamos.reclamar(
+            pool, admin.id, body.huerfana_id, usuario_id, body.motivo.strip()
+        )
+    except reclamos.ReclamoInvalido as e:
+        raise HTTPException(e.http, e.mensaje) from e
+    return ReclamoOut(filas_sin_pasar=sin_pasar)

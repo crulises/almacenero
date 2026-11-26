@@ -333,3 +333,14 @@ def test_una_cuenta_ligada_no_recibe_la_sugerencia_y_me_no_expone_el_email(clien
     m = me(client, auth_id)
     assert m["ligada"] is True and m["sugerir_ligar"] is False
     assert "email" not in m and f"{auth_id}@example.com" not in json.dumps(m)
+
+
+def test_una_cuenta_fusionada_tampoco_renueva_la_sesion(client, google):
+    uid, auth_id = cuenta_ligada(client)
+    destino, _ = cuenta_ligada(client)
+    poner_estado(uid, "fusionada", destino)
+    google["json"] = sesion_de(auth_id)
+
+    r = client.post("/v1/auth/refresh", json={"refresh_token": "ref"})
+
+    assert r.status_code == 403 and r.json()["detail"]["codigo"] == "cuenta_fusionada"
