@@ -26,6 +26,8 @@ Además:
 - `docs/10-roadmap.md` — releases (0.1.x cerrado; 0.2.x en adelante planificados) y principios del
   producto (la app es guía, no tracker financiero; el orden de precios no se vende). Cada release
   tiene su plan: `docs/04-plan-v0.1.md` (el cerrado), `04-plan-v0.2.md`, `04-plan-v0.3.md`…
+- `docs/superpowers/specs/2026-11-26-cuentas-ligables-design.md` — corte 21 (0.2.x, parte A): ligar la cuenta
+  anónima a Google, entrar desde otro celular y reclamo de huérfanas por un admin (resumen en Doc 2).
 - `docs/03-problemas-soluciones.md` — cómo armar el entorno desde cero y los
   problemas ya vividos (con su solución). **Leelo antes de debuggear un problema
   de entorno, de build o de auth**, y agregale lo nuevo que aparezca (formato

@@ -28,13 +28,19 @@ enabled = true
 site_url = "http://127.0.0.1:3000"
 enable_signup = true
 enable_anonymous_sign_ins = true  # v0.0.1: auth anónima
+# Corte 21: ligar un Google a la cuenta anónima (`link_identity`) la convierte en la MISMA
+# cuenta con identidad; sin esto GoTrue rechaza el ligado.
+enable_manual_linking = true
 
 [auth.email]
 enable_signup = true
 enable_confirmations = false
 
-# Cableado para OAuth listo pero NO activado en v0.0.1.
+# Google (corte 21): lo usa la app con Google Sign-In nativo; GoTrue valida el `id_token` contra el
+# cliente **Web** de Google Cloud (el de Android solo se registra allá, no va acá).
+# Los valores salen de `.env` (`make up` los exporta); `.env.example` trae unos de relleno para que
+# el stack levante sin configurar Google (en CI y en un clon nuevo).
 [auth.external.google]
-enabled = false
+enabled = true
 client_id = "env(GOOGLE_CLIENT_ID)"
 secret = "env(GOOGLE_CLIENT_SECRET)"

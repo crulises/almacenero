@@ -35,6 +35,7 @@ CAPACIDADES: dict[str, frozenset[str]] = {
             "usuario.cambiar_rol",
             "usuario.ajustar_karma",
             "usuario.dar_baja",
+            "usuario.reclamar",  # huérfanas → cuenta ligada (corte 21)
             "local.editar",
             "local.fusionar",
             "local.borrar",

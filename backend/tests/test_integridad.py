@@ -6,6 +6,7 @@ import asyncpg
 import pytest
 
 from app.config import get_settings
+from tests.conftest import make_token
 
 
 def _sql(query: str, *args):
@@ -72,3 +73,48 @@ def test_el_rol_solo_admite_valores_conocidos(usuario):
 
     with pytest.raises(asyncpg.CheckViolationError):
         asyncio.run(run())
+
+
+def _con_estado_write(query: str, *args):
+    """Corre `query` en una transacción que habilita la escritura del estado (como el panel)."""
+
+    async def run():
+        conn = await asyncpg.connect(get_settings().database_url)
+        try:
+            async with conn.transaction():
+                await conn.execute("select set_config('app.estado_write', 'on', true)")
+                return await conn.execute(query, *args)
+        finally:
+            await conn.close()
+
+    return asyncio.run(run())
+
+
+def test_estado_fusionada_requiere_destino(usuario):
+    with pytest.raises(asyncpg.PostgresError, match="usuarios_fusionada_coherente"):
+        _con_estado_write("update usuarios set estado = 'fusionada' where id = $1::uuid", usuario)
+
+
+def test_estado_fusionada_no_puede_apuntar_a_si_mismo(usuario):
+    with pytest.raises(asyncpg.PostgresError, match="usuarios_fusionada_coherente"):
+        _con_estado_write(
+            "update usuarios set estado = 'fusionada', fusionada_en = id where id = $1::uuid",
+            usuario,
+        )
+
+
+def test_estado_fusionada_con_destino_pasa(client, usuario):
+    otro = client.get("/v1/me", headers={"Authorization": f"Bearer {make_token()}"}).json()["id"]
+    _con_estado_write(
+        "update usuarios set estado = 'fusionada', fusionada_en = $2::uuid where id = $1::uuid",
+        usuario,
+        otro,
+    )
+
+
+def test_fusionada_no_se_setea_sin_habilitar_la_escritura(client, usuario):
+    with pytest.raises(asyncpg.PostgresError, match="estado"):
+        _sql(
+            "update usuarios set estado = 'fusionada', fusionada_en = id where id = $1::uuid",
+            usuario,
+        )

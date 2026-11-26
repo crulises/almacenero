@@ -21,6 +21,11 @@ CUENTA_BAJA = {
     "mensaje": "tu cuenta fue dada de baja: ya no podés usar Almacenero",
 }
 
+CUENTA_FUSIONADA = {
+    "codigo": "cuenta_fusionada",
+    "mensaje": "esta cuenta se unió a otra: entrá con Google",
+}
+
 
 @dataclass
 class Usuario:
@@ -33,6 +38,8 @@ class Usuario:
     # Escalón por karma (docs/04 §9): normal | aviso | restringido. Deducido, no guardado.
     escalon: str = "normal"
     umbral_restriccion: int = -15
+    # False cuando la cuenta se ligó a Google (docs/04-plan-v0.2.md, parte A).
+    es_anonimo: bool = True
 
 
 @lru_cache
@@ -59,6 +66,34 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="token inválido") from e
 
 
+async def asegurar_usuario(
+    conn: asyncpg.Pool | asyncpg.Connection, auth_id: UUID, email: str | None, es_anonimo: bool
+) -> asyncpg.Record:
+    """Alta perezosa del perfil: crea la fila de `usuarios` si no existe y la devuelve.
+
+    `es_anonimo` no se revierte: una cuenta ya ligada sigue ligada aunque llegue un token
+    anterior al ligado (que todavía dice `is_anonymous`).
+    """
+    return await conn.fetchrow(
+        """
+        insert into usuarios (auth_id, alias, email, es_anonimo, anonimo_auth_id)
+        values ($1, $2, $3, $4, case when $4::boolean then $1::uuid end)
+        on conflict (auth_id) do update
+            set email = coalesce(
+                    (select excluded.email where not exists (
+                        select 1 from usuarios o
+                        where o.email = excluded.email and o.id <> usuarios.id)),
+                    usuarios.email),
+                es_anonimo = usuarios.es_anonimo and excluded.es_anonimo
+        returning id, auth_id, alias, karma, rol, estado, es_anonimo
+        """,
+        auth_id,
+        f"anon-{str(auth_id)[:6]}",
+        email,
+        es_anonimo,
+    )
+
+
 async def current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
     pool: asyncpg.Pool = Depends(get_pool),
@@ -76,25 +111,15 @@ async def current_user(
     # salvo que haya email.
     email = claims.get("email") or None
     es_anonimo = bool(claims.get("is_anonymous", email is None))
-    row = await pool.fetchrow(
-        """
-        insert into usuarios (auth_id, alias, email, es_anonimo, anonimo_auth_id)
-        values ($1, $2, $3, $4, case when $4::boolean then $1::uuid end)
-        on conflict (auth_id) do update
-            set email = coalesce(excluded.email, usuarios.email),
-                es_anonimo = excluded.es_anonimo
-        returning id, auth_id, alias, karma, rol, estado
-        """,
-        auth_id,
-        f"anon-{str(auth_id)[:6]}",
-        email,
-        es_anonimo,
-    )
+    row = await asegurar_usuario(pool, auth_id, email, es_anonimo)
     datos = dict(row)
     if datos["estado"] == "baja":
         # Vale en el siguiente request, aunque el token siga vigente. 403 y no 401: un 401
         # haría que la app «empiece de nuevo» con otra cuenta anónima.
         raise HTTPException(status_code=403, detail=CUENTA_BAJA)
+    if datos["estado"] == "fusionada":
+        # Una huérfana que el admin reclamó para una cuenta ligada: ya no se usa (403, no 401).
+        raise HTTPException(status_code=403, detail=CUENTA_FUSIONADA)
     aviso, restriccion = await moderacion.umbrales(pool)
     return Usuario(
         **datos,

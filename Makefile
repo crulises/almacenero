@@ -16,7 +16,8 @@ help: ## Lista todos los targets con lo que hace cada uno
 # --- stack local -----------------------------------------------------------
 up: ## Levanta Supabase (Postgres/Auth/Storage) y el backend
 	@test -f .env || cp .env.example .env
-	supabase start
+	@# `supabase start` resuelve env(GOOGLE_CLIENT_ID) de config.toml con el entorno del proceso.
+	@set -a; . ./.env; set +a; supabase start
 	@# Completa AUTH_API_KEY (api key pública del auth local) si falta en .env.
 	@if ! grep -qE '^AUTH_API_KEY=.+' .env; then \
 		key=$$(supabase status -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['ANON_KEY'])"); \
@@ -273,10 +274,12 @@ apk: ## APK debug (arm64) para el celular: sube la versión sola (0.1.0, 0.1.1, 
 	[ -n "$$ip" ] || ip=$$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | cut -d' ' -f1); \
 	[ -n "$$ip" ] || { echo "No pude detectar la IP local: usá make apk LAN_IP=<ip>"; exit 1; }; \
 	read -r ver commit code <<< "$$(app/tool/version.sh)" || exit 1; \
+	gid=$$(grep -E '^GOOGLE_CLIENT_ID=' .env 2>/dev/null | cut -d= -f2- | sed 's/[[:space:]]*#.*$$//'); \
 	echo "La app apuntará a http://$$ip:8000 — versión $$ver ($$commit)"; \
 	cd app && flutter build apk --debug --target-platform android-arm64 \
 		--build-name=$$ver --build-number=$$code \
 		--dart-define=API_URL=http://$$ip:8000 --dart-define=APP_VERSION=$$ver \
+		--dart-define=GOOGLE_WEB_CLIENT_ID=$$gid \
 		$(if $(API_TIMEOUT_S),--dart-define=API_TIMEOUT_S=$(API_TIMEOUT_S)) \
 		--dart-define=APP_COMMIT=$$commit --dart-define=APP_BUILT_AT=$$(date +%Y-%m-%dT%H:%M) \
 	&& echo "APK v$$ver: app/build/app/outputs/flutter-apk/app-debug.apk"

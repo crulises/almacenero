@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:almacenero/data/api_client.dart';
 import 'package:almacenero/data/auth_repository.dart';
+import 'package:almacenero/data/google_signin_service.dart';
 import 'package:almacenero/data/session.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -33,6 +34,17 @@ class MemoryInvitations implements InvitationStore {
   Future<void> clear() async => code = null;
 }
 
+class GoogleDeMentira implements GoogleSignInService {
+  String? idToken = 'id-google-1';
+  int pedidos = 0;
+
+  @override
+  Future<String?> obtenerIdToken() async {
+    pedidos++;
+    return idToken;
+  }
+}
+
 void main() {
   late DateTime now;
   late MemoryStore store;
@@ -41,10 +53,13 @@ void main() {
   late MemoryInvitations invitaciones;
   late List<Object?> cuerpos;
   late Map<String, Object> detalles;
+  late List<String?> bearers;
+  late GoogleDeMentira google;
 
   AuthRepository build() {
     final client = MockClient((request) async {
       llamadas.add(request.url.path);
+      bearers.add(request.headers['Authorization']);
       cuerpos.add(request.body.isEmpty ? null : jsonDecode(request.body));
       final status = estados[request.url.path] ?? 200;
       if (status != 200) {
@@ -67,6 +82,7 @@ void main() {
       api: ApiClient(baseUrl: 'http://x', httpClient: client),
       store: store,
       invitations: invitaciones,
+      google: google,
       now: () => now,
     );
   }
@@ -79,6 +95,8 @@ void main() {
     invitaciones = MemoryInvitations();
     cuerpos = [];
     detalles = {};
+    bearers = [];
+    google = GoogleDeMentira();
   });
 
   test('primer arranque: crea sesión anónima y la guarda', () async {
@@ -195,6 +213,119 @@ void main() {
         build().accessToken(),
         throwsA(
           isA<ApiException>().having((e) => e.isRateLimited, '429', true),
+        ),
+      );
+    });
+  });
+
+  group('Google', () {
+    test(
+      'ligar: manda el id_token con la sesión y guarda la sesión nueva',
+      () async {
+        final auth = build();
+        await auth.accessToken(); // sesión anónima: acc1
+
+        await auth.ligarConGoogle();
+
+        expect(llamadas, ['/v1/auth/anonymous', '/v1/auth/google/ligar']);
+        expect(bearers.last, 'Bearer acc1');
+        expect(cuerpos.last, {'id_token': 'id-google-1'});
+        expect(store.session?.accessToken, 'acc2'); // ya no dice anónima
+        expect(await auth.accessToken(), 'acc2');
+      },
+    );
+
+    test('ligar: si la persona cancela no se llama al backend', () async {
+      final auth = build();
+      await auth.accessToken();
+      llamadas.clear();
+      google.idToken = null;
+
+      await expectLater(auth.ligarConGoogle(), throwsA(isA<GoogleCancelado>()));
+
+      expect(llamadas, isEmpty);
+      expect(store.session?.accessToken, 'acc1');
+    });
+
+    test('ligar: dos toques seguidos hacen una sola operación', () async {
+      final auth = build();
+      await auth.accessToken();
+      llamadas.clear();
+
+      await Future.wait([auth.ligarConGoogle(), auth.ligarConGoogle()]);
+
+      expect(llamadas, ['/v1/auth/google/ligar']);
+      expect(google.pedidos, 1);
+    });
+
+    test('ligar: ese Google ya es de otra cuenta', () async {
+      final auth = build();
+      await auth.accessToken();
+      estados['/v1/auth/google/ligar'] = 409;
+      detalles['/v1/auth/google/ligar'] = {'codigo': 'google_ya_ligado'};
+
+      await expectLater(auth.ligarConGoogle(), throwsA(isA<GoogleYaLigado>()));
+      expect(store.session?.accessToken, 'acc1'); // sigue con su cuenta
+    });
+
+    test('entrar: abre sesión sin token previo y la guarda', () async {
+      final auth = build();
+
+      await auth.entrarConGoogle();
+
+      expect(llamadas, ['/v1/auth/google/entrar']);
+      expect(bearers.single, isNull);
+      expect(cuerpos.single, {'id_token': 'id-google-1'});
+      expect(store.session?.accessToken, 'acc1');
+    });
+
+    test(
+      'entrar con cuenta nueva y modo invitación: pide el código y reintenta '
+      'con el mismo id_token',
+      () async {
+        final auth = build();
+        estados['/v1/auth/google/entrar'] = 403;
+        detalles['/v1/auth/google/entrar'] = {'codigo': 'invitacion_requerida'};
+        await expectLater(
+          auth.entrarConGoogle(),
+          throwsA(
+            isA<InvitacionRequerida>().having((e) => e.rechazada, 'r', false),
+          ),
+        );
+        estados.remove('/v1/auth/google/entrar');
+        cuerpos.clear();
+
+        await auth.entrarConGoogle(codigoInvitacion: '123456');
+
+        expect(google.pedidos, 1); // no se vuelve a abrir el selector de Google
+        expect(cuerpos.single, {
+          'id_token': 'id-google-1',
+          'codigo_invitacion': '123456',
+        });
+        expect(store.session, isNotNull);
+      },
+    );
+
+    test('entrar con un código malo vuelve a pedirlo', () async {
+      final auth = build();
+      estados['/v1/auth/google/entrar'] = 403;
+      detalles['/v1/auth/google/entrar'] = {'codigo': 'invitacion_invalida'};
+      await expectLater(
+        auth.entrarConGoogle(codigoInvitacion: 'x'),
+        throwsA(
+          isA<InvitacionRequerida>().having((e) => e.rechazada, 'r', true),
+        ),
+      );
+    });
+
+    test('entrar con una cuenta de baja llega como ApiException', () async {
+      final auth = build();
+      estados['/v1/auth/google/entrar'] = 403;
+      detalles['/v1/auth/google/entrar'] = {'codigo': 'cuenta_baja'};
+      await expectLater(
+        auth.entrarConGoogle(),
+        throwsA(
+          isA<ApiException>().having((e) => e.isCuentaBaja, 'baja', true),
         ),
       );
     });

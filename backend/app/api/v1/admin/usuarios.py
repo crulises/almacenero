@@ -12,7 +12,7 @@ from app.api.v1.admin.paginas import Pagina
 from app.auth import Usuario
 from app.db import get_pool
 from app.services import alias as servicio_alias
-from app.services import auditoria, dispositivos, moderacion
+from app.services import auditoria, dispositivos, moderacion, reclamos
 from app.services.permisos import exigir
 
 router = APIRouter(tags=["admin"])
@@ -34,8 +34,9 @@ class UsuarioAdminOut(BaseModel):
     rol: str
     karma: int
     # Moderación (docs/04 §9): el estado se guarda; el escalón se deduce del karma.
-    estado: str  # activo | baja
+    estado: str  # activo | baja | fusionada
     baja_at: datetime | None
+    fusionada_en: UUID | None = None  # corte 21: a qué cuenta ligada se unió (estado fusionada)
     escalon: str  # normal | aviso | restringido
     cargas: int
     locales_creados: int
@@ -65,7 +66,8 @@ class LocalCreadoOut(BaseModel):
 class CuentaHermanaOut(BaseModel):
     id: UUID
     alias: str
-    estado: str
+    estado: str  # activo | baja | fusionada
+    es_anonimo: bool  # false: ya está ligada a Google; true: puede ser una huérfana
 
 
 class AliasHistorialOut(BaseModel):
@@ -104,13 +106,23 @@ class BajaIn(BaseModel):
     motivo: str = Field(min_length=3, max_length=300)
 
 
+class ReclamoIn(BaseModel):
+    huerfana_id: UUID
+    motivo: str = Field(min_length=3, max_length=300)
+
+
+class ReclamoOut(BaseModel):
+    # Filas que no pasaron por chocar con una restricción de unicidad: quedan con la huérfana.
+    filas_sin_pasar: int
+
+
 class UsuarioPatch(BaseModel):
     alias: str = Field(min_length=1, max_length=200)
 
 
 _SELECT = """
     select u.id, u.auth_id, u.alias, u.email, u.es_anonimo, u.anonimo_auth_id, u.rol,
-           u.karma, u.created_at, u.estado, u.baja_at,
+           u.karma, u.created_at, u.estado, u.baja_at, u.fusionada_en,
            (select i.codigo from invitaciones i where i.usada_por_auth = u.auth_id
              limit 1) as invitacion_codigo,
            (select i.nota from invitaciones i where i.usada_por_auth = u.auth_id
@@ -334,6 +346,8 @@ async def _cambiar_estado(
         )
         if u is None:
             raise HTTPException(404, "usuario no encontrado")
+        if u["estado"] == "fusionada":
+            raise HTTPException(409, "es una cuenta fusionada: ya no tiene baja ni reactivación")
         if u["estado"] == nuevo:
             raise HTTPException(409, "ya está de baja" if nuevo == "baja" else "ya está activo")
         if nuevo == "baja" and u["rol"] == "admin":
@@ -379,3 +393,21 @@ async def reactivar(
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> UsuarioAdminOut:
     return await _cambiar_estado(pool, admin, usuario_id, "activo", body.motivo.strip())
+
+
+@router.post("/usuarios/{usuario_id}/reclamar", response_model=ReclamoOut)
+async def reclamar_huerfana(
+    usuario_id: UUID,
+    body: ReclamoIn,
+    admin: Usuario = Depends(exigir("usuario.reclamar")),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> ReclamoOut:
+    """Reclama una cuenta huérfana (anónima y activa) para esta cuenta ligada a Google: le
+    pasa el karma y las cargas y la deja `fusionada`. Motivo obligatorio; queda auditado."""
+    try:
+        sin_pasar = await reclamos.reclamar(
+            pool, admin.id, body.huerfana_id, usuario_id, body.motivo.strip()
+        )
+    except reclamos.ReclamoInvalido as e:
+        raise HTTPException(e.http, e.mensaje) from e
+    return ReclamoOut(filas_sin_pasar=sin_pasar)
