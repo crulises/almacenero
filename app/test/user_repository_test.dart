@@ -29,4 +29,22 @@ void main() {
     });
     expect(me.escalon, Escalon.restringido);
   });
+
+  test('Me lee si la cuenta está ligada y si conviene sugerirlo', () {
+    final me = Me.fromJson({
+      'id': 'u1',
+      'alias': 'a',
+      'karma': 3,
+      'ligada': false,
+      'sugerir_ligar': true,
+    });
+    expect(me.ligada, false);
+    expect(me.sugerirLigar, true);
+  });
+
+  test('un backend viejo (sin ligada) se lee como no ligada y sin sugerir', () {
+    final me = Me.fromJson({'id': 'u1', 'alias': 'a', 'karma': 3});
+    expect(me.ligada, false);
+    expect(me.sugerirLigar, false);
+  });
 }
