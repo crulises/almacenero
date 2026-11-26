@@ -48,6 +48,15 @@ Diseño completo: `docs/superpowers/specs/2026-11-26-cuentas-ligables-design.md`
 | Rate limit propio en `/google/ligar` | Hoy depende de GoTrue. Con uno propio se corta antes el abuso desde una IP. |
 | `proteger_estado` no cubre `fusionada_en` suelto | Dejaría cambiar el destino de una fusión sin pasar por el reclamo. Cerrarlo hace la fusión inalterable a mano; no cambia la UI. |
 
+### Cortes futuros — ingreso con usuario y contraseña (idea, sin diseñar)
+
+Una vía sin Google para recuperar la cuenta en otro celular. Se diseña en su propio brainstorming; lo ya
+hablado: **no** atar la contraseña al `android_id` (cambia con el celular, con el reset de fábrica y con la
+keystore con que se firma el APK: justo lo que se quiere cubrir). Va con **usuario + contraseña** propios de
+la cuenta (GoTrue lo soporta), sin depender de un servidor SMTP. Costo a decidir: sin email no hay «olvidé mi
+contraseña», así que hace falta otra forma de recuperarla (p. ej. un admin la restablece) y evitar que alguien
+tome el usuario de otro.
+
 ## Reglas que ya están decididas (de `docs/10-roadmap.md`)
 
 1. La app es **guía, no tracker financiero**: sin «lo compré», sin ahorro acumulado.
