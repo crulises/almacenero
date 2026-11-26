@@ -19,6 +19,17 @@ class GoogleCancelado implements Exception {
   const GoogleCancelado();
 }
 
+/// Google Sign-In falló por algo que no es cancelar (falta configuración, Google no devolvió
+/// el `id_token`…). El mensaje se muestra tal cual: es lo que permite diagnosticar.
+class GoogleFallo implements Exception {
+  const GoogleFallo(this.detalle);
+
+  final String detalle;
+
+  @override
+  String toString() => detalle;
+}
+
 /// Ese Google ya pertenece a otra cuenta (409 `google_ya_ligado`): no se puede ligar a esta;
 /// lo que corresponde es entrar con esa cuenta.
 class GoogleYaLigado implements Exception {

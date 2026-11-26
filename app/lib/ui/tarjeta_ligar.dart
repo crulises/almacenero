@@ -3,6 +3,9 @@ import 'package:material_ui/material_ui.dart';
 import '../app_deps.dart';
 import '../data/auth_repository.dart';
 
+void _avisar(ScaffoldMessengerState mensajes, String texto) =>
+    mensajes.showSnackBar(SnackBar(content: Text(texto)));
+
 /// Liga la cuenta actual a un Google (el flujo que comparten la tarjeta y «Acerca de»).
 /// Devuelve `true` si la sesión cambió (se ligó, o se entró a la cuenta que ese Google ya
 /// tenía): quien llama refresca lo que muestra. Cerrar el selector no hace nada; un fallo
@@ -13,6 +16,10 @@ Future<bool> ligarCuentaConGoogle(BuildContext context, AppDeps deps) async {
     await deps.ligarConGoogle();
     return true;
   } on GoogleCancelado {
+    _avisar(mensajes, 'Se canceló el ingreso con Google.');
+    return false;
+  } on GoogleFallo catch (e) {
+    _avisar(mensajes, 'Google falló: ${e.detalle}');
     return false;
   } on GoogleYaLigado {
     if (!context.mounted) return false;
@@ -41,6 +48,10 @@ Future<bool> ligarCuentaConGoogle(BuildContext context, AppDeps deps) async {
       await deps.entrarConGoogle();
       return true;
     } on GoogleCancelado {
+      _avisar(mensajes, 'Se canceló el ingreso con Google.');
+      return false;
+    } on GoogleFallo catch (e) {
+      _avisar(mensajes, 'Google falló: ${e.detalle}');
       return false;
     } catch (_) {
       mensajes.showSnackBar(

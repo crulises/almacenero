@@ -1,5 +1,7 @@
 import 'package:google_sign_in/google_sign_in.dart';
 
+import 'auth_repository.dart' show GoogleFallo;
+
 /// Abre el selector de cuentas de Google y devuelve el `id_token` (que el backend
 /// reenvía a GoTrue). Una interfaz aparte para poder probar sin Google.
 abstract class GoogleSignInService {
@@ -27,10 +29,20 @@ class GoogleSignInNativo implements GoogleSignInService {
     ));
     try {
       final cuenta = await google.authenticate();
-      return cuenta.authentication.idToken;
+      final idToken = cuenta.authentication.idToken;
+      if (idToken == null) {
+        throw GoogleFallo(
+          serverClientId.isEmpty
+              ? 'esta build no trae GOOGLE_WEB_CLIENT_ID: armá el APK con make apk'
+              : 'Google no devolvió el id_token (¿el cliente Web es el correcto?)',
+        );
+      }
+      return idToken;
     } on GoogleSignInException catch (e) {
+      // Ojo: en Android `canceled` también sale cuando la configuración está mal (paquete o
+      // SHA-1 sin registrar en Google Cloud); por eso se avisa y se deja el detalle.
       if (e.code == GoogleSignInExceptionCode.canceled) return null;
-      rethrow;
+      throw GoogleFallo('${e.code.name}: ${e.description ?? 'sin detalle'}');
     }
   }
 }

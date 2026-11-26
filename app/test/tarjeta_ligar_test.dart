@@ -110,7 +110,7 @@ void main() {
       expect(find.text('Protegé tu cuenta'), findsNothing);
     });
 
-    testWidgets('si se cierra el selector de Google no pasa nada', (
+    testWidgets('si se cierra el selector de Google lo avisa y sigue', (
       tester,
     ) async {
       m.errorAlLigar = const GoogleCancelado();
@@ -118,8 +118,22 @@ void main() {
       await tester.tap(find.text('Ligar con Google'));
       await tester.pumpAndSettle();
       expect(find.text('Protegé tu cuenta'), findsOneWidget);
-      expect(find.byType(SnackBar), findsNothing);
+      expect(find.textContaining('canceló'), findsOneWidget);
     });
+
+    testWidgets(
+      'un error de Google muestra el detalle para poder diagnosticar',
+      (tester) async {
+        m.errorAlLigar = const GoogleFallo('falta GOOGLE_WEB_CLIENT_ID');
+        await abrir(tester);
+        await tester.tap(find.text('Ligar con Google'));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('falta GOOGLE_WEB_CLIENT_ID'),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('si ese Google ya tiene cuenta, ofrece entrar con ella', (
       tester,
@@ -210,7 +224,7 @@ void main() {
       expect(find.textContaining('Ese código no sirve'), findsOneWidget);
     });
 
-    testWidgets('si se cierra el selector de Google no pasa nada', (
+    testWidgets('si se cierra el selector de Google lo avisa y sigue', (
       tester,
     ) async {
       m.errorAlEntrar = const GoogleCancelado();
@@ -218,7 +232,7 @@ void main() {
       await tester.tap(find.text('Entrar con Google'));
       await tester.pumpAndSettle();
       expect(find.text('Código de invitación'), findsOneWidget);
-      expect(find.byType(SnackBar), findsNothing);
+      expect(find.textContaining('canceló'), findsOneWidget);
     });
   });
 }

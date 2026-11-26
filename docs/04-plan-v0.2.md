@@ -37,6 +37,17 @@ Diseño completo: `docs/superpowers/specs/2026-11-26-cuentas-ligables-design.md`
 - Android: `applicationId` `dev.crulises.almacenero`; el SHA-1 de la keystore de **release** se registra
   como otro cliente Android en Google Cloud al publicar (`docs/03`).
 
+### Parte A — pendientes menores (anotados, no hechos)
+
+| Qué | Por qué hace falta / qué mejora |
+|---|---|
+| Pantalla para el 403 `cuenta_fusionada` en la app | Hoy una cuenta fusionada ve «No pudimos conectar» sin salida. Con una pantalla propia («Esta cuenta se unió a otra: entrá con Google») y el botón «Entrar con Google», la persona no queda trabada. |
+| `ya_ligada` (409) como éxito | Si se perdió la respuesta de un ligado anterior, la app dice «No pudimos ligar» aunque la cuenta ya está ligada. Debería refrescar y mostrar «Tu cuenta está ligada»: menos confusión y cero reintentos inútiles. |
+| El PIN «pegado» al camino de Google | Tras tocar «Entrar con Google», todo PIN escrito va por Google aunque la persona quiera el alta anónima; si el `id_token` vence (~1 h) cada PIN falla. Un botón «Volver» y reiniciar el token pendiente evita el callejón. |
+| Carreras reclamo ↔ carga / ligado de la huérfana | Una carga en vuelo de la huérfana puede quedar a su nombre tras el reclamo. Es raro (el admin reclama cuentas perdidas); se arregla bloqueando la fila en la carga. Mejora la integridad del karma, no la UI. |
+| Rate limit propio en `/google/ligar` | Hoy depende de GoTrue. Con uno propio se corta antes el abuso desde una IP. |
+| `proteger_estado` no cubre `fusionada_en` suelto | Dejaría cambiar el destino de una fusión sin pasar por el reclamo. Cerrarlo hace la fusión inalterable a mano; no cambia la UI. |
+
 ## Reglas que ya están decididas (de `docs/10-roadmap.md`)
 
 1. La app es **guía, no tracker financiero**: sin «lo compré», sin ahorro acumulado.

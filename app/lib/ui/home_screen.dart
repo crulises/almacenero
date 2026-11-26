@@ -144,7 +144,13 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         _pinRechazado = e.rechazada;
       });
     } on GoogleCancelado {
-      // cerró el selector: sigue en la pantalla
+      mensajes.showSnackBar(
+        const SnackBar(content: Text('Se canceló el ingreso con Google.')),
+      );
+    } on GoogleFallo catch (e) {
+      mensajes.showSnackBar(
+        SnackBar(content: Text('Google falló: ${e.detalle}')),
+      );
     } catch (_) {
       mensajes.showSnackBar(
         const SnackBar(content: Text('No pudimos entrar. Probá de nuevo.')),
