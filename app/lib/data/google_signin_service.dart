@@ -39,10 +39,13 @@ class GoogleSignInNativo implements GoogleSignInService {
       }
       return idToken;
     } on GoogleSignInException catch (e) {
-      // Ojo: en Android `canceled` también sale cuando la configuración está mal (paquete o
-      // SHA-1 sin registrar en Google Cloud); por eso se avisa y se deja el detalle.
-      if (e.code == GoogleSignInExceptionCode.canceled) return null;
-      throw GoogleFallo('${e.code.name}: ${e.description ?? 'sin detalle'}');
+      // En Android `canceled` también sale cuando la configuración está mal (paquete o SHA-1
+      // sin registrar en Google Cloud, sin cuenta de Google en el celular…): por eso nunca se
+      // trata en silencio; el detalle se muestra para poder diagnosticar.
+      throw GoogleFallo(
+        '${e.code.name}: ${e.description ?? 'sin descripción'}'
+        '${e.details == null ? '' : ' (${e.details})'}',
+      );
     }
   }
 }
