@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../app_deps.dart';
 import '../data/app_info.dart';
+import '../data/user_repository.dart';
+import 'tarjeta_ligar.dart';
 
 /// Un enlace tocable: texto visible y destino.
 typedef Enlace = (String, String);
@@ -90,6 +92,50 @@ class AcercaScreen extends StatefulWidget {
 
 class _AcercaScreenState extends State<AcercaScreen> {
   late final Future<InfoApp> _info = widget.deps.loadInfoApp();
+  late Future<Me> _me = widget.deps.loadMe()..ignore();
+
+  Future<void> _ligar() async {
+    final cambio = await ligarCuentaConGoogle(context, widget.deps);
+    if (cambio && mounted) {
+      setState(() {
+        _me = widget.deps.loadMe()..ignore();
+      });
+    }
+  }
+
+  /// «Cuenta»: si ya está ligada a Google lo dice; si no, deja ligarla (sin esperar a que
+  /// aparezca la tarjeta del inicio). Si no se pudo saber, no se muestra nada.
+  Widget _cuenta(BuildContext context) {
+    return FutureBuilder<Me>(
+      future: _me,
+      builder: (context, snapshot) {
+        final me = snapshot.data;
+        if (me == null) return const SizedBox.shrink();
+        final tema = Theme.of(context).textTheme;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Cuenta', style: tema.titleLarge),
+            const SizedBox(height: 8),
+            if (me.ligada)
+              const Text('Tu cuenta está ligada a Google')
+            else ...[
+              const Text(
+                'Ligá tu cuenta a Google para no perder tu karma si cambiás '
+                'de celular o reinstalás la app.',
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _ligar,
+                child: const Text('Ligar con Google'),
+              ),
+            ],
+            const SizedBox(height: 32),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,6 +150,7 @@ class _AcercaScreenState extends State<AcercaScreen> {
           const SizedBox(height: 16),
           _tarjetaInfo(context),
           const SizedBox(height: 32),
+          _cuenta(context),
           Text('Fuentes de datos', style: tema.titleLarge),
           const SizedBox(height: 8),
           const Text(

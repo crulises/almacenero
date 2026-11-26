@@ -9,7 +9,12 @@ class InvitacionScreen extends StatefulWidget {
     super.key,
     required this.onEnviar,
     this.rechazada = false,
+    this.onGoogle,
   });
+
+  /// «Entrar con Google»: para quien ya ligó su cuenta (reinstalación u otro celular).
+  /// Sin esto el botón no se muestra.
+  final Future<void> Function()? onGoogle;
 
   /// Guarda el código y reintenta el alta. La pantalla la reemplaza el home.
   final Future<void> Function(String codigo) onEnviar;
@@ -24,6 +29,16 @@ class InvitacionScreen extends StatefulWidget {
 class _InvitacionScreenState extends State<InvitacionScreen> {
   final _controller = TextEditingController();
   bool _enviando = false;
+
+  Future<void> _google() async {
+    if (_enviando) return;
+    setState(() => _enviando = true);
+    try {
+      await widget.onGoogle!();
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -95,6 +110,18 @@ class _InvitacionScreenState extends State<InvitacionScreen> {
                     onPressed: _enviando ? null : _enviar,
                     child: const Text('Entrar'),
                   ),
+                  if (widget.onGoogle != null) ...[
+                    const SizedBox(height: 24),
+                    const Text(
+                      '¿Ya tenés cuenta?',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: _enviando ? null : _google,
+                      child: const Text('Entrar con Google'),
+                    ),
+                  ],
                   const SizedBox(height: 32),
                   Text(
                     'Versión ${BuildInfo.actual.version}',

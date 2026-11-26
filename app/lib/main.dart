@@ -1,12 +1,15 @@
 import 'package:android_id/android_id.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_deps.dart';
 import 'data/api_client.dart';
 import 'data/app_info.dart';
 import 'data/auth_repository.dart';
+import 'data/aviso_ligar.dart';
+import 'data/google_signin_service.dart';
 import 'data/cola_eventos.dart';
 import 'data/info_dispositivo.dart';
 import 'data/authed_api.dart';
@@ -40,6 +43,7 @@ void main() {
     api: api,
     store: SecureSessionStore(),
     invitations: SecureInvitationStore(),
+    google: GoogleSignInNativo(),
   );
   final authed = AuthedApi(api: api, auth: auth);
   final location = LocationService();
@@ -81,6 +85,13 @@ void main() {
         despertando: api.despertando,
         verificarCada: const Duration(seconds: 30),
         guardarInvitacion: auth.guardarInvitacion,
+        ligarConGoogle: auth.ligarConGoogle,
+        entrarConGoogle: auth.entrarConGoogle,
+        leerAvisoLigarOculto: () async =>
+            AvisoLigar(await SharedPreferences.getInstance()).estaOculto(),
+        ocultarAvisoLigar: () async =>
+            AvisoLigar(await SharedPreferences.getInstance())
+                .ocultarSieteDias(),
         abrirEnlace: (url) async {
           await launchUrl(url, mode: LaunchMode.externalApplication);
         },
