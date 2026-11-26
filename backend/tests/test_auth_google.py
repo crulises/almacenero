@@ -30,7 +30,7 @@ def sesion_de(sub: str, email: str | None = "") -> dict:
 
 @pytest.fixture
 def google(client, monkeypatch, config_temporal):
-    """GoTrue simulado: `e['status']` y `e['json']` fijan la respuesta, `e['visto']` junta lo recibido."""
+    """GoTrue simulado: `e` fija la respuesta (status, json) y junta lo recibido (visto)."""
     config_temporal("modo_acceso", '"abierto"')
     s = get_settings()
     monkeypatch.setattr(s, "auth_url", "http://auth.test/auth/v1")
