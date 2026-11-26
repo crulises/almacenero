@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.main import app
 from app.services import dispositivos
 from tests.conftest import make_token
-from tests.db import fila, poner_estado, sql
+from tests.db import fila, poner_estado, poner_karma, sql
 
 
 def sesion_de(sub: str, email: str | None = "") -> dict:
@@ -299,3 +299,37 @@ def test_las_altas_por_google_cuentan_en_el_rate_limit_de_altas(client, google, 
     assert entrar(client).status_code == 200
     google["json"] = sesion_de(str(uuid.uuid4()))
     assert entrar(client).status_code == 429
+
+
+# ------------------------------------------------------------------ GET /v1/me
+
+
+def me(client, auth_id: str) -> dict:
+    h = {"Authorization": f"Bearer {make_token(auth_id)}"}
+    return client.get("/v1/me", headers=h).json()
+
+
+def test_me_sugiere_ligar_desde_el_umbral_de_karma(client):
+    _, uid, auth_id = nueva_cuenta(client)
+    poner_karma(uid, 2)
+    assert me(client, auth_id)["sugerir_ligar"] is False
+    poner_karma(uid, 3)  # default de config.karma_umbral_ligar_cuenta
+    m = me(client, auth_id)
+    assert m["sugerir_ligar"] is True and m["ligada"] is False
+
+
+def test_el_umbral_para_ligar_se_configura(client, config_temporal):
+    config_temporal("karma_umbral_ligar_cuenta", "5")
+    _, uid, auth_id = nueva_cuenta(client)
+    poner_karma(uid, 3)
+    assert me(client, auth_id)["sugerir_ligar"] is False
+    poner_karma(uid, 5)
+    assert me(client, auth_id)["sugerir_ligar"] is True
+
+
+def test_una_cuenta_ligada_no_recibe_la_sugerencia_y_me_no_expone_el_email(client):
+    uid, auth_id = cuenta_ligada(client)
+    poner_karma(uid, 10)
+    m = me(client, auth_id)
+    assert m["ligada"] is True and m["sugerir_ligar"] is False
+    assert "email" not in m and f"{auth_id}@example.com" not in json.dumps(m)

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import Usuario, current_user
 from app.db import get_pool
-from app.services import alias, dispositivos
+from app.services import alias, config, dispositivos
 
 router = APIRouter(tags=["me"])
 
@@ -21,6 +21,11 @@ class MeOut(BaseModel):
     umbral_restriccion: int
     # Alias (config.alias_editable_por_rol): la app muestra el lápiz solo si es true.
     puede_cambiar_alias: bool = False
+    # Cuentas ligables (docs/04-plan-v0.2.md, A): `ligada` = la cuenta ya está ligada a Google;
+    # `sugerir_ligar` = anónima con karma suficiente: la app muestra «Protegé tu cuenta».
+    # El email NO se devuelve acá: lo ve solo el admin en el panel.
+    ligada: bool = False
+    sugerir_ligar: bool = False
 
 
 class AliasIn(BaseModel):
@@ -51,6 +56,9 @@ async def me(
         escalon=user.escalon,
         umbral_restriccion=user.umbral_restriccion,
         puede_cambiar_alias=await alias.puede_cambiar(pool, user),
+        ligada=not user.es_anonimo,
+        sugerir_ligar=user.es_anonimo
+        and user.karma >= int(await config.leer(pool, "karma_umbral_ligar_cuenta")),
     )
 
 
