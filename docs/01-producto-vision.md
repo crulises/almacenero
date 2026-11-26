@@ -140,7 +140,7 @@ kilo/litro y comparar productos de distinto tamaño.
 ## Fuera de alcance (futuro)
 
 Cuándo llega cada cosa: `docs/10-roadmap.md` (un plan por release, `docs/04-plan-v0.2.md` en adelante).
-OAuth (Google y Apple ID) y los productos pesables/genéricos también están en esa lista.
+OAuth con Apple ID (Google ya está, corte 21) y los productos pesables/genéricos también están en esa lista.
 
 - Validación colaborativa completa y gamificación con recompensas.
 - Modo offline y sync.
