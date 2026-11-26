@@ -1187,3 +1187,15 @@ Decisiones en `docs/04` §9.
 
 - **Riesgo conocido:** la app no manda nonce. Si GoTrue rechaza el `id_token` por eso, activar
   `skip_nonce_check` en el provider o implementar un nonce propio. No se pudo verificar sin el celular.
+
+### `make up` falla o Google no anda con un `.env` anterior al corte 21
+
+- **Causa:** `make up` solo copia `.env.example` si `.env` no existe; un `.env` viejo no tiene
+  `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` y `config.toml` los pide (`env(...)`).
+- **Solución:** copiá esas dos líneas de `.env.example` a tu `.env` (con los valores reales, sin comentarios).
+
+### Ligar devuelve 409 `email_en_uso`
+
+- **Causa:** el email del Google ya lo tiene otra cuenta de `usuarios` (por ejemplo un admin creado con
+  `make admin-crear`). GoTrue lo rechaza (`email_exists`) o, si lo acepta, el backend liga sin guardar el email.
+  Se resuelve con el reclamo desde el panel, no ligando.

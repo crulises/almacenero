@@ -1016,11 +1016,11 @@
           <section class="caja" :class="ficha.d.estado === 'baja' ? 'peligro-caja' : ''">
             <h3>Moderación <span class="badge" :class="insignia(ficha.d).clase" x-text="insignia(ficha.d).texto"></span></h3>
             <p x-show="ficha.d.estado === 'baja'">De baja desde <b x-text="fecha(ficha.d.baja_at)"></b> No puede entrar ni renovar la sesión. Si vuelve con otra cuenta, necesita otro PIN: este usuario entró con el de arriba.</p>
-            <p x-show="ficha.d.estado !== 'baja'">Escalón por karma: <b x-text="{normal: 'normal', aviso: 'aviso (la app le avisa; sigue usando todo)', restringido: 'restringido (solo consulta, no puede cargar)'}[ficha.d.escalon]"></b>.
+            <p x-show="ficha.d.estado === 'activo'">Escalón por karma: <b x-text="{normal: 'normal', aviso: 'aviso (la app le avisa; sigue usando todo)', restringido: 'restringido (solo consulta, no puede cargar)'}[ficha.d.escalon]"></b>.
               Con karma <b x-text="ficha.d.karma"></b>. Para sancionar o levantar una restricción, ajustá el karma abajo.</p>
             <div class="form"><label>Motivo (obligatorio, queda en la auditoría) <input type="text" x-model="ficha.x.motivoBaja" minlength="3" placeholder="p. ej. precios falsos reiterados"></label></div>
             <div class="filas">
-              <button class="peligro" x-show="ficha.d.estado !== 'baja'" :disabled="ficha.d.rol === 'admin' || (ficha.x.motivoBaja || '').trim().length < 3" @click="darBajaFicha()">Dar de baja</button>
+              <button class="peligro" x-show="ficha.d.estado === 'activo'" :disabled="ficha.d.rol === 'admin' || (ficha.x.motivoBaja || '').trim().length < 3" @click="darBajaFicha()">Dar de baja</button>
               <button class="primario" x-show="ficha.d.estado === 'baja'" :disabled="(ficha.x.motivoBaja || '').trim().length < 3" @click="reactivarFicha()">Reactivar</button>
               <span class="suave" x-show="ficha.d.rol === 'admin'">Es admin: primero sacale el rol.</span>
             </div>

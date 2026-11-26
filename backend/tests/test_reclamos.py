@@ -228,3 +228,19 @@ def test_la_ficha_muestra_si_esta_ligada_y_las_cuentas_del_mismo_dispositivo(cli
     assert ficha["es_anonimo"] is False and ficha["email"] == f"{destino_auth}@example.com"
     hermana = next(c for c in ficha["mismo_dispositivo"] if c["id"] == huerfana)
     assert hermana["es_anonimo"] is True and hermana["estado"] == "activo"
+
+
+def test_no_se_da_de_baja_a_una_cuenta_fusionada(client, admin):
+    adm, _ = admin
+    _, destino, _ = _cuenta(client, ligada=True)
+    _, huerfana, _ = _cuenta(client)
+    assert _reclamar(client, adm, destino, huerfana).status_code == 200
+
+    r = client.post(
+        f"/v1/admin/usuarios/{huerfana}/baja", headers=adm, json={"motivo": "por las dudas"}
+    )
+
+    assert r.status_code == 409
+    assert fila("select estado from usuarios where id = $1::uuid", huerfana)["estado"] == (
+        "fusionada"
+    )

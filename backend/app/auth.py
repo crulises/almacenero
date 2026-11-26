@@ -79,7 +79,11 @@ async def asegurar_usuario(
         insert into usuarios (auth_id, alias, email, es_anonimo, anonimo_auth_id)
         values ($1, $2, $3, $4, case when $4::boolean then $1::uuid end)
         on conflict (auth_id) do update
-            set email = coalesce(excluded.email, usuarios.email),
+            set email = coalesce(
+                    (select excluded.email where not exists (
+                        select 1 from usuarios o
+                        where o.email = excluded.email and o.id <> usuarios.id)),
+                    usuarios.email),
                 es_anonimo = usuarios.es_anonimo and excluded.es_anonimo
         returning id, auth_id, alias, karma, rol, estado, es_anonimo
         """,

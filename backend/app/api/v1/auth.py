@@ -57,6 +57,10 @@ GOOGLE_YA_LIGADO = {
     "codigo": "google_ya_ligado",
     "mensaje": "ese Google ya tiene una cuenta: entrá con ella",
 }
+EMAIL_EN_USO = {
+    "codigo": "email_en_uso",
+    "mensaje": "ese email ya lo usa otra cuenta: pedile al admin que las una",
+}
 YA_LIGADA = {"codigo": "ya_ligada", "mensaje": "tu cuenta ya está ligada a Google"}
 
 
@@ -79,6 +83,8 @@ async def _pedir_sesion(
         raise HTTPException(502, "proveedor de auth no disponible") from e
     if r.status_code == 422 and _error_code(r) == "identity_already_exists":
         raise HTTPException(409, detail=GOOGLE_YA_LIGADO)
+    if r.status_code == 422 and _error_code(r) == "email_exists":
+        raise HTTPException(409, detail=EMAIL_EN_USO)
     if r.status_code in (400, 401, 403, 422):
         raise HTTPException(401, "sesión inválida")
     if r.status_code >= 400:
@@ -257,7 +263,11 @@ async def ligar_google(
     sesion = await _pedir_sesion_google(http, body, creds.credentials if creds else None)
     email = _claims_de(sesion.access_token).get("email") or None
     await pool.execute(
-        "update usuarios set email = coalesce($2, email), es_anonimo = false where id = $1",
+        # El email solo se anota si ninguna otra fila lo tiene (es único): si no, igual se liga.
+        "update usuarios set es_anonimo = false, email = coalesce("
+        "(select $2::text where not exists "
+        "(select 1 from usuarios o where o.email = $2::text and o.id <> $1)), email) "
+        "where id = $1",
         user.id,
         email,
     )

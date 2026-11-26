@@ -346,6 +346,8 @@ async def _cambiar_estado(
         )
         if u is None:
             raise HTTPException(404, "usuario no encontrado")
+        if u["estado"] == "fusionada":
+            raise HTTPException(409, "es una cuenta fusionada: ya no tiene baja ni reactivación")
         if u["estado"] == nuevo:
             raise HTTPException(409, "ya está de baja" if nuevo == "baja" else "ya está activo")
         if nuevo == "baja" and u["rol"] == "admin":

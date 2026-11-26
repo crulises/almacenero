@@ -344,3 +344,47 @@ def test_una_cuenta_fusionada_tampoco_renueva_la_sesion(client, google):
     r = client.post("/v1/auth/refresh", json={"refresh_token": "ref"})
 
     assert r.status_code == 403 and r.json()["detail"]["codigo"] == "cuenta_fusionada"
+
+
+def test_ligar_con_un_email_que_ya_usa_otra_fila_no_bloquea_la_cuenta(client, google):
+    """El Google trae un email que otra fila de `usuarios` ya tiene (p. ej. un admin creado
+    con `make admin-crear`): se liga igual, sin guardar ese email, y la cuenta sigue andando."""
+    h, uid, auth_id = nueva_cuenta(client)
+    ocupado = f"{uuid.uuid4()}@example.com"
+    otra_h, otra_id, _ = nueva_cuenta(client)
+    sql("update usuarios set email = $2 where id = $1::uuid", otra_id, ocupado)
+    google["json"] = sesion_de(auth_id, email=ocupado)
+
+    r = client.post("/v1/auth/google/ligar", headers=h, json={"id_token": "t"})
+
+    assert r.status_code == 200
+    u = fila("select email, es_anonimo from usuarios where id = $1::uuid", uid)
+    assert u["email"] is None and u["es_anonimo"] is False
+    # y con el token nuevo (que ya trae el email) la cuenta sigue respondiendo
+    st = get_settings()
+    ahora = int(time.time())
+    tok = jwt.encode(
+        {
+            "sub": auth_id,
+            "aud": st.jwt_audience,
+            "iat": ahora,
+            "exp": ahora + 3600,
+            "email": ocupado,
+            "is_anonymous": False,
+        },
+        st.jwt_secret,
+        algorithm="HS256",
+    )
+    nuevo = {"Authorization": f"Bearer {tok}"}
+    assert client.get("/v1/me", headers=nuevo).status_code == 200
+
+
+def test_ligar_email_exists_de_gotrue_es_409_con_codigo_propio(client, google):
+    h, _, _ = nueva_cuenta(client)
+    google["status"] = 422
+    google["json"] = {"code": 422, "error_code": "email_exists", "msg": "ya existe"}
+
+    r = client.post("/v1/auth/google/ligar", headers=h, json={"id_token": "t"})
+
+    assert r.status_code == 409
+    assert r.json()["detail"]["codigo"] == "email_en_uso"
