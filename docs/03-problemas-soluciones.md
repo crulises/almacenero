@@ -1155,3 +1155,35 @@ Decisiones en `docs/04` §9.
   de Flutter y usa un PKCS12 que el 8 no lee.
 - **Solución:** usar el `keytool` del JDK que usa Flutter (`flutter doctor -v` lo muestra; en esta Mac
   `/opt/homebrew/opt/openjdk@17/bin/keytool`).
+
+
+## Google Sign-In / cuentas ligables (corte 21)
+
+### Los clientes de Google Cloud: Web vs Android
+
+- **Qué hay que crear:** un cliente **Web** (su ID y secreto van en `.env` como `GOOGLE_CLIENT_ID` /
+  `GOOGLE_CLIENT_SECRET`; lo usa GoTrue, y su ID también va a la app como `GOOGLE_WEB_CLIENT_ID`) y un cliente
+  **Android** por cada par paquete + SHA-1 (debug y, al publicar, release). Los de Android **no se usan en el
+  código**: solo hacen que Google acepte a la app. iOS, cuando exista, es otro cliente.
+- **Síntoma de que falta uno:** el selector de Google falla en el celular (`GoogleSignInException`) o GoTrue
+  rechaza el token (audiencia).
+
+### `.env` con comentarios en la misma línea
+
+- **Síntoma:** `make up` / `make apk` usan un ID de cliente con basura al final.
+- **Causa:** `.env` se *source*a en el shell y `GOOGLE_CLIENT_ID=xxx # comentario` no siempre se lee igual.
+- **Solución:** sin comentarios en la misma línea (el `Makefile` los recorta, pero no confiés en eso).
+
+### Ligar devuelve 409 `google_ya_ligado`
+
+- **Causa:** ese Google ya pertenece a otra cuenta; GoTrue contesta 422 `identity_already_exists` y el backend lo
+  traduce a 409. No es un error: la app ofrece «Entrar con esa cuenta».
+
+### Después de cambiar `supabase/config.toml` el login con Google no cambia
+
+- **Solución:** `make down && make up` (GoTrue lee `enable_manual_linking` y el provider al arrancar).
+
+### Nonce
+
+- **Riesgo conocido:** la app no manda nonce. Si GoTrue rechaza el `id_token` por eso, activar
+  `skip_nonce_check` en el provider o implementar un nonce propio. No se pudo verificar sin el celular.

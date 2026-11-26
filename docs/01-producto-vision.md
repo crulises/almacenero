@@ -27,6 +27,16 @@ todos mapean el precio de un mismo artículo en varios locales a la vez.
 - Luego puede ligar su cuenta a email o social (Google primero; otros más adelante).
 - Al ligarse, el usuario anónimo se atribuye a la persona real.
 - Cada carga y cada validación quedan atribuidas a un usuario.
+- **Ligar con Google (corte 21).** Es la **misma cuenta**: conserva karma, alias e historial; solo
+  gana una identidad con la que recuperarla. La app lo ofrece con una tarjeta «Protegé tu cuenta» cuando
+  el karma llega a 3 (configurable), con «Luego» (se oculta 7 días), y siempre desde «Acerca de › Cuenta».
+  Quien reinstala o cambia de celular usa «Entrar con Google» en la pantalla de invitación. Un Google
+  nuevo pasa por las mismas puertas que un alta anónima (modo de acceso, invitación, baja del dispositivo).
+- **Cuentas huérfanas.** Si alguien perdió su cuenta anónima, un **admin** la reclama para su cuenta
+  ligada desde el panel (con motivo, queda en la auditoría): se suman los karmas, las cargas pasan a la
+  cuenta destino y la huérfana queda `fusionada`. Nunca es automático ni lo pide el usuario.
+- Del Google solo se guarda el email, y no se muestra a nadie (el panel solo dice «tiene email»). Perfil
+  demográfico y entrar con email y contraseña quedan para otros cortes.
 
 ## Modelo conceptual
 

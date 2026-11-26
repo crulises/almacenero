@@ -22,6 +22,21 @@ ya se sabe (la línea de ahorro en la ficha).
 
 Orden sugerido: A → B → C → D (A habilita la identidad que C necesita; D usa lo validado).
 
+### Parte A — decisiones tomadas (corte 21, 2026-11-26)
+
+Diseño completo: `docs/superpowers/specs/2026-11-26-cuentas-ligables-design.md`. Resumen:
+
+- Solo **Google** (el flujo email/contraseña queda para otro corte; iOS/Apple, para el 0.6).
+- Ligar es **la misma cuenta** (mismo `usuarios.id`/`auth_id`). Entrar con una ya ligada desde otro celular
+  funciona sin invitación; un Google nuevo pasa por las defensas del alta.
+- La tarjeta «Protegé tu cuenta» sale con karma ≥ 3 (`karma_umbral_ligar_cuenta`) y «Luego» la oculta 7 días;
+  desde «Acerca de › Cuenta» se puede ligar siempre.
+- Las huérfanas las **reclama un admin** (nunca automático): suma karma, reasigna autoría, la huérfana queda
+  `fusionada` (no `baja`, para no marcar el dispositivo).
+- Perfil demográfico (nombre, sexo, nacimiento, país): no se pide acá (0.3).
+- Android: `applicationId` `dev.crulises.almacenero`; el SHA-1 de la keystore de **release** se registra
+  como otro cliente Android en Google Cloud al publicar (`docs/03`).
+
 ## Reglas que ya están decididas (de `docs/10-roadmap.md`)
 
 1. La app es **guía, no tracker financiero**: sin «lo compré», sin ahorro acumulado.
