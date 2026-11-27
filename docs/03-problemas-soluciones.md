@@ -1276,3 +1276,32 @@ Decisiones en `docs/04` §9.
   Postgres (el reset) llegó un `InterfaceError` y la tarea murió en silencio hasta reiniciar el backend.
 - **Solución:** `etl/ejecucion.py` ahora reintenta ante cualquier excepción de conexión. Si ves ejecuciones
   `en_cola` con ejecutor `web`: `docker compose restart backend`.
+
+### Respaldar y restaurar sin dramas: `make db-dump` / `make db-restore` y el panel
+
+`make backup` (pg_dump) sigue existiendo, pero restaurar un dump viejo sobre un esquema nuevo fue lo que
+costó tanto (ver arriba). Para eso está el respaldo propio (`etl/respaldo.py`, formato `respaldo_v1`):
+un `.zip` con un CSV por tabla de `public` + `manifest.json` (filas y sha256) + `LEEME.txt`.
+**Lleva datos de usuarios: es privado, no va al repo** (la carpeta `etl/data/exports/` ya está ignorada).
+
+| Qué | Makefile | Panel web (sección ETL) |
+|---|---|---|
+| Respaldar | `make db-dump [NOMBRE=x] [CON_EVENTOS=1]` | «Respaldar la base» |
+| Listar | `make db-lista` | «Listar los respaldos» |
+| Restaurar (simulacro) | `make db-restore ARCHIVO=<.zip o almacen:clave>` | «Restaurar un respaldo» |
+| Restaurar de verdad | `... APLICAR=1 CONFIRMAR=RESTAURAR` | marcar «aplicar» + escribir RESTAURAR |
+
+- **Dónde queda:** en el almacén de exportaciones, bajo `respaldo/`: disco (`ETL_EXPORT_DIR`) o, si están las
+  `EXPORT_S3_*`, **S3 / SeaweedFS / Supabase Storage** (lo sube, lo vuelve a leer y compara sha256). Cambiar
+  de almacén es cambiar variables de entorno. En el contenedor del backend el disco es efímero: para respaldar
+  desde el panel usá S3 (en Docker hace falta `EXPORT_S3_ENDPOINT_DOCKER=http://host.docker.internal:<puerto>`;
+  con `127.0.0.1` el contenedor no llega al S3 del host y el ETL falla con «Could not connect to the endpoint URL»).
+- **Qué hace restaurar:** reemplaza los datos de las tablas del respaldo, en UNA transacción (si algo falla o un
+  conteo no coincide, queda como estaba). Antes guarda un respaldo de seguridad `respaldo/antes-de-restaurar-*.zip`.
+  Funciona con respaldos de un esquema anterior (columnas por nombre, orden de FKs, GUC `app.*_write`, alias
+  repetidos renombrados). No toca `auth.users`: los admins se vuelven a crear con `make admin-crear`.
+- **Qué no incluye:** `auth.users`, `etl_archivos`/`etl_ejecuciones`, y los eventos salvo `CON_EVENTOS=1`.
+  Restaurar con un respaldo sin eventos deja `eventos.usuario_id` en NULL para lo que apuntaba a usuarios reemplazados.
+- **Reconstruir desde cero:** `make up` (migraciones + seed) → `make db-restore ARCHIVO=... APLICAR=1 CONFIRMAR=RESTAURAR`
+  → `make admin-crear EMAIL=...`. Para programar respaldos periódicos: panel → Programaciones sobre «Respaldar la base».
+- **Probado:** `etl/tests/test_respaldo_db.py` (en una base temporal que se crea y se borra; nunca toca la de desarrollo).

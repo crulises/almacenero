@@ -99,7 +99,12 @@ async def _probar(p: dict, ctx) -> dict:
         ctx.log("\nMotivos del puntaje:")
         for m in s.motivos:
             ctx.log(f"  • {m}: {MOTIVOS.get(m, '')}")
-    return {"nombre": s.nombre, "marca": s.marca, "estado": s.estado, "calidad": s.calidad}
+    return {
+        "nombre": s.nombre,
+        "marca": s.marca,
+        "estado": s.estado,
+        "calidad": s.calidad,
+    }
 
 
 async def _off(p: dict, ctx) -> dict:
@@ -188,7 +193,9 @@ async def _locales_importar(p: dict, ctx) -> dict:
     from etl.locales_intercambio import importar
 
     r = await importar(
-        p["archivo"], aplicar=p.get("aplicar", False), nombre_archivo=ctx.nombres.get("archivo")
+        p["archivo"],
+        aplicar=p.get("aplicar", False),
+        nombre_archivo=ctx.nombres.get("archivo"),
     )
     ctx.log(r.texto())
     ctx.filas = r.leidas
@@ -209,6 +216,59 @@ async def _eventos_exportar(p: dict, ctx) -> dict:
     return await exportar(p, ctx)
 
 
+async def _respaldo_crear(p: dict, ctx) -> dict:
+    from etl.respaldo import crear
+
+    r = await crear(
+        nombre=p.get("nombre") or "respaldo",
+        con_eventos=p.get("con_eventos", False),
+        log=ctx.log,
+    )
+    ctx.log(r.texto())
+    ctx.filas = sum(r.tablas.values())
+    return {
+        "clave": r.clave,
+        "bytes": r.bytes,
+        "sha256": r.sha256,
+        "almacen": r.almacen,
+        "tablas": r.tablas,
+        "migracion": r.migracion,
+    }
+
+
+async def _respaldo_restaurar(p: dict, ctx) -> dict:
+    from etl.respaldo import RespaldoError, restaurar
+
+    origen = p.get("archivo") or (f"almacen:{p['clave']}" if p.get("clave") else None)
+    if not origen:
+        raise RespaldoError("subí un .zip o escribí la clave de un respaldo del almacén")
+    r = await restaurar(
+        origen,
+        aplicar=p.get("aplicar", False),
+        confirmacion=p.get("confirmacion", ""),
+        log=ctx.log,
+    )
+    ctx.log(r.texto())
+    return {
+        "aplicado": r.aplicado,
+        "tablas": r.tablas,
+        "avisos": r.avisos,
+        "seguridad": r.seguridad,
+        "migracion_respaldo": r.migracion_respaldo,
+    }
+
+
+async def _respaldo_listar(p: dict, ctx) -> dict:
+    from etl.respaldo import listar
+
+    objs = await asyncio.to_thread(listar)
+    for o in objs:
+        ctx.log(f"{o.modificado:%Y-%m-%d %H:%M}  {o.tamano / 1e6:8.1f} MB  {o.clave}")
+    if not objs:
+        ctx.log("No hay respaldos en el almacén todavía: corré «Respaldar la base».")
+    return {"respaldos": [o.clave for o in objs]}
+
+
 _APLICAR = Param(
     "aplicar",
     "booleano",
@@ -219,6 +279,68 @@ _APLICAR = Param(
 DEFINICIONES: dict[str, Definicion] = {
     d.clave: d
     for d in [
+        Definicion(
+            "respaldo_crear",
+            "Respaldar la base",
+            "Guarda TODA la base (catálogo, locales, precios, usuarios, configuración…) en un .zip en el "
+            "almacén de exportaciones (disco o S3: el que esté configurado) y lo verifica releyéndolo. "
+            "Es privado: lleva ids y emails de usuarios. No incluye las cuentas de acceso (auth.users).",
+            "web",
+            (
+                Param(
+                    "nombre",
+                    "nombre_archivo",
+                    ayuda="Prefijo del archivo (se le agrega la fecha).",
+                    default="respaldo",
+                ),
+                Param(
+                    "con_eventos",
+                    "booleano",
+                    default=False,
+                    ayuda="Incluir también los eventos de uso (puede pesar mucho).",
+                ),
+            ),
+            _respaldo_crear,
+        ),
+        Definicion(
+            "respaldo_listar",
+            "Listar los respaldos",
+            "Muestra los respaldos que hay en el almacén (la clave se pega en «Restaurar un respaldo»).",
+            "web",
+            (),
+            _respaldo_listar,
+        ),
+        Definicion(
+            "respaldo_restaurar",
+            "Restaurar un respaldo",
+            "REEMPLAZA los datos de la base por los de un respaldo (subí el .zip o pegá la clave de uno del "
+            "almacén). Sin «aplicar» es un simulacro: compara y no escribe nada. Con «aplicar» hace antes un "
+            "respaldo de seguridad y exige escribir RESTAURAR; si algo falla, la base queda como estaba.",
+            "web",
+            (
+                Param(
+                    "archivo",
+                    "archivo",
+                    False,
+                    "El .zip de un respaldo (hasta 25 MB). Alternativa: la clave de abajo.",
+                ),
+                Param(
+                    "clave",
+                    "texto",
+                    False,
+                    "Clave en el almacén, p. ej. respaldo/respaldo-20261127T031140Z.zip.",
+                    "respaldo/...",
+                ),
+                _APLICAR,
+                Param(
+                    "confirmacion",
+                    "texto",
+                    ayuda="Con «aplicar»: escribí RESTAURAR para confirmar.",
+                ),
+            ),
+            _respaldo_restaurar,
+            consume_archivo_con="aplicar",
+        ),
         Definicion(
             "curado_importar",
             "Importar CSV curado",
@@ -253,7 +375,10 @@ DEFINICIONES: dict[str, Definicion] = {
             "web",
             (
                 Param(
-                    "nombre", "texto", True, "Nombre crudo, p. ej. ACEITE GIRASOL COCINERO 900 CC."
+                    "nombre",
+                    "texto",
+                    True,
+                    "Nombre crudo, p. ej. ACEITE GIRASOL COCINERO 900 CC.",
                 ),
                 Param(
                     "marca",
@@ -322,7 +447,9 @@ DEFINICIONES: dict[str, Definicion] = {
                     default=OFF_PAISES,
                 ),
                 Param(
-                    "limite", "entero", ayuda="Procesar solo las primeras N filas (para probar)."
+                    "limite",
+                    "entero",
+                    ayuda="Procesar solo las primeras N filas (para probar).",
                 ),
             ),
             _off,
@@ -395,7 +522,11 @@ DEFINICIONES: dict[str, Definicion] = {
                     "catalogo-curado",
                 ),
                 Param("off", "texto", ayuda="Volcado de OFF (opcional)."),
-                Param("sepa", "texto", ayuda="Zips de SEPA separados por espacio (opcional)."),
+                Param(
+                    "sepa",
+                    "texto",
+                    ayuda="Zips de SEPA separados por espacio (opcional).",
+                ),
                 Param(
                     "paises",
                     "texto",

@@ -1,4 +1,4 @@
-.PHONY: almacen-probar s3-alt-up s3-alt-down help backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar locales-exportar locales-importar etl-worker
+.PHONY: almacen-probar s3-alt-up s3-alt-down help backup restore-test up down migrate seed demo demo-borrar admin admin-crear admin-web invitacion test lint build venv apk etl-off etl-off-muestra etl-off-descargar etl-sepa etl-sepa-descargar etl-sepa-locales etl-osm etl-osm-descargar conflictos catalogo-calidad catalogo-renormalizar catalogo-csv-exportar catalogo-csv-exportar-base catalogo-csv-importar locales-exportar locales-importar etl-worker db-dump db-restore db-lista
 
 SHELL := /bin/bash
 VENV := backend/.venv
@@ -119,6 +119,22 @@ restore-test: ## Simulacro: restaura el último backup en una base TEMPORAL (se 
 		if [ "$$real" = "$$esperado" ]; then echo "OK   $$t: $$real"; else echo "FALLA $$t: restauradas $$real, el backup tenía $$esperado"; ok=0; fi; \
 	done < "$$f.conteos"; \
 	[ $$ok = 1 ] && echo "Simulacro OK: el backup se restaura completo" || { echo "Simulacro FALLÓ"; exit 1; }
+
+# Respaldo propio (docs/03 «Recuperar la base»): .zip de TODA la base en el almacén de exportaciones
+# (disco `ETL_EXPORT_DIR/respaldo/`, o S3/SeaweedFS/Supabase Storage si hay EXPORT_S3_*). Mismo código que
+# los ETL «Respaldar» / «Restaurar» del panel. A diferencia de `make backup` (pg_dump) se restaura sobre
+# cualquier versión de esquema reciente y sin `pg_restore`.
+db-dump: $(PY) ## Respalda la base al almacén (disco o S3): make db-dump [NOMBRE=respaldo] [CON_EVENTOS=1]
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.respaldo crear --nombre "$(or $(NOMBRE),respaldo)" $(if $(CON_EVENTOS),--con-eventos)
+
+db-lista: $(PY) ## Lista los respaldos del almacén (la clave sirve para db-restore)
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; $(PY) -m etl.respaldo listar
+
+db-restore: $(PY) ## REEMPLAZA la base por un respaldo: make db-restore ARCHIVO=<.zip|almacen:clave> [APLICAR=1 CONFIRMAR=RESTAURAR]
+	@test -n "$(ARCHIVO)" || { echo "Uso: make db-restore ARCHIVO=<.zip o almacen:<clave>> [APLICAR=1 CONFIRMAR=RESTAURAR]  (sin APLICAR es un simulacro)"; exit 1; }
+	@set -a; . ./.env 2>/dev/null || . ./.env.example; set +a; \
+	$(PY) -m etl.respaldo restaurar "$(ARCHIVO)" $(if $(APLICAR),--aplicar --confirmar "$(CONFIRMAR)")
 
 # --- calidad ---------------------------------------------------------------
 $(PY):
