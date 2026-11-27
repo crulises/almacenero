@@ -198,8 +198,9 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
         ),
       );
     }
-    if (_locales == null)
+    if (_locales == null) {
       return const Center(child: CircularProgressIndicator());
+    }
     if (_locales!.isEmpty) {
       return _sinPrecios(
         context,
@@ -207,8 +208,9 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
       );
     }
     final historial = _historial;
-    if (historial == null)
+    if (historial == null) {
       return const Center(child: CircularProgressIndicator());
+    }
     if (historial.isEmpty) {
       return _sinPrecios(
         context,
