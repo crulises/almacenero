@@ -7,6 +7,7 @@ import '../data/product_repository.dart';
 import '../data/recientes.dart';
 import '../data/user_repository.dart';
 import '../domain/precio.dart';
+import 'escanear_otro.dart';
 import 'frescura.dart';
 import 'mapa_precios.dart';
 import 'moderacion.dart';
@@ -177,26 +178,11 @@ class _ProductScreenState extends State<ProductScreen> {
     );
   }
 
-  /// «Escanear otro»: lee otro código sin pasar por el inicio. Reemplaza esta ficha (un solo
-  /// «atrás» lleva al inicio, por muchos que se escaneen seguidos). Cancelar la deja como está.
-  Future<void> _escanearOtro() async {
-    final ean = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(builder: (_) => widget.deps.pantallaEscaneo()),
-    );
-    if (ean == null || !mounted) return;
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            ProductScreen(ean: ean, deps: widget.deps, via: 'camara'),
-      ),
-    );
-  }
-
   /// Menú ⋮ de la barra: «Sugerir corrección», solo para moderadores con el producto
   /// cargado.
   List<Widget> _acciones() => [
     TextButton.icon(
-      onPressed: _escanearOtro,
+      onPressed: () => escanearOtro(context, widget.deps),
       icon: const Icon(Icons.qr_code_scanner),
       label: const Text('Escanear otro'),
     ),
