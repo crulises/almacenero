@@ -236,6 +236,7 @@ class _Backend {
           precios.add(
             PrecioHistorial(
               id: 'pr${cargas.length}',
+              localId: localId,
               localNombre: _local.nombre,
               precio: precio,
               fecha: DateTime.now(),
@@ -898,6 +899,7 @@ void main() {
     PrecioHistorial precio(String valor, String local, DateTime fecha) =>
         PrecioHistorial(
           id: valor,
+          localId: 'l1',
           localNombre: local,
           precio: valor,
           fecha: fecha,
@@ -1317,6 +1319,7 @@ void main() {
       backend.precios.add(
         PrecioHistorial(
           id: 'h',
+          localId: 'l1',
           localNombre: 'Local a',
           precio: '900.00',
           fecha: DateTime.now(),
@@ -1566,6 +1569,7 @@ void main() {
       backend.precios.add(
         PrecioHistorial(
           id: 'x',
+          localId: 'l1',
           localNombre: 'Local del admin',
           precio: '10.00',
           fecha: DateTime.now(),

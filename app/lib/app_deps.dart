@@ -40,11 +40,23 @@ Future<void> _sinGuardar(Reciente reciente) async {}
 
 Future<Reciente?> _sinRefrescar(Reciente reciente) async => null;
 
+Future<List<LocalDelProducto>> _sinLocalesDelProducto(
+  String ean, {
+  Ubicacion? ubicacion,
+}) async => const [];
+
+Future<List<PrecioHistorial>> _sinHistorialLocal(
+  String ean,
+  String localId,
+) async => const [];
+
 Widget _escaner() => const ScanScreen();
 
 class AppDeps {
   const AppDeps({
     this.pantallaEscaneo = _escaner,
+    this.loadLocalesDelProducto = _sinLocalesDelProducto,
+    this.loadHistorialLocal = _sinHistorialLocal,
     this.leerRecientes = _sinRecientes,
     this.guardarReciente = _sinGuardar,
     this.refrescarReciente = _sinRefrescar,
@@ -133,6 +145,16 @@ class AppDeps {
   })
   cargarPrecio;
   final Future<List<PrecioHistorial>> Function(String ean) loadHistorial;
+
+  /// Historial del producto en la pantalla «historial por local» (corte 22): los locales
+  /// entre los que elegir y los precios de uno.
+  final Future<List<LocalDelProducto>> Function(
+    String ean, {
+    Ubicacion? ubicacion,
+  })
+  loadLocalesDelProducto;
+  final Future<List<PrecioHistorial>> Function(String ean, String localId)
+  loadHistorialLocal;
   final Future<List<PrecioVigente>> Function(
     String ean, {
     Ubicacion? ubicacion,
