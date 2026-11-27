@@ -1,6 +1,6 @@
 # Historial de precios por local (cortes 22 y 23) — diseño
 
-Fecha: 2026-11-26. Estado: **pendiente de aprobación del dueño**. Release 0.2.x
+Fecha: 2026-11-26. Estado: **aprobado por el dueño; corte 22 implementado, pendiente de probar en el celular**. Release 0.2.x
 (`docs/04-plan-v0.2.md`). Es una **primera versión para ver cómo queda**: la UI probablemente cambie
 después para mejorar la UX, así que se hace simple y con el estilo actual.
 
