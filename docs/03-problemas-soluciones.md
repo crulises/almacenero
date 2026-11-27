@@ -1223,3 +1223,56 @@ Decisiones en `docs/04` §9.
 - **Causa:** el email del Google ya lo tiene otra cuenta de `usuarios` (por ejemplo un admin creado con
   `make admin-crear`). GoTrue lo rechaza (`email_exists`) o, si lo acepta, el backend liga sin guardar el email.
   Se resuelve con el reclamo desde el panel, no ligando.
+
+## Recuperar la base local tras un `supabase db reset` (incidente del 27/11)
+
+### `supabase db reset` dejó la base vacía
+
+- **Síntoma:** después de pelearse con migraciones, el catálogo, los locales y los precios desaparecieron;
+  quedan solo los datos del seed (1 local, 2 productos).
+- **Causa:** `supabase db reset` **borra la base entera** (la recrea y reaplica migraciones + `seed.sql`).
+  No es una forma de «arreglar» el historial de migraciones.
+- **Prevención:** antes de tocar migraciones corré `make backup` (deja `backups/almacenero-<fecha>.dump`, ignorado
+  por git). Nunca uses `db reset` en la base con datos reales. Si necesitás probar migraciones, hacelo en otra
+  base (`make restore-test` crea y borra una temporal).
+
+### `migration up` dice «Remote migration versions not found»
+
+- **Causa:** `supabase db pull` registró en `supabase_migrations.schema_migrations` una versión
+  (p. ej. `20261127004009`) y después se borró el archivo generado. El CLI exige que cada versión registrada
+  tenga su archivo en `supabase/migrations/`.
+- **Solución sin resetear:** borrar solo esa fila huérfana
+  (`delete from supabase_migrations.schema_migrations where version = '<la versión>'`) o
+  `supabase migration repair --status reverted <versión>`. **No uses `db pull`** en este repo: las migraciones se
+  escriben a mano (SQL plano) y la base ya es la fuente de verdad del esquema.
+
+### Cómo se recuperó (pasos exactos)
+
+1. **Diagnóstico sin destruir:** `supabase_migrations.schema_migrations` vs `ls supabase/migrations`; conteos de
+   tablas; buscar respaldos: `backups/*.dump` (`make backup`), los `.zip` de `make catalogo-csv-exportar*` y
+   `make locales-exportar` (carpeta `ETL_EXPORT_DIR`, **ojo: también dentro de `.claude/worktrees/*/etl/data/exports`**),
+   el volumen del almacén S3 alternativo.
+2. **Restaurar un dump `public` viejo sobre el esquema nuevo** (no sirve `pg_restore` directo): no se puede
+   `--disable-triggers` (no sos superusuario) y el esquema cambió. Lo que hizo falta:
+   - cargar las tablas **en orden de claves foráneas** (un `pg_restore -t <tabla>` por tabla);
+   - sacar la línea `set_config('search_path', '')` que agrega `pg_restore` (rompe los triggers que nombran tablas sin esquema);
+   - abrir la transacción con `select set_config('app.rol_write','on',true), set_config('app.karma_write','on',true),
+     set_config('app.catalogo_write','on',true), set_config('app.estado_write','on',true);` (los triggers
+     `proteger_*` rechazan `rol`, `karma` y campos de catálogo si no);
+   - renombrar alias repetidos (`alias-<6 del id>`): el índice único `usuarios_alias_unico_idx` es posterior al dump;
+   - `config`: no truncarla; actualizar/insertar solo las claves del dump (las claves nuevas vienen de las migraciones/seed).
+3. **Catálogo más nuevo:** `make catalogo-csv-importar ARCHIVO=<catalogo-intercambio.csv> APLICAR=1` encima
+   (trae la normalización y las ediciones manuales posteriores al dump).
+4. **Admin:** `make admin-crear EMAIL=vos@mail.com`. Los usuarios anónimos de los celulares se pierden
+   (`auth.users` no está en `make backup`): la app abre una cuenta anónima nueva.
+5. Lo cargado **después** del último backup no se recupera (acá: precios y locales del 21 al 27/11).
+
+### El ETL «importar CSV curado» del panel queda en cola
+
+- **Síntoma:** la ejecución queda `en_cola` aunque `make etl-worker` esté corriendo.
+- **Causa 1 (confusión):** `curado_importar` (y calidad, renormalizar) tienen ejecutor **`web`**: los corre el
+  **backend**, no `make etl-worker`, que solo toma las `local` (OSM, SEPA, OFF pesados).
+- **Causa 2 (el bug):** el bucle del ejecutor `web` solo reintentaba ante `OSError`/`PostgresError`; al reiniciarse
+  Postgres (el reset) llegó un `InterfaceError` y la tarea murió en silencio hasta reiniciar el backend.
+- **Solución:** `etl/ejecucion.py` ahora reintenta ante cualquier excepción de conexión. Si ves ejecuciones
+  `en_cola` con ejecutor `web`: `docker compose restart backend`.

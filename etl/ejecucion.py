@@ -246,7 +246,7 @@ async def bucle(
                             await asyncio.wait_for(parar.wait(), espera_s)
             finally:
                 await conn.close()
-        except (OSError, asyncpg.PostgresError) as e:
-            print(f"[etl] sin conexión a la base ({e}); reintento", file=sys.stderr, flush=True)
+        except Exception as e:  # noqa: BLE001  # conexión caída (incluye InterfaceError): el bucle NO debe morir
+            print(f"[etl] sin conexión a la base ({e!r}); reintento", file=sys.stderr, flush=True)
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(parar.wait(), 10)
