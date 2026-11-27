@@ -53,7 +53,7 @@ async def cuentas_del_dispositivo(pool: asyncpg.Pool, usuario_id: UUID) -> list[
     """Otras cuentas que usaron algún dispositivo de este usuario."""
     return await pool.fetch(
         """
-        select distinct u.id, u.alias, u.estado
+        select distinct u.id, u.alias, u.estado, u.es_anonimo
         from usuarios me
         join dispositivos d1 on d1.auth_id = me.auth_id
         join dispositivos d2 on d2.hash = d1.hash and d2.auth_id <> d1.auth_id

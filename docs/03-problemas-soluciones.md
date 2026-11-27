@@ -1155,3 +1155,71 @@ Decisiones en `docs/04` §9.
   de Flutter y usa un PKCS12 que el 8 no lee.
 - **Solución:** usar el `keytool` del JDK que usa Flutter (`flutter doctor -v` lo muestra; en esta Mac
   `/opt/homebrew/opt/openjdk@17/bin/keytool`).
+
+
+## Google Sign-In / cuentas ligables (corte 21)
+
+### Los clientes de Google Cloud: Web vs Android
+
+- **Qué hay que crear:** un cliente **Web** (su ID y secreto van en `.env` como `GOOGLE_CLIENT_ID` /
+  `GOOGLE_CLIENT_SECRET`; lo usa GoTrue, y su ID también va a la app como `GOOGLE_WEB_CLIENT_ID`) y un cliente
+  **Android** por cada par paquete + SHA-1 (debug y, al publicar, release). Los de Android **no se usan en el
+  código**: solo hacen que Google acepte a la app. iOS, cuando exista, es otro cliente.
+- **Síntoma de que falta uno:** el selector de Google falla en el celular (`GoogleSignInException`) o GoTrue
+  rechaza el token (audiencia).
+
+### El selector de Google «se cancela» solo en el celular
+
+- **Síntoma:** aparece el popup de Google, se acepta y la app dice «Google falló: canceled…» (o «Se canceló
+  el ingreso»). Al backend no llega nada.
+- **Causa 1 (la más común):** el APK de `make apk` es **debug** y lo firma `~/.android/debug.keystore`, no tu
+  keystore de release. Google compara paquete + SHA-1 *del APK que corre*: hace falta un cliente Android con el
+  SHA-1 de debug (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass
+  android -keypass android`). En Android, el `canceled` de `google_sign_in` también significa mala configuración.
+- **Causa 2:** la pantalla de consentimiento está en **Testing** (Google Auth Platform › Público) y la cuenta
+  no figura en «Usuarios de prueba». Aplica a las demás personas: la cuenta dueña del proyecto de Google Cloud
+  entra igual sin figurar (verificado quitándola de la lista). En producción (con solo `email`/`profile`/
+  `openid`) no hace falta.
+- **Cómo se reconoce la causa 1:** `canceled: [16]…` aparece al faltar el cliente Android del SHA-1 con el que
+  se firmó el APK (verificado: borrarlo lo provoca; recrearlo con los mismos datos lo arregla en minutos).
+- **Cada APK, su cliente:** debug → SHA-1 de debug; `--release` → SHA-1 de la keystore de release; si algún día
+  se publica en Play Store con «Play App Signing», además el SHA-1 que muestra Play Console.
+
+### La consola de Google Cloud no muestra actividad del login
+
+- **Es lo esperado.** El ingreso nativo entrega un `id_token` firmado por Google; GoTrue lo valida con las
+  claves públicas de Google, sin llamar a ninguna API del proyecto, así que Google Auth Platform no cuenta
+  nada. La prueba de que anduvo está en el propio sistema: la identidad aparece en el usuario (Supabase
+  Studio › Authentication) y la cuenta figura como ligada en el panel de admin.
+
+### `.env` con comentarios en la misma línea
+
+- **Síntoma:** `make up` / `make apk` usan un ID de cliente con basura al final.
+- **Causa:** `.env` se *source*a en el shell y `GOOGLE_CLIENT_ID=xxx # comentario` no siempre se lee igual.
+- **Solución:** sin comentarios en la misma línea (el `Makefile` los recorta, pero no confiés en eso).
+
+### Ligar devuelve 409 `google_ya_ligado`
+
+- **Causa:** ese Google ya pertenece a otra cuenta; GoTrue contesta 422 `identity_already_exists` y el backend lo
+  traduce a 409. No es un error: la app ofrece «Entrar con esa cuenta».
+
+### Después de cambiar `supabase/config.toml` el login con Google no cambia
+
+- **Solución:** `make down && make up` (GoTrue lee `enable_manual_linking` y el provider al arrancar).
+
+### Nonce
+
+- **Riesgo conocido:** la app no manda nonce. Si GoTrue rechaza el `id_token` por eso, activar
+  `skip_nonce_check` en el provider o implementar un nonce propio. No se pudo verificar sin el celular.
+
+### `make up` falla o Google no anda con un `.env` anterior al corte 21
+
+- **Causa:** `make up` solo copia `.env.example` si `.env` no existe; un `.env` viejo no tiene
+  `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` y `config.toml` los pide (`env(...)`).
+- **Solución:** copiá esas dos líneas de `.env.example` a tu `.env` (con los valores reales, sin comentarios).
+
+### Ligar devuelve 409 `email_en_uso`
+
+- **Causa:** el email del Google ya lo tiene otra cuenta de `usuarios` (por ejemplo un admin creado con
+  `make admin-crear`). GoTrue lo rechaza (`email_exists`) o, si lo acepta, el backend liga sin guardar el email.
+  Se resuelve con el reclamo desde el panel, no ligando.

@@ -182,6 +182,33 @@ Los eventos llevan el id de usuario y nada más personal (sin ubicación ni text
   pendiente se pierde (son estadísticas).
 - Retención (`config.eventos_max_filas`, 100 000): solo el valor; el aviso y la exportación son del 19c.
 
+## Cuentas ligables (corte 21)
+
+Diseño: `docs/superpowers/specs/2026-11-26-cuentas-ligables-design.md`; plan: `docs/04-plan-v0.2.md` parte A.
+
+- **Cliente → backend → GoTrue.** La app obtiene un `id_token` con Google Sign-In nativo
+  (`google_sign_in`, `serverClientId` = el cliente **Web**, `--dart-define=GOOGLE_WEB_CLIENT_ID`; `make apk`
+  lo toma de `.env`) y se lo manda al backend, que lo reenvía a GoTrue (`grant_type=id_token`). El cliente
+  nunca habla con GoTrue.
+- **Endpoints** (`api/v1/auth.py`): `POST /v1/auth/google/ligar` (con la sesión anónima: GoTrue, con
+  `link_identity`, conserva el `auth_id`; `usuarios.es_anonimo=false` y se guarda el email) y
+  `POST /v1/auth/google/entrar` (sin sesión; si el Google es nuevo se crea un usuario con las mismas defensas
+  que `/anonymous`: rate limit, `modo_acceso`, invitación, dispositivo con baja). 409 `ya_ligada` si la
+  cuenta ya lo está; 409 `google_ya_ligado` si ese Google es de otra cuenta (GoTrue lo dice con 422
+  `identity_already_exists`). `GET /v1/me` trae `ligada` y `sugerir_ligar` (anónima y
+  `karma >= config.karma_umbral_ligar_cuenta`, 3); el email no sale nunca.
+- **GoTrue** necesita `enable_manual_linking = true` y el provider Google con el cliente Web
+  (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` en `.env`; `make up` los exporta).
+- **Estado `fusionada`** (`usuarios.estado`, `fusionada_en` → destino; check de coherencia): no es `baja`
+  porque la baja marca el dispositivo y bloquearía altas legítimas. `current_user` y `/refresh` la
+  rechazan con 403 `cuenta_fusionada`.
+- **Reclamo** (`POST /v1/admin/usuarios/{id}/reclamar`, capacidad `usuario.reclamar`, solo admin,
+  `services/reclamos.py`): bloquea ambas filas, suma el karma, reasigna autoría (`precios`, `locales`,
+  `sugerencias_catalogo`, `avisos_catalogo`, `validaciones`; un choque de unicidad se queda con la huérfana
+  y se informa) y audita (`usuario.reclamar`).
+- **Nonce:** la app no manda nonce (no se pudo verificar sin el celular); si GoTrue lo exigiera hay que
+  agregarlo (`skip_nonce_check` o un nonce propio en `google_signin_service.dart`).
+
 ## Alias del usuario
 
 El alias es un atributo del **perfil** (`usuarios.alias`), no de la identidad del proveedor de auth: no

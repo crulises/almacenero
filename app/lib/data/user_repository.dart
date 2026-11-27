@@ -12,6 +12,8 @@ class Me {
     this.umbralRestriccion = -15,
     this.rol = 'usuario',
     this.puedeCambiarAlias = false,
+    this.ligada = false,
+    this.sugerirLigar = false,
   });
 
   final String id;
@@ -30,6 +32,13 @@ class Me {
   /// El backend habilita el cambio de alias por rol (`config.alias_editable_por_rol`).
   final bool puedeCambiarAlias;
 
+  /// La cuenta ya está ligada a Google (corte 21).
+  final bool ligada;
+
+  /// Anónima con karma suficiente (`config.karma_umbral_ligar_cuenta`): la app muestra
+  /// «Protegé tu cuenta». La decide el backend.
+  final bool sugerirLigar;
+
   /// Los moderadores (y admins) proponen correcciones y altas del catálogo.
   bool get puedeSugerir => rol == 'moderador' || rol == 'admin';
 
@@ -45,6 +54,8 @@ class Me {
     umbralRestriccion: json['umbral_restriccion'] as int? ?? -15,
     rol: json['rol'] as String? ?? 'usuario',
     puedeCambiarAlias: json['puede_cambiar_alias'] as bool? ?? false,
+    ligada: json['ligada'] as bool? ?? false,
+    sugerirLigar: json['sugerir_ligar'] as bool? ?? false,
   );
 }
 

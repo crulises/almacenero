@@ -50,6 +50,12 @@ Future<List<PrecioHistorial>> _sinHistorialLocal(
   String localId,
 ) async => const [];
 
+Future<void> _sinGoogle() async {}
+
+Future<void> _sinEntrarGoogle({String? codigoInvitacion}) async {}
+
+Future<bool> _noOculto() async => false;
+
 Widget _escaner() => const ScanScreen();
 
 class AppDeps {
@@ -66,6 +72,10 @@ class AppDeps {
     this.cambiarAlias = _sinCambiarAlias,
     this.loadEstandares = _sinEstandares,
     this.guardarInvitacion = _sinInvitacion,
+    this.ligarConGoogle = _sinGoogle,
+    this.entrarConGoogle = _sinEntrarGoogle,
+    this.leerAvisoLigarOculto = _noOculto,
+    this.ocultarAvisoLigar = _sinGoogle,
     this.loadInfoApp = _infoDePrueba,
     this.abrirEnlace = _sinEnlaces,
     this.cuentaBaja,
@@ -92,6 +102,18 @@ class AppDeps {
 
   /// Guarda el código de invitación que el usuario escribió (primer arranque).
   final Future<void> Function(String codigo) guardarInvitacion;
+
+  /// Cuentas ligables (corte 21). Liga la cuenta actual a un Google (la misma cuenta, con
+  /// identidad); lanza `GoogleCancelado` / `GoogleYaLigado` (ver `AuthRepository`).
+  final Future<void> Function() ligarConGoogle;
+
+  /// Abre sesión con una cuenta ya ligada (reinstalación u otro celular). Con
+  /// `codigoInvitacion` reintenta un Google nuevo que exigió invitación.
+  final Future<void> Function({String? codigoInvitacion}) entrarConGoogle;
+
+  /// «Luego» de la tarjeta «Protegé tu cuenta»: se recuerda en el celular unos días.
+  final Future<bool> Function() leerAvisoLigarOculto;
+  final Future<void> Function() ocultarAvisoLigar;
 
   /// Abre un enlace en el navegador (pantalla «Acerca de»).
   final Future<void> Function(Uri url) abrirEnlace;

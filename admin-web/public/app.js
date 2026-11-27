@@ -698,9 +698,22 @@ function panel() {
       const x = this.ficha.x;
       return this.accion(() => this.api(`/admin/usuarios/${this.ficha.id}/reactivar`, { method: "POST", body: { motivo: x.motivoBaja } }), "Usuario reactivado");
     },
+    // Corte 21: pasa el karma y las cargas de una cuenta huérfana (anónima) a esta cuenta ligada.
+    async reclamarHuerfana(c) {
+      const f = this.ficha;
+      const motivo = (prompt(`Motivo para reclamar «${c.alias}» para ${f.d.alias} (obligatorio, queda en la auditoría):`) || "").trim();
+      if (motivo.length < 3) return;
+      if (!confirm(`¿Pasar el karma y las cargas de «${c.alias}» a ${f.d.alias}? «${c.alias}» queda fusionada y no vuelve a entrar.`)) return;
+      await this.intentar(async () => {
+        const r = await this.api(`/admin/usuarios/${f.id}/reclamar`, { method: "POST", body: { huerfana_id: c.id, motivo } });
+        this.avisar(r.filas_sin_pasar ? `Reclamada; ${r.filas_sin_pasar} fila(s) no pudieron pasar (el mismo precio ya estaba validado)` : "Cuenta reclamada");
+        await this.recargarFicha();
+      });
+    },
     // Estado + escalón en una sola insignia (la baja manda sobre el karma).
     insignia(u) {
       if (u.estado === "baja") return { texto: "de baja", clase: "baja" };
+      if (u.estado === "fusionada") return { texto: "fusionada", clase: "aviso" };
       if (u.escalon === "restringido") return { texto: "restringido", clase: "baja" };
       if (u.escalon === "aviso") return { texto: "aviso", clase: "aviso" };
       return { texto: "normal", clase: "ok" };

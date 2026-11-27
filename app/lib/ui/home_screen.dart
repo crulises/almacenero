@@ -12,6 +12,7 @@ import 'invitacion_screen.dart';
 import 'moderacion.dart';
 import 'product_screen.dart';
 import 'recientes.dart';
+import 'tarjeta_ligar.dart';
 
 /// Pantalla inicial: usuario actual (alias y karma) y búsqueda de un producto, ya sea
 /// escaneando el código o ingresándolo a mano.
@@ -31,6 +32,13 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       false; // hubo una sesión: los recargos no vuelven a la pantalla de carga
   String? _eanError;
 
+  /// «Luego» de la tarjeta «Protegé tu cuenta» (se recuerda unos días en el celular).
+  bool _avisoLigarOculto = false;
+
+  /// Un Google nuevo exigió invitación: el código que se escriba va con ese Google.
+  bool _pinParaGoogle = false;
+  bool? _pinRechazado;
+
   /// Últimas consultas, de lo guardado en el celular (se ven siempre, con o sin red).
   List<Reciente> _recientes = const [];
 
@@ -42,6 +50,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   void initState() {
     super.initState();
     _cargarRecientes();
+    widget.deps.leerAvisoLigarOculto().then((oculto) {
+      if (mounted) setState(() => _avisoLigarOculto = oculto);
+    }).ignore();
   }
 
   @override
@@ -106,8 +117,50 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   }
 
   Future<void> _enviarInvitacion(String codigo) async {
+    if (_pinParaGoogle) {
+      await _entrarConGoogle(codigoInvitacion: codigo);
+      return;
+    }
     await widget.deps.guardarInvitacion(codigo);
     if (mounted) _retry();
+  }
+
+  /// «Entrar con Google» de la pantalla de invitación: una cuenta ya ligada entra directo;
+  /// un Google nuevo puede exigir el código (se pide y se reintenta con el mismo Google).
+  Future<void> _entrarConGoogle({String? codigoInvitacion}) async {
+    final mensajes = ScaffoldMessenger.of(context);
+    try {
+      await widget.deps.entrarConGoogle(codigoInvitacion: codigoInvitacion);
+      if (!mounted) return;
+      setState(() {
+        _pinParaGoogle = false;
+        _pinRechazado = null;
+      });
+      _retry();
+    } on InvitacionRequerida catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _pinParaGoogle = true;
+        _pinRechazado = e.rechazada;
+      });
+    } on GoogleCancelado {
+      mensajes.showSnackBar(
+        const SnackBar(content: Text('Se canceló el ingreso con Google.')),
+      );
+    } on GoogleFallo catch (e) {
+      mensajes.showSnackBar(
+        SnackBar(content: Text('Google falló: ${e.detalle}')),
+      );
+    } catch (_) {
+      mensajes.showSnackBar(
+        const SnackBar(content: Text('No pudimos entrar. Probá de nuevo.')),
+      );
+    }
+  }
+
+  Future<void> _ocultarAvisoLigar() async {
+    setState(() => _avisoLigarOculto = true);
+    await widget.deps.ocultarAvisoLigar();
   }
 
   Future<void> _escanear() async {
@@ -146,8 +199,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         final error = snapshot.error;
         if (error is InvitacionRequerida) {
           return InvitacionScreen(
-            rechazada: error.rechazada,
+            rechazada: _pinRechazado ?? error.rechazada,
             onEnviar: _enviarInvitacion,
+            onGoogle: _entrarConGoogle,
           );
         }
         // Cuenta de baja: pantalla final, sin reintentos ni cuenta nueva.
@@ -266,6 +320,14 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
             AliasEditable(me: me, onGuardar: widget.deps.cambiarAlias),
             const SizedBox(height: 8),
             Text('Karma: ${me.karma}'),
+            if (me.sugerirLigar && !_avisoLigarOculto) ...[
+              const SizedBox(height: 16),
+              TarjetaLigar(
+                deps: widget.deps,
+                onLigada: _retry,
+                onLuego: _ocultarAvisoLigar,
+              ),
+            ],
             if (me.escalon != Escalon.normal) ...[
               const SizedBox(height: 16),
               AvisoModeracion(me: me),
