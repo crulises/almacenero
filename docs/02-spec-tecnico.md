@@ -206,6 +206,29 @@ email o a vincular un OAuth (el perfil sigue siendo el mismo `usuarios.id`). Dis
   (como `eventos`): el rastro sobrevive a un perfil borrado. Se ve en la ficha del usuario del panel
   (`alias_historial`).
 
+## Historial de precios por local (corte 22)
+
+Diseño en `docs/superpowers/specs/2026-11-26-historial-por-local-design.md`.
+
+- **`GET /v1/productos/{ean}/locales`** (`backend/app/api/v1/productos.py`): los locales entre los que
+  se puede elegir. Solo `verificado`. Con `lat` y `lng` (van juntos, si no 422): los que están dentro de
+  `config.radio_precios_m`, **tengan o no precio** del producto, por distancia, con `distancia_m` y
+  `ultimo_precio`/`fecha` (nulos si no hay). Sin ubicación: solo los que tienen precio, el más reciente
+  primero, sin distancia. El historial de un local sale de `GET /v1/productos/{ean}/precios?local_id=`
+  (ya existía; `PrecioHistorial` de la app ahora guarda `local_id`).
+- **App** (`ui/historial_local_screen.dart`): botón «Ver historial por local» en la ficha, encima de
+  «Cargar precio» (oculto si nadie cargó nada). Título = local (con distancia, selector si hay más de
+  uno); producto debajo; tabs **Mapa** (`ui/mapa_local.dart`, carteles «Vos» y «Local») y **Gráfico**
+  (`ui/grafico_precios.dart`, `CustomPainter` propio, eje lineal, sin librerías nuevas), que es la que
+  abre; los tabs miden 240, como el mapa de la ficha, y no se cambian deslizando (el gesto es del mapa).
+  Filas con la variación contra el precio anterior (`domain/historial.dart`: `conVariacion`,
+  `etiquetaVariacion`, `rangoEje`). Sin GPS se muestran los locales con precio, sin distancia ni «Vos».
+  Un local sin precios del producto: mensaje, «Ir al inicio» y «Escanear».
+- **«Escanear otro»** quedó en `ui/escanear_otro.dart`, compartido por la ficha (reemplaza la ficha) y el
+  historial (vuelve al inicio y apila la ficha nueva).
+- **La ficha** ya no tiene la sección «Historial de precios» que mezclaba todos los locales.
+- El gráfico acepta `MarcaGrafico` (líneas verticales con texto): las usará el corte 23 (hitos).
+
 ## Flujo de carga y «Recientes» (corte 20)
 
 Cierra el release 0.1.x. Diseño en `docs/superpowers/specs/2026-11-25-flujo-carga-recientes-design.md`;
