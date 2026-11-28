@@ -189,7 +189,8 @@ void main() {
     await _abrir(tester, _Falso());
 
     expect(find.text('\$ 900,00'), findsOneWidget);
-    expect(find.text('bajó 10%'), findsOneWidget);
+    expect(find.text('10%'), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_downward), findsOneWidget);
     expect(find.text('\$ 1.000,00'), findsOneWidget);
   });
 
@@ -198,8 +199,30 @@ void main() {
     await _abrir(tester, f);
 
     expect(find.text('\$ 1.000,00'), findsOneWidget);
-    expect(find.textContaining('subió'), findsNothing);
-    expect(find.textContaining('bajó'), findsNothing);
+    expect(find.byIcon(Icons.arrow_upward), findsNothing);
+    expect(find.byIcon(Icons.arrow_downward), findsNothing);
+    expect(find.textContaining('%'), findsNothing);
+  });
+
+  testWidgets('con espacio, la lista se desplaza sin mover el gráfico', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final f = _Falso();
+    f.historiales['l1'] = [
+      for (var d = 25; d >= 1; d--) _h('l1', '${1000 + d}.00', d),
+    ];
+    await _abrir(tester, f);
+
+    expect(find.text('Historial de precios'), findsOneWidget);
+    final antes = tester.getTopLeft(find.byType(GraficoPrecios));
+    await tester.drag(find.text('\$ 1.025,00'), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    expect(tester.getTopLeft(find.byType(GraficoPrecios)), antes);
+    expect(find.text('\$ 1.025,00'), findsNothing); // la lista sí se movió
   });
 
   testWidgets('cambiar de local pide su historial y cambia el título', (

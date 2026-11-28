@@ -47,4 +47,24 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('\$ 500'), findsOneWidget);
   });
+
+  testWidgets('tocar un punto muestra su precio y día; tocar lejos lo saca', (
+    tester,
+  ) async {
+    await _montar(tester, [_p('1100.00', 20), _p('900.00', 10)]);
+    final origen = tester.getTopLeft(find.byType(GraficoPrecios));
+    final globo = find.byKey(const ValueKey('punto-tocado'));
+    expect(globo, findsNothing);
+
+    // El punto más viejo (900) queda en el borde izquierdo del área, abajo:
+    // eje 880..1120, área de 204 px a partir de 12.
+    await tester.tapAt(origen + const Offset(64, 12 + 220 / 240 * 204));
+    await tester.pump();
+    expect(globo, findsOneWidget);
+    expect(find.text('\$ 900,00 · 10/11'), findsOneWidget);
+
+    await tester.tapAt(origen + const Offset(400, 120));
+    await tester.pump();
+    expect(globo, findsNothing);
+  });
 }

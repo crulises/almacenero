@@ -192,7 +192,7 @@ class _ProductScreenState extends State<ProductScreen> {
   List<Widget> _acciones() => [
     TextButton.icon(
       onPressed: () => escanearOtro(context, widget.deps),
-      icon: const Icon(Icons.qr_code_scanner),
+      icon: const Icon(Icons.barcode_reader),
       label: const Text('Escanear otro'),
     ),
     FutureBuilder<Producto>(

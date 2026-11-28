@@ -244,7 +244,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
             const SizedBox(height: 32),
             FilledButton.icon(
               onPressed: _escanear,
-              icon: const Icon(Icons.qr_code_scanner),
+              icon: const Icon(Icons.barcode_reader),
               label: const Text('Escanear código'),
             ),
             const SizedBox(height: 24),

@@ -247,8 +247,10 @@ Diseño en `docs/superpowers/specs/2026-11-26-historial-por-local-design.md`.
   «Cargar precio» (oculto si nadie cargó nada). Título = local (con distancia, selector si hay más de
   uno); producto debajo; tabs en píldora **Gráfico** (izquierda, el que abre; `ui/grafico_precios.dart`, `CustomPainter` propio,
   eje lineal, sin librerías nuevas) y **Mapa** (derecha; `ui/mapa_local.dart`, carteles «Vos» y «Local»); los tabs miden 240, como el mapa de la ficha, y no se cambian deslizando (el gesto es del mapa).
-  Filas con la variación contra el precio anterior (`domain/historial.dart`: `conVariacion`,
-  `etiquetaVariacion`, `rangoEje`). Sin GPS se muestran los locales con precio, sin distancia ni «Vos».
+  Debajo, «Historial de precios»: filas compactas con la variación contra el precio anterior como
+  flecha + % (`domain/historial.dart`: `conVariacion`, `etiquetaVariacion`, `rangoEje`); con ≥ 640 px de
+  alto la cabecera queda fija y solo la lista se desplaza. Tocar (o arrastrar sobre) un punto del gráfico
+  muestra su precio y día. El ícono de escanear es `Icons.barcode_reader` (el EAN siempre es un código de barras). Sin GPS se muestran los locales con precio, sin distancia ni «Vos».
   Un local sin precios del producto: mensaje, «Ir al inicio» y «Escanear».
 - **«Escanear otro»** quedó en `ui/escanear_otro.dart`, compartido por la ficha (reemplaza la ficha) y el
   historial (vuelve al inicio y apila la ficha nueva).

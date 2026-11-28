@@ -960,6 +960,43 @@ void main() {
       expect(find.text('Ver historial por local'), findsOneWidget);
     });
 
+    testWidgets(
+      'el globo del mapa conserva su precio al volver del historial',
+      (tester) async {
+        backend.precios.add(
+          precio('500.00', 'Local del admin', DateTime.now()),
+        );
+        backend.vigentes.add(
+          PrecioVigente(
+            localId: 'l1',
+            localNombre: 'Local del admin',
+            localVerificado: true,
+            lat: -34.6,
+            lng: -58.4,
+            precio: '500.00',
+            fecha: DateTime.now(),
+            edadDias: 0,
+            frescura: 'verde',
+            vencido: false,
+          ),
+        );
+        await abrir(tester);
+        await _buscar(tester, _aceite.ean);
+        final globo = find.descendant(
+          of: find.byKey(const ValueKey('cartel-l1')),
+          matching: find.text(r'$ 500'),
+        );
+        expect(globo, findsOneWidget);
+
+        await tester.tap(find.text('Ver historial por local'));
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        expect(globo, findsOneWidget);
+      },
+    );
+
     testWidgets('el precio recién cargado aparece al volver a la ficha', (
       tester,
     ) async {

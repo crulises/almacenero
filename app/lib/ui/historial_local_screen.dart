@@ -32,6 +32,9 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
   /// Alto de los tabs: el mismo que el del mapa de la ficha.
   static const _altoTabs = 240.0;
 
+  /// Alto mínimo del cuerpo para fijar la cabecera y desplazar solo la lista.
+  static const _altoMinimoFijo = 640.0;
+
   // «Gráfico» (la principal) es el primer tab y el que se abre; «Mapa» va a la derecha.
   late final _tabs = TabController(length: 2, vsync: this);
 
@@ -148,21 +151,18 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            local.localNombre,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (local.distanciaM != null)
-                            Text(
-                              formatearDistancia(local.distanciaM!),
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                        ],
+                      child: Text(
+                        local.localNombre,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    if (local.distanciaM != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        formatearDistancia(local.distanciaM!),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                     if (puedeElegir) const Icon(Icons.arrow_drop_down),
                   ],
                 ),
@@ -171,7 +171,7 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
           TextButton.icon(
             onPressed: () =>
                 escanearOtro(context, widget.deps, desdeHistorial: true),
-            icon: const Icon(Icons.qr_code_scanner),
+            icon: const Icon(Icons.barcode_reader),
             label: const Text('Escanear otro'),
           ),
         ],
@@ -220,50 +220,67 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
     final local = _elegido!;
     final texto = Theme.of(context).textTheme;
     final ahora = DateTime.now();
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      children: [
-        Text(widget.producto.nombre, style: texto.titleMedium),
-        if (widget.producto.detalle.isNotEmpty) Text(widget.producto.detalle),
-        const SizedBox(height: 8),
-        _SelectorTabs(controller: _tabs),
-        SizedBox(
-          height: _altoTabs,
-          child: TabBarView(
-            controller: _tabs,
-            // Se cambia de tab tocando: un deslizamiento horizontal es del mapa.
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: GraficoPrecios(precios: historial),
+    final cabecera = <Widget>[
+      Text(widget.producto.nombre, style: texto.titleMedium),
+      if (widget.producto.detalle.isNotEmpty) Text(widget.producto.detalle),
+      const SizedBox(height: 8),
+      _SelectorTabs(controller: _tabs),
+      SizedBox(
+        height: _altoTabs,
+        child: TabBarView(
+          controller: _tabs,
+          // Se cambia de tab tocando: un deslizamiento horizontal es del mapa.
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: GraficoPrecios(precios: historial),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: MapaLocal(
+                localLat: local.lat,
+                localLng: local.lng,
+                usuario: _ubicacion,
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: MapaLocal(
-                  localLat: local.lat,
-                  localLng: local.lng,
-                  usuario: _ubicacion,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      Text('Historial de precios', style: texto.titleSmall),
+      const Divider(height: 16),
+    ];
+    final filas = [
+      for (final punto in conVariacion(historial))
+        _FilaPrecio(punto: punto, ahora: ahora),
+    ];
+    return LayoutBuilder(
+      builder: (context, c) {
+        // Con espacio, la cabecera queda fija y solo la lista se desplaza. En una
+        // pantalla muy baja no entraría la lista: se desplaza todo junto.
+        if (c.maxHeight < _altoMinimoFijo) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            children: [...cabecera, ...filas],
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ...cabecera,
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  children: filas,
                 ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        for (final punto in conVariacion(historial))
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              formatearPrecio(punto.precio.precio),
-              style: texto.titleLarge,
-            ),
-            subtitle: Text(formatearFecha(punto.precio.fecha, ahora: ahora)),
-            trailing: Text(
-              etiquetaVariacion(punto.variacionPct),
-              style: texto.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-      ],
+        );
+      },
     );
   }
 
@@ -329,6 +346,80 @@ class _SelectorTabs extends StatelessWidget {
         tabs: const [
           Tab(text: 'Gráfico', height: 40),
           Tab(text: 'Mapa', height: 40),
+        ],
+      ),
+    );
+  }
+}
+
+/// Un precio del historial en una línea: el precio en negrita, la fecha en gris al lado y,
+/// a la derecha, cuánto cambió contra el anterior (flecha + porcentaje).
+class _FilaPrecio extends StatelessWidget {
+  const _FilaPrecio({required this.punto, required this.ahora});
+
+  final PuntoHistorial punto;
+  final DateTime ahora;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    final gris = tema.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Text(
+            formatearPrecio(punto.precio.precio),
+            style: tema.textTheme.bodyLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              formatearFecha(punto.precio.fecha, ahora: ahora),
+              overflow: TextOverflow.ellipsis,
+              style: tema.textTheme.bodySmall?.copyWith(color: gris),
+            ),
+          ),
+          _Variacion(pct: punto.variacionPct),
+        ],
+      ),
+    );
+  }
+}
+
+/// «↑ 8%» (sube: rojo), «↓ 12%» (baja: verde) o «–» sin cambios. Nada si no hay con qué comparar.
+class _Variacion extends StatelessWidget {
+  const _Variacion({required this.pct});
+
+  final double? pct;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = pct;
+    if (p == null) return const SizedBox.shrink();
+    final tema = Theme.of(context);
+    final (icono, color, texto) = p.abs() < 0.5
+        ? (Icons.remove, tema.colorScheme.onSurfaceVariant, '0%')
+        : p > 0
+        ? (Icons.arrow_upward, tema.colorScheme.error, '${p.round()}%')
+        : (Icons.arrow_downward, Colors.green.shade700, '${p.abs().round()}%');
+    return Semantics(
+      label: etiquetaVariacion(p),
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icono, size: 16, color: color),
+          const SizedBox(width: 2),
+          Text(
+            texto,
+            style: tema.textTheme.bodyMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );

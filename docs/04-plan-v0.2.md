@@ -35,7 +35,9 @@ Diseño: `docs/superpowers/specs/2026-11-26-historial-por-local-design.md`; plan
 2. Se abre en **Gráfico**: línea con el precio en el tiempo; **Mapa**: «Local» y «Vos».
 3. El título es el local más cercano con su distancia; tocarlo para cambiar de local (ordenados por
    distancia; los que no tienen precios dicen «sin precios»).
-4. Cada fila dice cuánto subió o bajó contra el anterior.
+4. Debajo, «Historial de precios»: una línea por precio (precio en negrita, fecha en gris) y a la derecha
+   flecha ↑/↓ con el porcentaje contra el anterior. Con espacio, la lista se desplaza sola y el
+   gráfico/mapa queda fijo. Tocar un punto del gráfico muestra su precio y día.
 5. Elegir un local sin precios: mensaje, «Ir al inicio» y «Escanear».
 6. «Escanear otro» (arriba a la derecha) y, con el GPS apagado, que igual cargue (sin distancia ni «Vos»).
 
