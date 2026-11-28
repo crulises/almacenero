@@ -1223,3 +1223,12 @@ Decisiones en `docs/04` §9.
 - **Causa:** el email del Google ya lo tiene otra cuenta de `usuarios` (por ejemplo un admin creado con
   `make admin-crear`). GoTrue lo rechaza (`email_exists`) o, si lo acepta, el backend liga sin guardar el email.
   Se resuelve con el reclamo desde el panel, no ligando.
+
+### «No pudimos cargar el historial» al abrir «Ver historial por local»
+
+- **Síntoma:** la pantalla de historial por local (corte 22) muestra el error con «Reintentar» en vez de la lista.
+- **Causa:** el backend que corre en Docker es una imagen vieja, sin `GET /v1/productos/{ean}/locales` (404 que la app
+  muestra como error). Pasa al probar la app de una rama con el backend de otra: la imagen se construye con el código
+  de la carpeta donde hiciste `make up`/`make build`, y no se actualiza sola al cambiar de rama.
+- **Solución:** parado en la rama de la app, `make build && make up` (reconstruye el backend). Para verificar:
+  `docker exec almacenero-backend-1 grep -c '/locales"' /srv/app/api/v1/productos.py` tiene que dar 1 o más.

@@ -173,6 +173,16 @@ void main() {
     expect(find.text('Local'), findsOneWidget);
   });
 
+  testWidgets('los tabs van «Gráfico» a la izquierda y «Mapa» a la derecha', (
+    tester,
+  ) async {
+    await _abrir(tester, _Falso());
+
+    final grafico = tester.getTopLeft(find.text('Gráfico')).dx;
+    final mapa = tester.getTopLeft(find.text('Mapa')).dx;
+    expect(grafico, lessThan(mapa));
+  });
+
   testWidgets('filas con la variación contra el precio anterior', (
     tester,
   ) async {

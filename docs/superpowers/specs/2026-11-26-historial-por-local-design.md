@@ -23,7 +23,7 @@ no sirve para esto.
 3. Local por defecto: **el más cercano**; si el usuario está parado en un local (dentro del geofence),
    ese. Se puede cambiar desde un selector, ordenado por distancia.
 4. «Escanear otro» arriba a la derecha, con el mismo comportamiento que en la ficha.
-5. Dos tabs bajo el nombre: **Mapa** (izquierda) y **Gráfico** (derecha, la principal: abre en ella).
+5. Dos tabs bajo el nombre, con forma de píldora como los botones: **Gráfico** (izquierda, la principal: abre en ella) y **Mapa** (derecha). _Ajustado tras probar en el celular: antes iban al revés y con la raya cuadrada de un `TabBar` común._
    Ambos del mismo tamaño (el del mapa de la ficha).
 6. **Gráfico:** línea del precio en el tiempo, **escala lineal** (sin truncar el eje a conveniencia: debe
    leerse lo que pasó de verdad).

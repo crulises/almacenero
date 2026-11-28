@@ -245,9 +245,8 @@ Diseño en `docs/superpowers/specs/2026-11-26-historial-por-local-design.md`.
   (ya existía; `PrecioHistorial` de la app ahora guarda `local_id`).
 - **App** (`ui/historial_local_screen.dart`): botón «Ver historial por local» en la ficha, encima de
   «Cargar precio» (oculto si nadie cargó nada). Título = local (con distancia, selector si hay más de
-  uno); producto debajo; tabs **Mapa** (`ui/mapa_local.dart`, carteles «Vos» y «Local») y **Gráfico**
-  (`ui/grafico_precios.dart`, `CustomPainter` propio, eje lineal, sin librerías nuevas), que es la que
-  abre; los tabs miden 240, como el mapa de la ficha, y no se cambian deslizando (el gesto es del mapa).
+  uno); producto debajo; tabs en píldora **Gráfico** (izquierda, el que abre; `ui/grafico_precios.dart`, `CustomPainter` propio,
+  eje lineal, sin librerías nuevas) y **Mapa** (derecha; `ui/mapa_local.dart`, carteles «Vos» y «Local»); los tabs miden 240, como el mapa de la ficha, y no se cambian deslizando (el gesto es del mapa).
   Filas con la variación contra el precio anterior (`domain/historial.dart`: `conVariacion`,
   `etiquetaVariacion`, `rangoEje`). Sin GPS se muestran los locales con precio, sin distancia ni «Vos».
   Un local sin precios del producto: mensaje, «Ir al inicio» y «Escanear».

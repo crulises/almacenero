@@ -32,8 +32,8 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
   /// Alto de los tabs: el mismo que el del mapa de la ficha.
   static const _altoTabs = 240.0;
 
-  // «Gráfico» (la principal) es el segundo tab y el que se abre.
-  late final _tabs = TabController(length: 2, vsync: this, initialIndex: 1);
+  // «Gráfico» (la principal) es el primer tab y el que se abre; «Mapa» va a la derecha.
+  late final _tabs = TabController(length: 2, vsync: this);
 
   Ubicacion? _ubicacion;
   List<LocalDelProducto>? _locales;
@@ -226,13 +226,7 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
         Text(widget.producto.nombre, style: texto.titleMedium),
         if (widget.producto.detalle.isNotEmpty) Text(widget.producto.detalle),
         const SizedBox(height: 8),
-        TabBar(
-          controller: _tabs,
-          tabs: const [
-            Tab(text: 'Mapa'),
-            Tab(text: 'Gráfico'),
-          ],
-        ),
+        _SelectorTabs(controller: _tabs),
         SizedBox(
           height: _altoTabs,
           child: TabBarView(
@@ -242,15 +236,15 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
             children: [
               Padding(
                 padding: const EdgeInsets.only(top: 8),
+                child: GraficoPrecios(precios: historial),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
                 child: MapaLocal(
                   localLat: local.lat,
                   localLng: local.lng,
                   usuario: _ubicacion,
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: GraficoPrecios(precios: historial),
               ),
             ],
           ),
@@ -298,6 +292,43 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
                 escanearOtro(context, widget.deps, desdeHistorial: true),
             child: const Text('Escanear'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Los tabs «Gráfico | Mapa» con la misma forma que los botones de la app: una píldora
+/// redondeada, no la raya cuadrada de un `TabBar` común.
+class _SelectorTabs extends StatelessWidget {
+  const _SelectorTabs({required this.controller});
+
+  final TabController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: ShapeDecoration(
+        shape: const StadiumBorder(),
+        color: colores.surfaceContainerHighest,
+      ),
+      child: TabBar(
+        controller: controller,
+        dividerColor: Colors.transparent,
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicator: ShapeDecoration(
+          shape: const StadiumBorder(),
+          color: colores.primary,
+        ),
+        labelColor: colores.onPrimary,
+        unselectedLabelColor: colores.onSurfaceVariant,
+        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        splashFactory: NoSplash.splashFactory,
+        tabs: const [
+          Tab(text: 'Gráfico', height: 40),
+          Tab(text: 'Mapa', height: 40),
         ],
       ),
     );
