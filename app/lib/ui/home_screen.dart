@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'icono_codigo_barras.dart';
 import '../app_deps.dart';
 import '../data/api_client.dart';
 import '../data/auth_repository.dart';
@@ -244,7 +245,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
             const SizedBox(height: 32),
             FilledButton.icon(
               onPressed: _escanear,
-              icon: const Icon(Icons.barcode_reader),
+              icon: const IconoCodigoBarras(),
               label: const Text('Escanear código'),
             ),
             const SizedBox(height: 24),

@@ -250,7 +250,7 @@ Diseño en `docs/superpowers/specs/2026-11-26-historial-por-local-design.md`.
   Debajo, «Historial de precios»: filas compactas con la variación contra el precio anterior como
   flecha + % (`domain/historial.dart`: `conVariacion`, `etiquetaVariacion`, `rangoEje`); con ≥ 640 px de
   alto la cabecera queda fija y solo la lista se desplaza. Tocar (o arrastrar sobre) un punto del gráfico
-  muestra su precio y día. El ícono de escanear es `Icons.barcode_reader` (el EAN siempre es un código de barras). Sin GPS se muestran los locales con precio, sin distancia ni «Vos».
+  muestra su precio y día. El ícono de escanear es `IconoCodigoBarras` (`ui/icono_codigo_barras.dart`, dibujado: Material no trae uno; el EAN siempre es un código de barras). La distancia al local va en el cuerpo («A 120 m de vos»), no en el título, para que el nombre del local tenga lugar; las filas pares van sombreadas para leer cada porcentaje. Sin GPS se muestran los locales con precio, sin distancia ni «Vos».
   Un local sin precios del producto: mensaje, «Ir al inicio» y «Escanear».
 - **«Escanear otro»** quedó en `ui/escanear_otro.dart`, compartido por la ficha (reemplaza la ficha) y el
   historial (vuelve al inicio y apila la ficha nueva).

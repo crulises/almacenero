@@ -68,6 +68,9 @@ String describirFalloGoogle(
       'Esta versión de la app no está bien configurada para Google.',
     GoogleSignInExceptionCode.uiUnavailable =>
       'No se pudo mostrar la pantalla de Google. Probá de nuevo.',
+    _ when (descripcion ?? '').contains('28444') =>
+      'Google no reconoce a esta versión de la app: falta (o no coincide) el cliente '
+          'Android de Google Cloud con el paquete y el SHA-1 con los que se firmó este APK.',
     _ => 'Google no pudo completar el ingreso.',
   };
   return '$causa [$tecnico]';

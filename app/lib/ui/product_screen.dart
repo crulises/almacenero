@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'icono_codigo_barras.dart';
 import '../app_deps.dart';
 import '../data/location_service.dart';
 import '../data/price_repository.dart';
@@ -192,7 +193,7 @@ class _ProductScreenState extends State<ProductScreen> {
   List<Widget> _acciones() => [
     TextButton.icon(
       onPressed: () => escanearOtro(context, widget.deps),
-      icon: const Icon(Icons.barcode_reader),
+      icon: const IconoCodigoBarras(),
       label: const Text('Escanear otro'),
     ),
     FutureBuilder<Producto>(

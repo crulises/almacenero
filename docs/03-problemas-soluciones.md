@@ -1168,6 +1168,17 @@ Decisiones en `docs/04` §9.
 - **Síntoma de que falta uno:** el selector de Google falla en el celular (`GoogleSignInException`) o GoTrue
   rechaza el token (audiencia).
 
+### Google falla con `unknownError: [28444] Developer console is not set up correctly`
+
+- **Síntoma:** al asociar o iniciar sesión, «Google falló: …[28444] Developer console is not set up correctly».
+- **Causa:** Google (Credential Manager) no reconoce al APK: no hay un cliente **Android** en Google Cloud con el
+  paquete (`dev.crulises.almacenero`) y el **SHA-1 del keystore con el que se firmó ese APK**, o el
+  `GOOGLE_WEB_CLIENT_ID` con el que se compiló está vacío/es de otro proyecto. Típico tras cambiar de
+  máquina, de keystore de debug o de `applicationId`, o al compilar desde un worktree sin `.env`.
+- **Solución:** sacar el SHA-1 del keystore que firmó el APK (`keytool -list -v -keystore <archivo> -alias <alias>`),
+  confirmar que existe un cliente Android con ese paquete + SHA-1 y que `.env` tiene `GOOGLE_CLIENT_ID`; compilar
+  con `make apk` desde la carpeta que tiene el `.env`. Los cambios en Google Cloud tardan unos minutos.
+
 ### El selector de Google «se cancela» solo en el celular
 
 - **Síntoma:** aparece el popup de Google, se acepta y la app dice «Google falló: canceled…» (o «Se canceló

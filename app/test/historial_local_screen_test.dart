@@ -154,7 +154,7 @@ void main() {
       await _abrir(tester, f);
 
       expect(find.text('Super Uno'), findsOneWidget);
-      expect(find.text('120 m'), findsOneWidget);
+      expect(find.text('A 120 m de vos'), findsOneWidget);
       expect(find.text('Aceite de girasol'), findsOneWidget);
       expect(f.ubicacionPedida, isNotNull);
       expect(f.pedidosHistorial, ['l1']);
@@ -192,6 +192,20 @@ void main() {
     expect(find.text('10%'), findsOneWidget);
     expect(find.byIcon(Icons.arrow_downward), findsOneWidget);
     expect(find.text('\$ 1.000,00'), findsOneWidget);
+  });
+
+  testWidgets('las filas se sombrean alternadas para leer cada porcentaje', (
+    tester,
+  ) async {
+    await _abrir(tester, _Falso());
+
+    Color? fondo(String id) {
+      final c = tester.widget<Container>(find.byKey(ValueKey('fila-$id')));
+      return (c.decoration! as BoxDecoration).color;
+    }
+
+    expect(fondo('l1-900.00'), isNotNull); // la más nueva (par)
+    expect(fondo('l1-1000.00'), isNull); // la siguiente, sin sombra
   });
 
   testWidgets('un solo precio: sin etiqueta de variación', (tester) async {
@@ -238,7 +252,7 @@ void main() {
 
     expect(f.pedidosHistorial, ['l1', 'l2']);
     expect(find.text('Kiosco Dos'), findsOneWidget);
-    expect(find.text('1,4 km'), findsOneWidget);
+    expect(find.text('A 1,4 km de vos'), findsOneWidget);
   });
 
   testWidgets('el selector avisa qué locales no tienen precios', (

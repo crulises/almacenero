@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'icono_codigo_barras.dart';
 import '../app_deps.dart';
 import '../data/location_service.dart';
 import '../data/price_repository.dart';
@@ -156,13 +157,6 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (local.distanciaM != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        formatearDistancia(local.distanciaM!),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
                     if (puedeElegir) const Icon(Icons.arrow_drop_down),
                   ],
                 ),
@@ -171,7 +165,7 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
           TextButton.icon(
             onPressed: () =>
                 escanearOtro(context, widget.deps, desdeHistorial: true),
-            icon: const Icon(Icons.barcode_reader),
+            icon: const IconoCodigoBarras(),
             label: const Text('Escanear otro'),
           ),
         ],
@@ -223,7 +217,15 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
     final cabecera = <Widget>[
       Text(widget.producto.nombre, style: texto.titleMedium),
       if (widget.producto.detalle.isNotEmpty) Text(widget.producto.detalle),
-      const SizedBox(height: 8),
+      // La distancia va acá y no en el título: así el nombre del local tiene lugar.
+      if (local.distanciaM != null)
+        Text(
+          'A ${formatearDistancia(local.distanciaM!)} de vos',
+          style: texto.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      const SizedBox(height: 6),
       _SelectorTabs(controller: _tabs),
       SizedBox(
         height: _altoTabs,
@@ -233,11 +235,11 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
           physics: const NeverScrollableScrollPhysics(),
           children: [
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.only(top: 6),
               child: GraficoPrecios(precios: historial),
             ),
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.only(top: 6),
               child: MapaLocal(
                 localLat: local.lat,
                 localLng: local.lng,
@@ -252,8 +254,8 @@ class _HistorialLocalScreenState extends State<HistorialLocalScreen>
       const Divider(height: 16),
     ];
     final filas = [
-      for (final punto in conVariacion(historial))
-        _FilaPrecio(punto: punto, ahora: ahora),
+      for (final (i, punto) in conVariacion(historial).indexed)
+        _FilaPrecio(punto: punto, ahora: ahora, par: i.isEven),
     ];
     return LayoutBuilder(
       builder: (context, c) {
@@ -326,7 +328,7 @@ class _SelectorTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final colores = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(2),
       decoration: ShapeDecoration(
         shape: const StadiumBorder(),
         color: colores.surfaceContainerHighest,
@@ -344,8 +346,8 @@ class _SelectorTabs extends StatelessWidget {
         overlayColor: const WidgetStatePropertyAll(Colors.transparent),
         splashFactory: NoSplash.splashFactory,
         tabs: const [
-          Tab(text: 'Gráfico', height: 40),
-          Tab(text: 'Mapa', height: 40),
+          Tab(text: 'Gráfico', height: 32),
+          Tab(text: 'Mapa', height: 32),
         ],
       ),
     );
@@ -355,17 +357,30 @@ class _SelectorTabs extends StatelessWidget {
 /// Un precio del historial en una línea: el precio en negrita, la fecha en gris al lado y,
 /// a la derecha, cuánto cambió contra el anterior (flecha + porcentaje).
 class _FilaPrecio extends StatelessWidget {
-  const _FilaPrecio({required this.punto, required this.ahora});
+  const _FilaPrecio({
+    required this.punto,
+    required this.ahora,
+    required this.par,
+  });
 
   final PuntoHistorial punto;
   final DateTime ahora;
+
+  /// Las filas pares van sombreadas: así se ve qué porcentaje es de qué precio.
+  final bool par;
 
   @override
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
     final gris = tema.colorScheme.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+    return Container(
+      key: ValueKey('fila-${punto.precio.id}'),
+      margin: const EdgeInsets.symmetric(vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: par ? tema.colorScheme.surfaceContainerHighest : null,
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Row(
         children: [
           Text(
