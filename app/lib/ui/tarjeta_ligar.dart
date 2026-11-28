@@ -7,6 +7,16 @@ import 'google_logo.dart';
 void _avisar(ScaffoldMessengerState mensajes, String texto) =>
     mensajes.showSnackBar(SnackBar(content: Text(texto)));
 
+/// Un fallo de Google trae una explicación larga: se deja más tiempo en pantalla.
+void avisarFalloGoogle(ScaffoldMessengerState mensajes, GoogleFallo e) =>
+    mensajes.showSnackBar(
+      SnackBar(
+        content: Text('Google falló: ${e.detalle}'),
+        duration: const Duration(seconds: 15),
+        showCloseIcon: true,
+      ),
+    );
+
 /// Liga la cuenta actual a un Google (el flujo que comparten la tarjeta y «Acerca de»).
 /// Devuelve `true` si la sesión cambió (se ligó, o se entró a la cuenta que ese Google ya
 /// tenía): quien llama refresca lo que muestra. Cerrar el selector no hace nada; un fallo
@@ -20,7 +30,7 @@ Future<bool> ligarCuentaConGoogle(BuildContext context, AppDeps deps) async {
     _avisar(mensajes, 'Se canceló el ingreso con Google.');
     return false;
   } on GoogleFallo catch (e) {
-    _avisar(mensajes, 'Google falló: ${e.detalle}');
+    avisarFalloGoogle(mensajes, e);
     return false;
   } on GoogleYaLigado {
     if (!context.mounted) return false;
@@ -52,7 +62,7 @@ Future<bool> ligarCuentaConGoogle(BuildContext context, AppDeps deps) async {
       _avisar(mensajes, 'Se canceló el ingreso con Google.');
       return false;
     } on GoogleFallo catch (e) {
-      _avisar(mensajes, 'Google falló: ${e.detalle}');
+      avisarFalloGoogle(mensajes, e);
       return false;
     } catch (_) {
       mensajes.showSnackBar(

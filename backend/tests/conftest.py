@@ -6,10 +6,15 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import get_settings
-from app.main import app
-from app.services.ratelimit import limitador
-from tests.db import sql, valor_config
+from tests import base_temporal
+
+# Antes de importar la app: los tests corren en una base descartable, no en la de desarrollo.
+BASE_DE_PRUEBA = base_temporal.preparar()
+
+from app.config import get_settings  # noqa: E402
+from app.main import app  # noqa: E402
+from app.services.ratelimit import limitador  # noqa: E402
+from tests.db import sql, valor_config  # noqa: E402
 
 # El ciclo de programaciones se prueba llamando `vuelta` a mano; que no corra solo en los tests.
 os.environ.setdefault("PROGRAMACIONES_ACTIVO", "false")

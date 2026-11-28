@@ -148,9 +148,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         const SnackBar(content: Text('Se canceló el ingreso con Google.')),
       );
     } on GoogleFallo catch (e) {
-      mensajes.showSnackBar(
-        SnackBar(content: Text('Google falló: ${e.detalle}')),
-      );
+      avisarFalloGoogle(mensajes, e);
     } catch (_) {
       mensajes.showSnackBar(
         const SnackBar(content: Text('No pudimos entrar. Probá de nuevo.')),
