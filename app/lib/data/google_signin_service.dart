@@ -39,13 +39,36 @@ class GoogleSignInNativo implements GoogleSignInService {
       }
       return idToken;
     } on GoogleSignInException catch (e) {
-      // En Android `canceled` también sale cuando la configuración está mal (paquete o SHA-1
-      // sin registrar en Google Cloud, sin cuenta de Google en el celular…): por eso nunca se
-      // trata en silencio; el detalle se muestra para poder diagnosticar.
-      throw GoogleFallo(
-        '${e.code.name}: ${e.description ?? 'sin descripción'}'
-        '${e.details == null ? '' : ' (${e.details})'}',
-      );
+      throw GoogleFallo(describirFalloGoogle(e.code, e.description, e.details));
     }
   }
+}
+
+/// Texto para la persona cuando Google corta el ingreso. En Android `canceled` también sale
+/// cuando algo está mal configurado o Google no deja entrar a la cuenta elegida (la app en
+/// modo de prueba y esa cuenta fuera de «Usuarios de prueba», paquete o SHA-1 sin registrar):
+/// por eso se explica en vez de mostrar solo el código, y siempre queda el detalle técnico.
+String describirFalloGoogle(
+  GoogleSignInExceptionCode code,
+  String? descripcion,
+  Object? detalles,
+) {
+  final tecnico =
+      '${code.name}: ${descripcion ?? 'sin descripción'}'
+      '${detalles == null ? '' : ' ($detalles)'}';
+  final causa = switch (code) {
+    GoogleSignInExceptionCode.canceled =>
+      'Google cerró el ingreso antes de terminar. Si no lo cancelaste vos, quizá '
+          'Google no deja entrar a esa cuenta: mientras la app está en modo de prueba, '
+          'solo entran las cuentas cargadas como usuarios de prueba.',
+    GoogleSignInExceptionCode.interrupted =>
+      'El ingreso se interrumpió. Probá de nuevo.',
+    GoogleSignInExceptionCode.clientConfigurationError ||
+    GoogleSignInExceptionCode.providerConfigurationError =>
+      'Esta versión de la app no está bien configurada para Google.',
+    GoogleSignInExceptionCode.uiUnavailable =>
+      'No se pudo mostrar la pantalla de Google. Probá de nuevo.',
+    _ => 'Google no pudo completar el ingreso.',
+  };
+  return '$causa [$tecnico]';
 }

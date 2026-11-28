@@ -79,7 +79,10 @@ void main() {
     testWidgets('aparece cuando el backend lo sugiere', (tester) async {
       await abrir(tester);
       expect(find.text('Protegé tu cuenta'), findsOneWidget);
-      expect(find.textContaining('Asociá una cuenta de Google'), findsOneWidget);
+      expect(
+        find.textContaining('Asociá una cuenta de Google'),
+        findsOneWidget,
+      );
       expect(find.textContaining('ligar'), findsNothing);
       expect(find.byType(GoogleLogo), findsOneWidget);
     });
@@ -104,15 +107,16 @@ void main() {
       expect(m.llamadas, ['ocultar']);
     });
 
-    testWidgets('«Asociar cuenta de Google» asocia, refresca /me y desaparece', (
-      tester,
-    ) async {
-      await abrir(tester);
-      await tester.tap(find.text('Asociar cuenta de Google'));
-      await tester.pumpAndSettle();
-      expect(m.llamadas, ['ligar']);
-      expect(find.text('Protegé tu cuenta'), findsNothing);
-    });
+    testWidgets(
+      '«Asociar cuenta de Google» asocia, refresca /me y desaparece',
+      (tester) async {
+        await abrir(tester);
+        await tester.tap(find.text('Asociar cuenta de Google'));
+        await tester.pumpAndSettle();
+        expect(m.llamadas, ['ligar']);
+        expect(find.text('Protegé tu cuenta'), findsNothing);
+      },
+    );
 
     testWidgets('si se cierra el selector de Google lo avisa y sigue', (
       tester,

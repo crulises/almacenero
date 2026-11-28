@@ -126,6 +126,9 @@ descripción (al agregar un target, ponele su `## descripción` en la misma lín
   locales verificados de una instalación a otra (Doc 9 §8).
 - `make almacen-probar` / `make s3-alt-up` / `make s3-alt-down` — prueba el almacén de exportaciones (S3 o
   disco; Doc 4 §11.4) / levanta o baja SeaweedFS, un S3 opcional para probar portabilidad.
+- `make db-dump` / `make db-lista` / `make db-restore ARCHIVO=... [APLICAR=1 CONFIRMAR=RESTAURAR]` — respaldo
+  propio de toda la base (`etl/respaldo.py`) al almacén (disco o S3), también desde el panel; restaurar
+  es simulacro salvo `APLICAR=1` (docs/03, «Respaldar y restaurar sin dramas»). `make backup` (pg_dump) sigue.
 - `make etl-worker` — worker local: toma de la cola (DATABASE_URL) los ETL pesados que se lanzan desde el
   panel web (sección ETL; Doc 4 §10-A).
 - `make admin-crear EMAIL=...` — crea/promueve un admin con email y contraseña para el panel
@@ -138,7 +141,7 @@ descripción (al agregar un target, ponele su `## descripción` en la misma lín
 - API versionada: `/v1/...`.
 - Secrets: `.env` local (NUNCA commitear) + secrets de plataforma en prod. Hay `.env.example`.
 - Logs: structured logging simple.
-- Tests: backend con pytest contra Postgres local real (no mocks). Flutter: unit + widget.
+- Tests: backend con pytest contra Postgres local real (no mocks), en una base descartable que se crea y se borra sola (docs/03). Flutter: unit + widget.
 
 ## Git y CI
 

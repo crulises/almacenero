@@ -1185,6 +1185,18 @@ Decisiones en `docs/04` §9.
 - **Cada APK, su cliente:** debug → SHA-1 de debug; `--release` → SHA-1 de la keystore de release; si algún día
   se publica en Play Store con «Play App Signing», además el SHA-1 que muestra Play Console.
 
+### Una cuenta de Google «no entra» y la app no dice nada
+
+- **Síntoma:** con una cuenta que no es la dueña del proyecto (p. ej. la de un familiar) el selector de Google se
+  queda en su pantalla sin avanzar; al cerrarlo con la X la app solo dice que se canceló.
+- **Causa:** es la causa 2 de arriba (pantalla de consentimiento en **Testing**, cuenta fuera de «Usuarios de
+  prueba»). El rechazo ocurre dentro de la pantalla de Google: a la app solo llega un `canceled`, igual que cuando
+  la persona cancela de verdad, así que no puede distinguirlos.
+- **Qué hace la app:** ante `canceled` muestra (15 s, con X) «Google cerró el ingreso antes de terminar. Si no lo
+  cancelaste vos, quizá Google no deja entrar a esa cuenta…» más el código técnico entre corchetes
+  (`describirFalloGoogle`, `app/lib/data/google_signin_service.dart`).
+- **Solución:** sumar la cuenta en Google Auth Platform › Público › Usuarios de prueba (o publicar la app).
+
 ### La consola de Google Cloud no muestra actividad del login
 
 - **Es lo esperado.** El ingreso nativo entrega un `id_token` firmado por Google; GoTrue lo valida con las
@@ -1223,3 +1235,98 @@ Decisiones en `docs/04` §9.
 - **Causa:** el email del Google ya lo tiene otra cuenta de `usuarios` (por ejemplo un admin creado con
   `make admin-crear`). GoTrue lo rechaza (`email_exists`) o, si lo acepta, el backend liga sin guardar el email.
   Se resuelve con el reclamo desde el panel, no ligando.
+
+## Recuperar la base local tras un `supabase db reset` (incidente del 27/11)
+
+### `supabase db reset` dejó la base vacía
+
+- **Síntoma:** después de pelearse con migraciones, el catálogo, los locales y los precios desaparecieron;
+  quedan solo los datos del seed (1 local, 2 productos).
+- **Causa:** `supabase db reset` **borra la base entera** (la recrea y reaplica migraciones + `seed.sql`).
+  No es una forma de «arreglar» el historial de migraciones.
+- **Prevención:** antes de tocar migraciones corré `make backup` (deja `backups/almacenero-<fecha>.dump`, ignorado
+  por git). Nunca uses `db reset` en la base con datos reales. Si necesitás probar migraciones, hacelo en otra
+  base (`make restore-test` crea y borra una temporal).
+
+### `migration up` dice «Remote migration versions not found»
+
+- **Causa:** `supabase db pull` registró en `supabase_migrations.schema_migrations` una versión
+  (p. ej. `20261127004009`) y después se borró el archivo generado. El CLI exige que cada versión registrada
+  tenga su archivo en `supabase/migrations/`.
+- **Solución sin resetear:** borrar solo esa fila huérfana
+  (`delete from supabase_migrations.schema_migrations where version = '<la versión>'`) o
+  `supabase migration repair --status reverted <versión>`. **No uses `db pull`** en este repo: las migraciones se
+  escriben a mano (SQL plano) y la base ya es la fuente de verdad del esquema.
+
+### Cómo se recuperó (pasos exactos)
+
+1. **Diagnóstico sin destruir:** `supabase_migrations.schema_migrations` vs `ls supabase/migrations`; conteos de
+   tablas; buscar respaldos: `backups/*.dump` (`make backup`), los `.zip` de `make catalogo-csv-exportar*` y
+   `make locales-exportar` (carpeta `ETL_EXPORT_DIR`, **ojo: también dentro de `.claude/worktrees/*/etl/data/exports`**),
+   el volumen del almacén S3 alternativo.
+2. **Restaurar un dump `public` viejo sobre el esquema nuevo** (no sirve `pg_restore` directo): no se puede
+   `--disable-triggers` (no sos superusuario) y el esquema cambió. Lo que hizo falta:
+   - cargar las tablas **en orden de claves foráneas** (un `pg_restore -t <tabla>` por tabla);
+   - sacar la línea `set_config('search_path', '')` que agrega `pg_restore` (rompe los triggers que nombran tablas sin esquema);
+   - abrir la transacción con `select set_config('app.rol_write','on',true), set_config('app.karma_write','on',true),
+     set_config('app.catalogo_write','on',true), set_config('app.estado_write','on',true);` (los triggers
+     `proteger_*` rechazan `rol`, `karma` y campos de catálogo si no);
+   - renombrar alias repetidos (`alias-<6 del id>`): el índice único `usuarios_alias_unico_idx` es posterior al dump;
+   - `config`: no truncarla; actualizar/insertar solo las claves del dump (las claves nuevas vienen de las migraciones/seed).
+3. **Catálogo más nuevo:** `make catalogo-csv-importar ARCHIVO=<catalogo-intercambio.csv> APLICAR=1` encima
+   (trae la normalización y las ediciones manuales posteriores al dump).
+4. **Admin:** `make admin-crear EMAIL=vos@mail.com`. Los usuarios anónimos de los celulares se pierden
+   (`auth.users` no está en `make backup`): la app abre una cuenta anónima nueva.
+5. Lo cargado **después** del último backup no se recupera (acá: precios y locales del 21 al 27/11).
+
+### El ETL «importar CSV curado» del panel queda en cola
+
+- **Síntoma:** la ejecución queda `en_cola` aunque `make etl-worker` esté corriendo.
+- **Causa 1 (confusión):** `curado_importar` (y calidad, renormalizar) tienen ejecutor **`web`**: los corre el
+  **backend**, no `make etl-worker`, que solo toma las `local` (OSM, SEPA, OFF pesados).
+- **Causa 2 (el bug):** el bucle del ejecutor `web` solo reintentaba ante `OSError`/`PostgresError`; al reiniciarse
+  Postgres (el reset) llegó un `InterfaceError` y la tarea murió en silencio hasta reiniciar el backend.
+- **Solución:** `etl/ejecucion.py` ahora reintenta ante cualquier excepción de conexión. Si ves ejecuciones
+  `en_cola` con ejecutor `web`: `docker compose restart backend`.
+
+### Respaldar y restaurar sin dramas: `make db-dump` / `make db-restore` y el panel
+
+`make backup` (pg_dump) sigue existiendo, pero restaurar un dump viejo sobre un esquema nuevo fue lo que
+costó tanto (ver arriba). Para eso está el respaldo propio (`etl/respaldo.py`, formato `respaldo_v1`):
+un `.zip` con un CSV por tabla de `public` + `manifest.json` (filas y sha256) + `LEEME.txt`.
+**Lleva datos de usuarios: es privado, no va al repo** (la carpeta `etl/data/exports/` ya está ignorada).
+
+| Qué | Makefile | Panel web (sección ETL) |
+|---|---|---|
+| Respaldar | `make db-dump [NOMBRE=x] [CON_EVENTOS=1]` | «Respaldar la base» |
+| Listar | `make db-lista` | «Listar los respaldos» |
+| Restaurar (simulacro) | `make db-restore ARCHIVO=<.zip o almacen:clave>` | «Restaurar un respaldo» |
+| Restaurar de verdad | `... APLICAR=1 CONFIRMAR=RESTAURAR` | marcar «aplicar» + escribir RESTAURAR |
+
+- **Dónde queda:** en el almacén de exportaciones, bajo `respaldo/`: disco (`ETL_EXPORT_DIR`) o, si están las
+  `EXPORT_S3_*`, **S3 / SeaweedFS / Supabase Storage** (lo sube, lo vuelve a leer y compara sha256). Cambiar
+  de almacén es cambiar variables de entorno. En el contenedor del backend el disco es efímero: para respaldar
+  desde el panel usá S3 (en Docker hace falta `EXPORT_S3_ENDPOINT_DOCKER=http://host.docker.internal:<puerto>`;
+  con `127.0.0.1` el contenedor no llega al S3 del host y el ETL falla con «Could not connect to the endpoint URL»).
+- **Qué hace restaurar:** reemplaza los datos de las tablas del respaldo, en UNA transacción (si algo falla o un
+  conteo no coincide, queda como estaba). Antes guarda un respaldo de seguridad `respaldo/antes-de-restaurar-*.zip`.
+  Funciona con respaldos de un esquema anterior (columnas por nombre, orden de FKs, GUC `app.*_write`, alias
+  repetidos renombrados). No toca `auth.users`: los admins se vuelven a crear con `make admin-crear`.
+- **Qué no incluye:** `auth.users`, `etl_archivos`/`etl_ejecuciones`, y los eventos salvo `CON_EVENTOS=1`.
+  Restaurar con un respaldo sin eventos deja `eventos.usuario_id` en NULL para lo que apuntaba a usuarios reemplazados.
+- **Reconstruir desde cero:** `make up` (migraciones + seed) → `make db-restore ARCHIVO=... APLICAR=1 CONFIRMAR=RESTAURAR`
+  → `make admin-crear EMAIL=...`. Para programar respaldos periódicos: panel → Programaciones sobre «Respaldar la base».
+- **Probado:** `etl/tests/test_respaldo_db.py` (en una base temporal que se crea y se borra; nunca toca la de desarrollo).
+
+
+## Los tests no ensucian la base de desarrollo
+
+- **Síntoma:** después de semanas de `make test`, la base local tenía miles de cuentas «anon-…» y decenas de admins
+  de prueba, y limpiar a mano era riesgoso.
+- **Causa:** los tests del backend corrían contra la base de desarrollo y dejaban lo que daban de alta.
+- **Solución:** `pytest` (backend) crea una base propia `almacenero_test_<id>`, aplica `supabase/migrations/*.sql`
+  y `supabase/seed.sql` (SQL plano) y la **borra al terminar** (`backend/tests/base_temporal.py`, enganchada en
+  `conftest.py`). Lo que un test da de alta desaparece con la base, sin escribir limpiezas a mano. Un test nuevo
+  no tiene que hacer nada especial. Si algo exige la base de desarrollo, `TESTS_EN_BASE_DE_DESARROLLO=1`.
+- **Pendiente:** `etl/tests` todavía usa la base de desarrollo (los tests destructivos ya crean una temporal, como
+  `test_respaldo_db.py`).
