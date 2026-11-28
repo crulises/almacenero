@@ -141,7 +141,7 @@ descripción (al agregar un target, ponele su `## descripción` en la misma lín
 - API versionada: `/v1/...`.
 - Secrets: `.env` local (NUNCA commitear) + secrets de plataforma en prod. Hay `.env.example`.
 - Logs: structured logging simple.
-- Tests: backend con pytest contra Postgres local real (no mocks). Flutter: unit + widget.
+- Tests: backend con pytest contra Postgres local real (no mocks), en una base descartable que se crea y se borra sola (docs/03). Flutter: unit + widget.
 
 ## Git y CI
 

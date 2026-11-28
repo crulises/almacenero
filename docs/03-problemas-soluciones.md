@@ -1185,6 +1185,18 @@ Decisiones en `docs/04` §9.
 - **Cada APK, su cliente:** debug → SHA-1 de debug; `--release` → SHA-1 de la keystore de release; si algún día
   se publica en Play Store con «Play App Signing», además el SHA-1 que muestra Play Console.
 
+### Una cuenta de Google «no entra» y la app no dice nada
+
+- **Síntoma:** con una cuenta que no es la dueña del proyecto (p. ej. la de un familiar) el selector de Google se
+  queda en su pantalla sin avanzar; al cerrarlo con la X la app solo dice que se canceló.
+- **Causa:** es la causa 2 de arriba (pantalla de consentimiento en **Testing**, cuenta fuera de «Usuarios de
+  prueba»). El rechazo ocurre dentro de la pantalla de Google: a la app solo llega un `canceled`, igual que cuando
+  la persona cancela de verdad, así que no puede distinguirlos.
+- **Qué hace la app:** ante `canceled` muestra (15 s, con X) «Google cerró el ingreso antes de terminar. Si no lo
+  cancelaste vos, quizá Google no deja entrar a esa cuenta…» más el código técnico entre corchetes
+  (`describirFalloGoogle`, `app/lib/data/google_signin_service.dart`).
+- **Solución:** sumar la cuenta en Google Auth Platform › Público › Usuarios de prueba (o publicar la app).
+
 ### La consola de Google Cloud no muestra actividad del login
 
 - **Es lo esperado.** El ingreso nativo entrega un `id_token` firmado por Google; GoTrue lo valida con las
@@ -1305,3 +1317,16 @@ un `.zip` con un CSV por tabla de `public` + `manifest.json` (filas y sha256) + 
 - **Reconstruir desde cero:** `make up` (migraciones + seed) → `make db-restore ARCHIVO=... APLICAR=1 CONFIRMAR=RESTAURAR`
   → `make admin-crear EMAIL=...`. Para programar respaldos periódicos: panel → Programaciones sobre «Respaldar la base».
 - **Probado:** `etl/tests/test_respaldo_db.py` (en una base temporal que se crea y se borra; nunca toca la de desarrollo).
+
+
+## Los tests no ensucian la base de desarrollo
+
+- **Síntoma:** después de semanas de `make test`, la base local tenía miles de cuentas «anon-…» y decenas de admins
+  de prueba, y limpiar a mano era riesgoso.
+- **Causa:** los tests del backend corrían contra la base de desarrollo y dejaban lo que daban de alta.
+- **Solución:** `pytest` (backend) crea una base propia `almacenero_test_<id>`, aplica `supabase/migrations/*.sql`
+  y `supabase/seed.sql` (SQL plano) y la **borra al terminar** (`backend/tests/base_temporal.py`, enganchada en
+  `conftest.py`). Lo que un test da de alta desaparece con la base, sin escribir limpiezas a mano. Un test nuevo
+  no tiene que hacer nada especial. Si algo exige la base de desarrollo, `TESTS_EN_BASE_DE_DESARROLLO=1`.
+- **Pendiente:** `etl/tests` todavía usa la base de desarrollo (los tests destructivos ya crean una temporal, como
+  `test_respaldo_db.py`).
