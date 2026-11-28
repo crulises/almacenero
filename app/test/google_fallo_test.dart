@@ -21,4 +21,14 @@ void main() {
     );
     expect(t, contains('[unknownError: sin descripción]'));
   });
+
+  test('28444: explica que falta el cliente Android (paquete + SHA-1)', () {
+    final t = describirFalloGoogle(
+      GoogleSignInExceptionCode.unknownError,
+      '[28444] Developer console is not set up correctly.',
+      null,
+    );
+    expect(t, contains('SHA-1'));
+    expect(t, contains('[28444]'));
+  });
 }

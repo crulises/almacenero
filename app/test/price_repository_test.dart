@@ -175,7 +175,70 @@ void main() {
       expect(pedidos.last.url.path, '/v1/productos/7790070411112/precios');
       expect(h.single.precio, '1234.50');
       expect(h.single.localNombre, 'Local del admin');
+      expect(h.single.localId, 'l1');
       expect(h.single.fecha.toUtc().hour, 13);
+    });
+
+    test('historialDeLocal filtra por local_id', () async {
+      estado = (_) => 200;
+      cuerpo = [];
+
+      await PriceRepository(api: build()).historialDeLocal('779', 'l1');
+
+      expect(pedidos.last.url.path, '/v1/productos/779/precios');
+      expect(pedidos.last.url.queryParameters, {'local_id': 'l1'});
+    });
+  });
+
+  group('localesDelProducto', () {
+    final conPrecio = {
+      'local_id': 'l1',
+      'local_nombre': 'Super Uno',
+      'lat': -34.6,
+      'lng': -58.4,
+      'distancia_m': 120.5,
+      'ultimo_precio': '1500.00',
+      'fecha': '2026-11-15T13:45:00Z',
+    };
+    final sinPrecio = {
+      'local_id': 'l2',
+      'local_nombre': 'Kiosco',
+      'lat': -34.61,
+      'lng': -58.41,
+      'distancia_m': 300,
+      'ultimo_precio': null,
+      'fecha': null,
+    };
+
+    test('parsea con y sin precio', () async {
+      estado = (_) => 200;
+      cuerpo = [conPrecio, sinPrecio];
+
+      final r = await PriceRepository(api: build()).localesDelProducto('779');
+
+      expect(pedidos.last.url.path, '/v1/productos/779/locales');
+      expect(pedidos.last.url.queryParameters, isEmpty);
+      expect(r.first.tienePrecios, isTrue);
+      expect(r.first.ultimoPrecio, '1500.00');
+      expect(r.first.distanciaM, 120.5);
+      expect(r.last.tienePrecios, isFalse);
+      expect(r.last.fecha, isNull);
+      expect(r.last.distanciaM, 300);
+    });
+
+    test('con ubicación manda lat y lng', () async {
+      estado = (_) => 200;
+      cuerpo = [];
+
+      await PriceRepository(api: build()).localesDelProducto(
+        '779',
+        ubicacion: const Ubicacion(lat: -34.6, lng: -58.4),
+      );
+
+      expect(pedidos.last.url.queryParameters, {
+        'lat': '-34.6',
+        'lng': '-58.4',
+      });
     });
   });
 

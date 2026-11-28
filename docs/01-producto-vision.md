@@ -74,6 +74,18 @@ kilo/litro y comparar productos de distinto tamaño.
   En el interior el índice nacional es poco confiable; mejor pedir precio fresco
   que estimar.
 
+### Historial de un producto en un local (transparencia)
+
+- Desde la ficha se puede ver **cómo se movió el precio de ese producto en un local**: para saber si un
+  descuento es real. Es una pantalla de **un producto en un local**, con el nombre del local (y su
+  distancia) y el del producto.
+- El local por defecto es **el más cercano**; se puede cambiar por otro de los cercanos. Solo aparecen
+  locales **verificados** (su ubicación es confiable) y dentro del radio de precios; un local que no
+  tiene precios de ese producto se dice claro, nunca queda un vacío.
+- Cada precio muestra su fecha y **cuánto subió o bajó contra el anterior en ese local**. El gráfico usa
+  escala lineal: no exagera ni esconde un cambio.
+- Es una guía, no un tracker financiero: no acumula nada ni sigue gastos.
+
 ### Conflicto de precios
 
 - Ante dos precios distintos para el mismo producto y local en la misma ventana,

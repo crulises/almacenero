@@ -112,6 +112,8 @@ void main() {
         crearLocal: LocalRepository(api: authed).crear,
         cargarPrecio: precios.cargar,
         loadHistorial: precios.historial,
+        loadLocalesDelProducto: precios.localesDelProducto,
+        loadHistorialLocal: precios.historialDeLocal,
         loadVigentes: precios.vigentes,
       ),
     ),

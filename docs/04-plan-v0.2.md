@@ -20,7 +20,31 @@ ya se sabe (la línea de ahorro en la ficha).
 | C | **Validación colaborativa y cola** | Una persona confirma o desmiente el precio que cargó otra; la cola de validación; la tarjeta «precios validados» del dashboard (hoy en 0). Afecta al karma. | A |
 | D | **Línea de ahorro en la ficha** | «Ahorrás 12% yendo a X». Solo con mínimos de datos, frescura y descontando la distancia. **No acumula nada.** | C (confianza del dato) |
 
-Orden sugerido: A → B → C → D (A habilita la identidad que C necesita; D usa lo validado).
+| 22 | **Historial de precios por local** | Pantalla desde la ficha: el precio de un producto en un local (el más cercano, cambiable) con gráfico lineal, mapa «Vos»/«Local» y variación contra el precio anterior. Transparencia: ver si un descuento es real. | — |
+| 23 | **Hitos en el gráfico** | Marcas manuales («Aumento de combustibles 30%») cargadas desde el panel de admin y dibujadas como líneas verticales. Globales por defecto, acotables por rubro/categoría; varios el mismo día → la app toma uno al azar. | 22 |
+
+Orden sugerido: A → B → C → D (22 y 23 son independientes de ese orden) (A habilita la identidad que C necesita; D usa lo validado).
+
+## Corte 22: historial por local (hecho, falta probarlo en el celular)
+
+Diseño: `docs/superpowers/specs/2026-11-26-historial-por-local-design.md`; plan:
+`docs/superpowers/plans/2026-11-26-historial-por-local.md`. Detalle técnico en el Doc 2.
+
+**Qué probar en el celular:**
+1. Entrar a un producto con precios y tocar «Ver historial por local» (está encima de «Cargar precio»).
+2. Se abre en **Gráfico**: línea con el precio en el tiempo; **Mapa**: «Local» y «Vos».
+3. El título es el local más cercano con su distancia; tocarlo para cambiar de local (ordenados por
+   distancia; los que no tienen precios dicen «sin precios»).
+4. Debajo, «Historial de precios»: una línea por precio (precio en negrita, fecha en gris) y a la derecha
+   flecha ↑/↓ con el porcentaje contra el anterior. Con espacio, la lista se desplaza sola y el
+   gráfico/mapa queda fijo. Tocar un punto del gráfico muestra su precio y día.
+5. Elegir un local sin precios: mensaje, «Ir al inicio» y «Escanear».
+6. «Escanear otro» (arriba a la derecha) y, con el GPS apagado, que igual cargue (sin distancia ni «Vos»).
+
+**Corte 23 (hitos), pendiente:** tabla `hitos` (fecha, texto, categorías), alta/edición en el panel de
+admin y lectura para la app. Las categorías/rubros del catálogo aún no existen: tendrán que ser
+editables y un producto podrá tener varias (muchos a muchos); hasta entonces el filtro se guarda pero no
+aplica.
 
 ### Parte A — decisiones tomadas (corte 21, 2026-11-26)
 

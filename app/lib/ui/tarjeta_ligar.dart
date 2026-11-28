@@ -129,14 +129,18 @@ class _TarjetaLigarState extends State<TarjetaLigar> {
               'cuenta desde otro celular o después de reinstalar la app.',
             ),
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            // Wrap, no Row: en pantallas angostas los botones pasan a otra línea
+            // en vez de desbordar.
+            Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
               children: [
                 TextButton(
                   onPressed: _ocupada ? null : widget.onLuego,
                   child: const Text('Luego'),
                 ),
-                const SizedBox(width: 8),
                 FilledButton.icon(
                   onPressed: _ocupada ? null : _ligar,
                   icon: const GoogleLogo(),

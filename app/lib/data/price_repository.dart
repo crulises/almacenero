@@ -30,12 +30,14 @@ class PrecioCargado {
 class PrecioHistorial {
   const PrecioHistorial({
     required this.id,
+    required this.localId,
     required this.localNombre,
     required this.precio,
     required this.fecha,
   });
 
   final String id;
+  final String localId;
   final String localNombre;
 
   /// Formato canónico, p. ej. "1234.50" (el backend lo manda como string).
@@ -45,9 +47,51 @@ class PrecioHistorial {
   factory PrecioHistorial.fromJson(Map<String, dynamic> json) =>
       PrecioHistorial(
         id: json['id'] as String,
+        localId: json['local_id'] as String,
         localNombre: json['local_nombre'] as String,
         precio: json['precio'].toString(),
         fecha: DateTime.parse(json['fecha'] as String),
+      );
+}
+
+/// Un local verificado entre los que se puede ver el historial de un producto, con su último
+/// precio de ese producto (si tiene).
+class LocalDelProducto {
+  const LocalDelProducto({
+    required this.localId,
+    required this.localNombre,
+    required this.lat,
+    required this.lng,
+    this.distanciaM,
+    this.ultimoPrecio,
+    this.fecha,
+  });
+
+  final String localId;
+  final String localNombre;
+  final double lat;
+  final double lng;
+
+  /// Solo viene si se pidió con ubicación.
+  final double? distanciaM;
+
+  /// Formato canónico, p. ej. "1234.50"; nulo si el local no tiene precios del producto.
+  final String? ultimoPrecio;
+  final DateTime? fecha;
+
+  bool get tienePrecios => ultimoPrecio != null;
+
+  factory LocalDelProducto.fromJson(Map<String, dynamic> json) =>
+      LocalDelProducto(
+        localId: json['local_id'] as String,
+        localNombre: json['local_nombre'] as String,
+        lat: (json['lat'] as num).toDouble(),
+        lng: (json['lng'] as num).toDouble(),
+        distanciaM: (json['distancia_m'] as num?)?.toDouble(),
+        ultimoPrecio: json['ultimo_precio']?.toString(),
+        fecha: json['fecha'] == null
+            ? null
+            : DateTime.parse(json['fecha'] as String),
       );
 }
 
@@ -199,6 +243,33 @@ class PriceRepository {
     for (final p in await _api.getList('/productos/$ean/precios'))
       PrecioHistorial.fromJson(p as Map<String, dynamic>),
   ];
+
+  /// Precios de un producto en un solo local, el más nuevo primero.
+  Future<List<PrecioHistorial>> historialDeLocal(
+    String ean,
+    String localId,
+  ) async => [
+    for (final p in await _api.getList(
+      '/productos/$ean/precios?local_id=$localId',
+    ))
+      PrecioHistorial.fromJson(p as Map<String, dynamic>),
+  ];
+
+  /// Los locales verificados entre los que se puede elegir (ver el endpoint). Con
+  /// [ubicacion]: los cercanos, tengan o no precio, por distancia; sin ella: solo los
+  /// que tienen precio, el más reciente primero.
+  Future<List<LocalDelProducto>> localesDelProducto(
+    String ean, {
+    Ubicacion? ubicacion,
+  }) async {
+    final consulta = ubicacion == null
+        ? ''
+        : '?lat=${ubicacion.lat}&lng=${ubicacion.lng}';
+    return [
+      for (final l in await _api.getList('/productos/$ean/locales$consulta'))
+        LocalDelProducto.fromJson(l as Map<String, dynamic>),
+    ];
+  }
 
   /// El último precio de cada local, del más barato al más caro. Con [ubicacion]
   /// el backend trae solo los locales dentro del radio configurado (`config`) y la

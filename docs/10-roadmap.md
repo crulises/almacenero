@@ -51,3 +51,10 @@ solo fija el orden y los principios.
 - «Precio relativo al promedio» por zona (Doc 4, §11.6).
 - Precios de referencia de fuentes oficiales para arrancar la zona: habría que revisar el Doc 1 y la
   licencia antes de proponerlo.
+- **Configuración por secciones** (estilo settings de GitHub o el inicio de fly.io): hoy los parámetros
+  están sueltos; haría falta una estructura con niveles, lugar para explicaciones, formularios y
+  acciones. Proyecto aparte.
+- **Categorías/rubros del catálogo, editables y muchos a muchos** (un producto en varias). Hoy
+  `productos_canonicos` no tiene categoría; los hitos del corte 23 la necesitan para acotarse.
+- **Marca y paleta de colores:** la define otra sesión; la app usa el tema actual, que se cambia en un
+  solo lugar.

@@ -10,6 +10,7 @@ import 'package:almacenero/data/recientes.dart';
 import 'package:almacenero/data/user_repository.dart';
 import 'package:almacenero/main.dart';
 import 'package:almacenero/ui/acerca_screen.dart';
+import 'package:almacenero/ui/historial_local_screen.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -236,6 +237,7 @@ class _Backend {
           precios.add(
             PrecioHistorial(
               id: 'pr${cargas.length}',
+              localId: localId,
               localNombre: _local.nombre,
               precio: precio,
               fecha: DateTime.now(),
@@ -894,58 +896,106 @@ void main() {
     });
   });
 
-  group('historial de precios', () {
+  group('historial por local', () {
     PrecioHistorial precio(String valor, String local, DateTime fecha) =>
         PrecioHistorial(
           id: valor,
+          localId: 'l1',
           localNombre: local,
           precio: valor,
           fecha: fecha,
         );
 
-    testWidgets('sin precios, lo dice', (tester) async {
+    testWidgets('sin precios no hay botón: invita a cargar el primero', (
+      tester,
+    ) async {
       await abrir(tester);
       await _buscar(tester, _aceite.ean);
-      expect(find.text('Historial de precios'), findsOneWidget);
-      expect(
-        find.text('Todavía nadie cargó un precio de este producto.'),
-        findsOneWidget, // el historial; en «precios por local» dice «cerca tuyo»
-      );
+      expect(find.text('Ver historial por local'), findsNothing);
+      expect(find.text('Sé el primero en cargarlo'), findsOneWidget);
+      expect(find.text('Historial de precios'), findsNothing);
     });
 
-    testWidgets('lista precio, local y fecha, formateados', (tester) async {
-      final ahora = DateTime.now();
-      backend.precios.addAll([
-        precio(
-          '1000.00',
-          'Local viejo',
-          ahora.subtract(const Duration(days: 3)),
-        ),
-        precio('1234.50', 'Local del admin', ahora),
-      ]);
-      await abrir(tester);
-      await _buscar(tester, _aceite.ean);
-
-      expect(find.text(r'$ 1.234,50'), findsOneWidget);
-      expect(find.text(r'$ 1.000,00'), findsOneWidget);
-      expect(find.textContaining('Local del admin'), findsOneWidget);
-      expect(find.textContaining('(hoy)'), findsOneWidget);
-      expect(find.textContaining('(hace 3 días)'), findsOneWidget);
-    });
-
-    testWidgets('si falla, ofrece reintentar y se recupera', (tester) async {
-      backend.errorHistorial = ApiException('Sin conexión');
+    testWidgets('con precios, el botón va encima de «Cargar precio»', (
+      tester,
+    ) async {
       backend.precios.add(precio('500.00', 'Local del admin', DateTime.now()));
       await abrir(tester);
       await _buscar(tester, _aceite.ean);
-      expect(find.text('No pudimos cargar el historial.'), findsOneWidget);
-      // la ficha del producto sigue visible
-      expect(find.text('Aceite de girasol'), findsOneWidget);
 
-      await tester.tap(find.text('Reintentar'));
-      await tester.pumpAndSettle();
-      expect(find.text(r'$ 500,00'), findsOneWidget);
+      final historial = find.text('Ver historial por local');
+      expect(historial, findsOneWidget);
+      expect(
+        tester.getTopLeft(historial).dy,
+        lessThan(tester.getTopLeft(find.text('Cargar precio')).dy),
+      );
+      // La sección mezclada de todos los locales ya no está en la ficha.
+      expect(find.text('Historial de precios'), findsNothing);
     });
+
+    testWidgets('si falla el historial la ficha sigue, con el botón', (
+      tester,
+    ) async {
+      backend.errorHistorial = ApiException('Sin conexión');
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+
+      expect(find.text('Aceite de girasol'), findsOneWidget);
+      expect(find.text('Cargar precio'), findsOneWidget);
+    });
+
+    testWidgets('el botón abre la pantalla de historial del producto', (
+      tester,
+    ) async {
+      backend.precios.add(precio('500.00', 'Local del admin', DateTime.now()));
+      await abrir(tester);
+      await _buscar(tester, _aceite.ean);
+
+      await tester.tap(find.text('Ver historial por local'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HistorialLocalScreen), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('Ver historial por local'), findsOneWidget);
+    });
+
+    testWidgets(
+      'el globo del mapa conserva su precio al volver del historial',
+      (tester) async {
+        backend.precios.add(
+          precio('500.00', 'Local del admin', DateTime.now()),
+        );
+        backend.vigentes.add(
+          PrecioVigente(
+            localId: 'l1',
+            localNombre: 'Local del admin',
+            localVerificado: true,
+            lat: -34.6,
+            lng: -58.4,
+            precio: '500.00',
+            fecha: DateTime.now(),
+            edadDias: 0,
+            frescura: 'verde',
+            vencido: false,
+          ),
+        );
+        await abrir(tester);
+        await _buscar(tester, _aceite.ean);
+        final globo = find.descendant(
+          of: find.byKey(const ValueKey('cartel-l1')),
+          matching: find.text(r'$ 500'),
+        );
+        expect(globo, findsOneWidget);
+
+        await tester.tap(find.text('Ver historial por local'));
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        expect(globo, findsOneWidget);
+      },
+    );
 
     testWidgets('el precio recién cargado aparece al volver a la ficha', (
       tester,
@@ -954,8 +1004,7 @@ void main() {
       await _irAlFormulario(tester);
       await _enviarPrecio(tester, '850');
       // Al guardar se vuelve solo a la ficha.
-      // en «precios por local» y en el historial
-      expect(find.text(r'$ 850,00'), findsNWidgets(2));
+      expect(find.text(r'$ 850,00'), findsOneWidget); // en «precios por local»
     });
   });
 
@@ -1186,10 +1235,6 @@ void main() {
       expect(find.text('Precios por local'), findsOneWidget);
       expect(find.byType(FlutterMap), findsNothing);
       expect(find.text('No hay precios cargados cerca tuyo.'), findsOneWidget);
-      expect(
-        find.text('Todavía nadie cargó un precio de este producto.'),
-        findsOneWidget, // el historial
-      );
     });
 
     testWidgets('sin precios cerca: ofrece ver los de otros lugares', (
@@ -1309,6 +1354,7 @@ void main() {
     testWidgets('tocar un precio de la lista lo resalta en el mapa', (
       tester,
     ) async {
+      pantallaAlta(tester); // el botón nuevo de la ficha baja la lista
       backend.vigentes.addAll([
         vigente('a', '900.00'),
         vigente('b', '1000.00', lat: -34.62),
@@ -1317,6 +1363,7 @@ void main() {
       backend.precios.add(
         PrecioHistorial(
           id: 'h',
+          localId: 'l1',
           localNombre: 'Local a',
           precio: '900.00',
           fecha: DateTime.now(),
@@ -1566,6 +1613,7 @@ void main() {
       backend.precios.add(
         PrecioHistorial(
           id: 'x',
+          localId: 'l1',
           localNombre: 'Local del admin',
           precio: '10.00',
           fecha: DateTime.now(),

@@ -1168,6 +1168,17 @@ Decisiones en `docs/04` §9.
 - **Síntoma de que falta uno:** el selector de Google falla en el celular (`GoogleSignInException`) o GoTrue
   rechaza el token (audiencia).
 
+### Google falla con `unknownError: [28444] Developer console is not set up correctly`
+
+- **Síntoma:** al asociar o iniciar sesión, «Google falló: …[28444] Developer console is not set up correctly».
+- **Causa:** Google (Credential Manager) no reconoce al APK: no hay un cliente **Android** en Google Cloud con el
+  paquete (`dev.crulises.almacenero`) y el **SHA-1 del keystore con el que se firmó ese APK**, o el
+  `GOOGLE_WEB_CLIENT_ID` con el que se compiló está vacío/es de otro proyecto. Típico tras cambiar de
+  máquina, de keystore de debug o de `applicationId`, o al compilar desde un worktree sin `.env`.
+- **Solución:** sacar el SHA-1 del keystore que firmó el APK (`keytool -list -v -keystore <archivo> -alias <alias>`),
+  confirmar que existe un cliente Android con ese paquete + SHA-1 y que `.env` tiene `GOOGLE_CLIENT_ID`; compilar
+  con `make apk` desde la carpeta que tiene el `.env`. Los cambios en Google Cloud tardan unos minutos.
+
 ### El selector de Google «se cancela» solo en el celular
 
 - **Síntoma:** aparece el popup de Google, se acepta y la app dice «Google falló: canceled…» (o «Se canceló
@@ -1330,3 +1341,12 @@ un `.zip` con un CSV por tabla de `public` + `manifest.json` (filas y sha256) + 
   no tiene que hacer nada especial. Si algo exige la base de desarrollo, `TESTS_EN_BASE_DE_DESARROLLO=1`.
 - **Pendiente:** `etl/tests` todavía usa la base de desarrollo (los tests destructivos ya crean una temporal, como
   `test_respaldo_db.py`).
+
+### «No pudimos cargar el historial» al abrir «Ver historial por local»
+
+- **Síntoma:** la pantalla de historial por local (corte 22) muestra el error con «Reintentar» en vez de la lista.
+- **Causa:** el backend que corre en Docker es una imagen vieja, sin `GET /v1/productos/{ean}/locales` (404 que la app
+  muestra como error). Pasa al probar la app de una rama con el backend de otra: la imagen se construye con el código
+  de la carpeta donde hiciste `make up`/`make build`, y no se actualiza sola al cambiar de rama.
+- **Solución:** parado en la rama de la app, `make build && make up` (reconstruye el backend). Para verificar:
+  `docker exec almacenero-backend-1 grep -c '/locales"' /srv/app/api/v1/productos.py` tiene que dar 1 o más.

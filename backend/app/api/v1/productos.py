@@ -101,6 +101,69 @@ async def historial_precios(
     return [PrecioOut(**dict(r)) for r in rows]
 
 
+class LocalDelProductoOut(BaseModel):
+    """Un local verificado y el último precio que tiene de un producto (si tiene)."""
+
+    local_id: UUID
+    local_nombre: str
+    lat: float
+    lng: float
+    distancia_m: float | None = None
+    ultimo_precio: Decimal | None = None
+    fecha: datetime | None = None
+
+
+@router.get("/productos/{ean}/locales", response_model=list[LocalDelProductoOut])
+async def locales_del_producto(
+    ean: str,
+    lat: float | None = Query(None, ge=-90, le=90),
+    lng: float | None = Query(None, ge=-180, le=180),
+    _: Usuario = Depends(current_user),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> list[LocalDelProductoOut]:
+    """Los locales entre los que se puede ver el historial de un producto.
+
+    Solo locales **verificados** (su ubicación es confiable). Con `lat` y `lng`: los que están
+    dentro de `config.radio_precios_m`, **tengan o no precio** de este producto, del más cercano
+    al más lejano (así se puede decir «este local no tiene precios»). Sin ubicación no se puede
+    saber qué está cerca: solo los que tienen precio, el más reciente primero, sin distancia.
+    """
+    if (lat is None) != (lng is None):
+        raise HTTPException(422, "lat y lng van juntos")
+    radio = None if lat is None else float(await config.leer(pool, "radio_precios_m"))
+    rows = await pool.fetch(
+        """
+        select * from (
+          select l.id as local_id, l.nombre as local_nombre,
+                 st_y(l.ubicacion::geometry) as lat, st_x(l.ubicacion::geometry) as lng,
+                 case when $2::float8 is null then null
+                      else st_distance(l.ubicacion,
+                           st_makepoint($3::float8, $2::float8)::geography) end
+                   as distancia_m,
+                 u.precio as ultimo_precio, u.fecha
+          from locales l
+          left join lateral (
+            select p.precio, p.fecha
+            from precios p
+            join productos_canonicos pc on pc.id = p.producto_canonico_id
+            where pc.ean = $1 and p.local_id = l.id
+            order by p.fecha desc
+            limit 1
+          ) u on true
+          where l.verificado
+        ) v
+        where case when $4::float8 is null then v.ultimo_precio is not null
+                   else v.distancia_m <= $4::float8 end
+        order by v.distancia_m nulls last, v.fecha desc nulls last
+        """,
+        ean,
+        lat,
+        lng,
+        radio,
+    )
+    return [LocalDelProductoOut(**dict(r)) for r in rows]
+
+
 @router.get("/productos/{ean}/precios/vigentes", response_model=list[PrecioVigenteOut])
 async def precios_vigentes(
     ean: str,

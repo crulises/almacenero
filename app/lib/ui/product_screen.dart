@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'icono_codigo_barras.dart';
 import '../app_deps.dart';
 import '../data/location_service.dart';
 import '../data/price_repository.dart';
@@ -7,7 +8,9 @@ import '../data/product_repository.dart';
 import '../data/recientes.dart';
 import '../data/user_repository.dart';
 import '../domain/precio.dart';
+import 'escanear_otro.dart';
 import 'frescura.dart';
+import 'historial_local_screen.dart';
 import 'mapa_precios.dart';
 import 'moderacion.dart';
 import 'price_screen.dart';
@@ -154,6 +157,14 @@ class _ProductScreenState extends State<ProductScreen> {
     });
   }
 
+  void _verHistorial(Producto p) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => HistorialLocalScreen(producto: p, deps: widget.deps),
+      ),
+    );
+  }
+
   Future<void> _cargarPrecio(Producto p) async {
     final cargado = await Navigator.of(context).push<PrecioCargado>(
       MaterialPageRoute<PrecioCargado>(
@@ -177,27 +188,12 @@ class _ProductScreenState extends State<ProductScreen> {
     );
   }
 
-  /// «Escanear otro»: lee otro código sin pasar por el inicio. Reemplaza esta ficha (un solo
-  /// «atrás» lleva al inicio, por muchos que se escaneen seguidos). Cancelar la deja como está.
-  Future<void> _escanearOtro() async {
-    final ean = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(builder: (_) => widget.deps.pantallaEscaneo()),
-    );
-    if (ean == null || !mounted) return;
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            ProductScreen(ean: ean, deps: widget.deps, via: 'camara'),
-      ),
-    );
-  }
-
   /// Menú ⋮ de la barra: «Sugerir corrección», solo para moderadores con el producto
   /// cargado.
   List<Widget> _acciones() => [
     TextButton.icon(
-      onPressed: _escanearOtro,
-      icon: const Icon(Icons.qr_code_scanner),
+      onPressed: () => escanearOtro(context, widget.deps),
+      icon: const IconoCodigoBarras(),
       label: const Text('Escanear otro'),
     ),
     FutureBuilder<Producto>(
@@ -324,17 +320,21 @@ class _ProductScreenState extends State<ProductScreen> {
                     primero ? 'Sé el primero en cargarlo' : 'Cargar precio',
                   ),
                 );
-                // El botón largo va debajo: al lado le robaría el lugar al nombre.
-                if (primero) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [info, const SizedBox(height: 8), boton],
-                  );
-                }
-                return Row(
+                // Los botones van debajo, a lo ancho: al lado le robarían el lugar al nombre.
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(child: info),
-                    const SizedBox(width: 8),
+                    info,
+                    const SizedBox(height: 8),
+                    // Sin ningún precio no hay historial que ver.
+                    if (!primero) ...[
+                      OutlinedButton.icon(
+                        onPressed: () => _verHistorial(p),
+                        icon: const Icon(Icons.show_chart),
+                        label: const Text('Ver historial por local'),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     boton,
                   ],
                 );
@@ -388,16 +388,7 @@ class _ProductScreenState extends State<ProductScreen> {
         Expanded(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            children: [
-              ..._listaVigentes(context, snapshot),
-              const SizedBox(height: 24),
-              Text(
-                'Historial de precios',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              _historialPrecios(context),
-            ],
+            children: [..._listaVigentes(context, snapshot)],
           ),
         ),
       ],
@@ -537,50 +528,6 @@ class _ProductScreenState extends State<ProductScreen> {
         ),
       ),
       isThreeLine: true,
-    );
-  }
-
-  Widget _historialPrecios(BuildContext context) {
-    return FutureBuilder<List<PrecioHistorial>>(
-      future: _historial,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Row(
-            children: [
-              const Expanded(child: Text('No pudimos cargar el historial.')),
-              TextButton(
-                onPressed: _recargarPrecios,
-                child: const Text('Reintentar'),
-              ),
-            ],
-          );
-        }
-        final precios = snapshot.requireData;
-        if (precios.isEmpty) {
-          return const Text('Todavía nadie cargó un precio de este producto.');
-        }
-        final ahora = DateTime.now();
-        return Column(
-          children: [
-            for (final precio in precios)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  formatearPrecio(precio.precio),
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                subtitle: Text(
-                  '${precio.localNombre}\n'
-                  '${formatearFecha(precio.fecha, ahora: ahora)}',
-                ),
-                isThreeLine: true,
-              ),
-          ],
-        );
-      },
     );
   }
 
